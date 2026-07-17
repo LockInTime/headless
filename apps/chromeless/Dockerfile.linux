@@ -29,6 +29,7 @@ COPY --from=builder /src/.build/release/chromeless-mcp /usr/local/bin/chromeless
 RUN chmod 0755 /usr/local/bin/chromeless /usr/local/bin/chromeless-host /usr/local/bin/chromeless-mcp
 USER chromeless
 ENV CHROMELESS_HOST_EXECUTABLE=/usr/local/bin/chromeless-host
+ENV CHROMELESS_CHROMIUM_EXECUTABLE=/usr/lib/chromium/chromium
 WORKDIR /home/chromeless
 CMD ["/usr/local/bin/chromeless", "help"]
 
