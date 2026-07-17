@@ -1,0 +1,14 @@
+{
+  "name": "chromeless",
+  "private": true,
+  "scripts": {
+    "build": "pnpm --filter @chromeless/app build",
+    "dev": "pnpm --filter @chromeless/app start",
+    "start": "pnpm --filter @chromeless/app start"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

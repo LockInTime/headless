@@ -1,0 +1,11 @@
+node_modules/
+.pnpm-store/
+dist/
+*.log
+.DS_Store
+
+# Chromeless native build artifacts
+apps/chromeless/Chromeless.app/
+apps/chromeless/Chromeless.icns
+apps/chromeless/build/
+*.provisionprofile

@@ -1,0 +1,9 @@
+{
+  "name": "@chromeless/app",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "./build.sh",
+    "start": "./build.sh && open Chromeless.app"
+  }
+}
