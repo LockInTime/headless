@@ -4,9 +4,9 @@ dist/
 *.log
 .DS_Store
 
-# Chromeless native build artifacts
-apps/chromeless/Chromeless.app/
-apps/chromeless/Chromeless.icns
-apps/chromeless/build/
-apps/chromeless/.build/
+# Headless native build artifacts
+apps/headless/Headless.app/
+apps/headless/Headless.icns
+apps/headless/build/
+apps/headless/.build/
 *.provisionprofile

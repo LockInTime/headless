@@ -1,0 +1,70 @@
+FROM swift:6.1-bookworm AS builder
+WORKDIR /src
+COPY Package.swift ./
+COPY main.swift ./
+COPY Host ./Host
+COPY Sources ./Sources
+COPY LinuxHost ./LinuxHost
+COPY MCP ./MCP
+COPY Tests ./Tests
+COPY docs ./docs
+COPY tools ./tools
+COPY build.sh build-linux.sh install-linux.sh benchmark.sh test.sh package.json headless.entitlements Dockerfile.linux .dockerignore ./
+RUN mkdir -p build Headless.app
+RUN swift build -c release --static-swift-stdlib --product headless-protocol-tests \
+    && ./.build/release/headless-protocol-tests
+RUN swift build -c release --static-swift-stdlib --product headless
+RUN swift build -c release --static-swift-stdlib --product headless-linux-host
+RUN swift build -c release --static-swift-stdlib --product headless-mcp
+RUN strip --strip-unneeded .build/release/headless .build/release/headless-linux-host .build/release/headless-mcp
+
+FROM debian:bookworm-slim AS runtime-base
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates chromium chromium-sandbox ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 10001 headless
+COPY --from=builder /src/.build/release/headless /usr/local/bin/headless
+COPY --from=builder /src/.build/release/headless-linux-host /usr/local/bin/headless-host
+COPY --from=builder /src/.build/release/headless-mcp /usr/local/bin/headless-mcp
+RUN chmod 0755 /usr/local/bin/headless /usr/local/bin/headless-host /usr/local/bin/headless-mcp
+USER headless
+ENV HEADLESS_HOST_EXECUTABLE=/usr/local/bin/headless-host
+WORKDIR /home/headless
+CMD ["/usr/local/bin/headless", "help"]
+
+FROM runtime-base AS test
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends busybox \
+    && rm -rf /var/lib/apt/lists/*
+COPY Tests/Fixtures /opt/headless/fixtures
+COPY Tests/linux-e2e.sh /opt/headless/linux-e2e.sh
+COPY install-linux.sh /opt/headless/package/install-linux.sh
+COPY --from=builder /src/.build/release/headless /opt/headless/package/headless
+COPY --from=builder /src/.build/release/headless-linux-host /opt/headless/package/headless-host
+COPY --from=builder /src/.build/release/headless-mcp /opt/headless/package/headless-mcp
+RUN chmod 0755 /opt/headless/linux-e2e.sh \
+    /opt/headless/package/install-linux.sh \
+    /opt/headless/package/headless \
+    /opt/headless/package/headless-host \
+    /opt/headless/package/headless-mcp \
+    && chown -R headless:headless /opt/headless
+USER headless
+
+FROM runtime-base AS benchmark
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends busybox chromium-driver nodejs npm python3 python3-selenium \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/benchmark/node_modules \
+    && npm install --prefix /opt/benchmark --no-audit --no-fund --omit=dev puppeteer-core@22.15.0
+COPY Tests/Fixtures /opt/headless/fixtures
+COPY Tests/Benchmarks /opt/headless/benchmarks
+RUN chmod 0755 /opt/headless/benchmarks/entry.sh /opt/headless/benchmarks/headless.sh \
+    /opt/headless/benchmarks/headless_warm.sh \
+    && chown -R headless:headless /opt/headless /opt/benchmark
+USER headless
+ENTRYPOINT ["/opt/headless/benchmarks/entry.sh"]
+
+# Keep the default build output free of test and benchmark dependencies.
+FROM runtime-base AS production

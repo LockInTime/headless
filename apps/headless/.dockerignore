@@ -1,0 +1,5 @@
+build
+Headless.app
+.swiftpm
+node_modules
+*.log
