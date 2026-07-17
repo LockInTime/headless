@@ -1,0 +1,70 @@
+FROM swift:6.1-bookworm AS builder
+WORKDIR /src
+COPY Package.swift ./
+COPY main.swift ./
+COPY Host ./Host
+COPY Sources ./Sources
+COPY LinuxHost ./LinuxHost
+COPY MCP ./MCP
+COPY Tests ./Tests
+COPY docs ./docs
+COPY tools ./tools
+COPY build.sh build-linux.sh install-linux.sh benchmark.sh test.sh package.json chromeless.entitlements Dockerfile.linux .dockerignore ./
+RUN mkdir -p build Chromeless.app
+RUN swift build -c release --static-swift-stdlib --product chromeless-protocol-tests \
+    && ./.build/release/chromeless-protocol-tests
+RUN swift build -c release --static-swift-stdlib --product chromeless
+RUN swift build -c release --static-swift-stdlib --product chromeless-linux-host
+RUN swift build -c release --static-swift-stdlib --product chromeless-mcp
+RUN strip --strip-unneeded .build/release/chromeless .build/release/chromeless-linux-host .build/release/chromeless-mcp
+
+FROM debian:bookworm-slim AS runtime-base
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates chromium chromium-sandbox ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 10001 chromeless
+COPY --from=builder /src/.build/release/chromeless /usr/local/bin/chromeless
+COPY --from=builder /src/.build/release/chromeless-linux-host /usr/local/bin/chromeless-host
+COPY --from=builder /src/.build/release/chromeless-mcp /usr/local/bin/chromeless-mcp
+RUN chmod 0755 /usr/local/bin/chromeless /usr/local/bin/chromeless-host /usr/local/bin/chromeless-mcp
+USER chromeless
+ENV CHROMELESS_HOST_EXECUTABLE=/usr/local/bin/chromeless-host
+WORKDIR /home/chromeless
+CMD ["/usr/local/bin/chromeless", "help"]
+
+FROM runtime-base AS test
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends busybox \
+    && rm -rf /var/lib/apt/lists/*
+COPY Tests/Fixtures /opt/chromeless/fixtures
+COPY Tests/linux-e2e.sh /opt/chromeless/linux-e2e.sh
+COPY install-linux.sh /opt/chromeless/package/install-linux.sh
+COPY --from=builder /src/.build/release/chromeless /opt/chromeless/package/chromeless
+COPY --from=builder /src/.build/release/chromeless-linux-host /opt/chromeless/package/chromeless-host
+COPY --from=builder /src/.build/release/chromeless-mcp /opt/chromeless/package/chromeless-mcp
+RUN chmod 0755 /opt/chromeless/linux-e2e.sh \
+    /opt/chromeless/package/install-linux.sh \
+    /opt/chromeless/package/chromeless \
+    /opt/chromeless/package/chromeless-host \
+    /opt/chromeless/package/chromeless-mcp \
+    && chown -R chromeless:chromeless /opt/chromeless
+USER chromeless
+
+FROM runtime-base AS benchmark
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends busybox chromium-driver nodejs npm python3 python3-selenium \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/benchmark/node_modules \
+    && npm install --prefix /opt/benchmark --no-audit --no-fund --omit=dev puppeteer-core@22.15.0
+COPY Tests/Fixtures /opt/chromeless/fixtures
+COPY Tests/Benchmarks /opt/chromeless/benchmarks
+RUN chmod 0755 /opt/chromeless/benchmarks/entry.sh /opt/chromeless/benchmarks/chromeless.sh \
+    /opt/chromeless/benchmarks/chromeless_warm.sh \
+    && chown -R chromeless:chromeless /opt/chromeless /opt/benchmark
+USER chromeless
+ENTRYPOINT ["/opt/chromeless/benchmarks/entry.sh"]
+
+# Keep the default build output free of test and benchmark dependencies.
+FROM runtime-base AS production

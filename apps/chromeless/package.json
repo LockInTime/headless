@@ -4,6 +4,10 @@
   "version": "0.0.0",
   "scripts": {
     "build": "./build.sh",
-    "start": "./build.sh && open Chromeless.app"
+    "build:linux": "./build-linux.sh",
+    "start": "./build.sh && open Chromeless.app",
+    "test": "./test.sh",
+    "test:e2e:mac": "./Tests/macos-e2e.sh",
+    "test:e2e:linux": "./Tests/linux-docker.sh"
   }
 }

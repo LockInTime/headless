@@ -8,4 +8,5 @@ dist/
 apps/chromeless/Chromeless.app/
 apps/chromeless/Chromeless.icns
 apps/chromeless/build/
+apps/chromeless/.build/
 *.provisionprofile

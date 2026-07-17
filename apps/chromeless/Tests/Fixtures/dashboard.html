@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Designers Dashboard</title>
+  <style>
+    body { margin: 0; font: 16px system-ui; background: #f5f4ef; color: #171714; }
+    main { max-width: 900px; margin: auto; padding: 72px 40px; }
+    section { min-height: 620px; padding: 32px; margin-bottom: 24px; background: white; border-radius: 24px; }
+    .diagnostic-card { display: flex; align-items: center; color: rgb(18, 52, 86); gap: 12px; }
+    button { border: 0; border-radius: 999px; padding: 14px 24px; background: #171714; color: white; font: inherit; }
+    input { display: block; margin-top: 12px; padding: 12px; border: 1px solid #bbb; border-radius: 10px; font: inherit; }
+  </style>
+</head>
+<body>
+  <main>
+    <section><h1>Designers dashboard</h1><p>Review the active design work.</p></section>
+    <section>
+      <h2>Recent projects</h2><p>Three projects are ready for feedback.</p>
+      <label for="reviewer">Reviewer</label><input id="reviewer" autocomplete="off">
+      <div class="diagnostic-card" role="region" aria-label="Diagnostics probe">Diagnostic layout target</div>
+    </section>
+    <section>
+      <h2>Continue setup</h2>
+      <p><a href="mailto:qa@example.com">External application</a></p>
+      <p><a href="about:blank">Non-web browser URL</a></p>
+      <p><a href="http://qa:secret@127.0.0.1/private">Credential-bearing URL</a></p>
+      <p><a href="/suspicious-installer.dmg">Suspicious installer</a></p>
+      <button onclick="location.href='data:text/html,blocked'">Scripted non-web navigation</button>
+      <button onclick="location.href='/next'">Continue</button>
+    </section>
+  </main>
+  <script>
+    // A hostile page-global with the same name must not affect the isolated
+    // Chromeless execution world.
+    globalThis.__chromelessAgent = {snapshot() { return {pwned: true}; }};
+    document.cookie = 'qa_session=fixture-cookie; Path=/; SameSite=Lax';
+    localStorage.setItem('qa-diagnostic-key', 'local-fixture-value');
+    sessionStorage.setItem('qa-session-key', 'session-fixture-value');
+    console.error('Next.js runtime error: hydration mismatch in DesignersDashboard');
+    fetch('/api/diagnostic', {headers: {'Authorization': 'Bearer fixture-secret', 'X-Visible': 'fixture'}}).catch(() => {});
+    fetch('/missing-api', {headers: {'Authorization': 'Bearer fixture-secret'}}).catch(() => {});
+  </script>
+</body>
+</html>

@@ -3,8 +3,12 @@
   "private": true,
   "scripts": {
     "build": "pnpm --filter @chromeless/app build",
+    "build:linux": "pnpm --filter @chromeless/app build:linux",
     "dev": "pnpm --filter @chromeless/app start",
-    "start": "pnpm --filter @chromeless/app start"
+    "start": "pnpm --filter @chromeless/app start",
+    "test": "pnpm --filter @chromeless/app test",
+    "test:e2e:mac": "pnpm --filter @chromeless/app test:e2e:mac",
+    "test:e2e:linux": "pnpm --filter @chromeless/app test:e2e:linux"
   },
   "engines": {
     "node": ">=20",

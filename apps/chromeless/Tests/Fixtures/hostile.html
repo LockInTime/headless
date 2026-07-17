@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Hostile output fixture</title>
+  <style>a { display: block; min-height: 1px; }</style>
+</head>
+<body>
+  <main id="targets"></main>
+  <script>
+    const targets = document.getElementById('targets');
+    const oversized = 'x'.repeat(10_000);
+    for (let index = 0; index < 300; index += 1) {
+      const link = document.createElement('a');
+      link.href = `https://example.com/${oversized}`;
+      link.setAttribute('aria-label', oversized);
+      link.textContent = `Target ${index}`;
+      targets.appendChild(link);
+    }
+  </script>
+</body>
+</html>
