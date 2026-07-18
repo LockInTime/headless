@@ -1,5 +1,6 @@
 import { CommandBlock, CopyPageButton } from "@/components/docs-copy-controls";
 import { HeadlessMark } from "@/components/headless-mark";
+import { ThemeToggle } from "@/components/theme-toggle";
 import Link from "next/link";
 
 const coreCommands = [
@@ -14,7 +15,7 @@ export default function DocsPage() {
     <main className="docs-shell">
       <nav className="docs-nav docs-container" aria-label="Documentation navigation">
         <Link className="brand" href="/" aria-label="Headless home"><HeadlessMark className="brand-mark" /><span>headless</span></Link>
-        <div><Link href="/">Overview</Link><Link className="active" href="/docs">Docs</Link><a href="https://github.com/SarthakWade/headless">GitHub ↗</a></div>
+        <div><Link href="/">Overview</Link><Link className="active" href="/docs">Docs</Link><a href="https://github.com/SarthakWade/headless">GitHub ↗</a><ThemeToggle /></div>
       </nav>
 
       <div className="docs-container docs-layout">

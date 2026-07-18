@@ -13,13 +13,13 @@ const data = [
 const config = {
   surface: {
     label: "Workflow surface",
-    colors: { light: ["#d7ff3f", "#adca52", "#71796c", "#545b52"] },
+    colors: { light: ["#ffb020", "#4fd8c4", "#7c8880", "#3c4348"] },
   },
 } satisfies ChartConfig;
 
 export function BenchmarkChart() {
   return <EvilBarChart data={data} config={config} layout="horizontal" animationType="none" barRadius={2} className="benchmark-chart">
-    <Grid stroke="rgba(231,233,222,.12)" />
+    <Grid stroke="rgba(var(--ink-rgb),.12)" />
     <XAxis domain={[0, 3.5]} ticks={[0, 1, 2, 3]} tickFormatter={(value) => `${value}×`} />
     <YAxis dataKey="workflow" width={118} />
     <Tooltip variant="frosted-glass" roundness="md" />
