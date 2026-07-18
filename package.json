@@ -2,10 +2,10 @@
   "name": "headless",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter @headless/app build",
+    "build": "pnpm --filter @headless/app build && pnpm --filter @headless/web build",
     "build:linux": "pnpm --filter @headless/app build:linux",
-    "dev": "pnpm --filter @headless/app start",
-    "start": "pnpm --filter @headless/app start",
+    "dev": "pnpm --filter @headless/web dev",
+    "start": "pnpm --filter @headless/web start",
     "test": "pnpm --filter @headless/app test",
     "test:e2e:mac": "pnpm --filter @headless/app test:e2e:mac",
     "test:e2e:linux": "pnpm --filter @headless/app test:e2e:linux"
@@ -14,5 +14,10 @@
     "node": ">=20",
     "pnpm": ">=9"
   },
-  "packageManager": "pnpm@9.15.0"
+  "packageManager": "pnpm@9.15.0",
+  "pnpm": {
+    "overrides": {
+      "postcss": "8.5.10"
+    }
+  }
 }
