@@ -41,6 +41,19 @@ unless the host was deliberately started with `HEADLESS_ALLOW_SENSITIVE_DIAGNOST
 Run `headless help` for every command or `headless capabilities` for the
 JSON capability contract.
 
+## Agent skill
+
+This repository ships a portable browser-computer-use skill at
+`.agents/skills/headless-computer-use/`. Skills-aware agents can invoke it as
+`$headless-computer-use` to select a native or Docker runtime, drive the
+snapshot-and-semantic-action loop, capture evidence, diagnose failures, and
+clean up the session safely. If an agent does not auto-discover repository
+skills, point it directly at that `SKILL.md` file.
+
+Example prompt: `Use $headless-computer-use to launch this project's browser,
+test the signup flow end to end, and return verified screenshot, video, and QA
+report evidence.`
+
 ## Evidence capture
 
 Built-in recording captures browser pixels to MP4 through FFmpeg. It works in
