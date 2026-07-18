@@ -3,10 +3,45 @@
 Persistent browser control for agents, without Playwright scripts or screen
 coordinates.
 
-P2 uses the same CLI on both platforms:
+Supported platforms: macOS, Linux (including Ubuntu and the common Linux test
+distros used in CI/Docker). Windows is not supported.
+
+P2 uses the same CLI everywhere Headless runs:
 
 - macOS 13+: visible WKWebView windows.
-- Linux: sandboxed Chromium, headless by default or visible with `DISPLAY`.
+- Linux (Ubuntu and other distros): sandboxed Chromium, headless by default or
+  visible with `DISPLAY`.
+
+## Computer use comparison
+
+Three common agent browser paths, scored **1–5** as qualitative capability
+judgments (not lab benchmarks):
+
+| Dimension | Coordinate CU (regular browser) | Scripted (PW / Puppeteer / Selenium) | Headless |
+| --- | :---: | :---: | :---: |
+| Targeting precision | 2 | 4 | 5 |
+| Safety / blast radius | 2 | 3 | 5 |
+| Evidence (shots, video, QA) | 3 | 3 | 5 |
+| Agent surface (tokens / glue) | 2 | 3 | 5 |
+| Setup friction | 3 | 3 | 4 |
+| Platform coverage (host OS) | 5 | 5 | 4 |
+| Desktop / OS reach | 5 | 1 | 1 |
+
+- **Coordinate CU** — strong when the agent needs the whole desktop; weaker on
+  precise web targeting (pixels drift), larger screenshot/prompt cost, and a
+  broader OS blast radius. Runs on Windows, macOS, and Linux.
+- **Scripted** — reliable selectors and driver APIs; more agent glue to write
+  and maintain; evidence and security posture are usually bolted on. Broad
+  host-OS support including Windows.
+- **Headless** — semantic role/name/`@ref` actions, private socket + allowlisted
+  commands, built-in record/screenshot/diagnostics; browser-only (no desktop).
+  Runs on macOS and Linux (Ubuntu and common CI/test distros); Windows is the
+  exception.
+
+**Measured agent surface** (same P2 fixture flow, Docker ARM64, 17 Jul 2026 —
+point-in-time): Headless warm **147** est. tokens vs Selenium **410** /
+Puppeteer **499**. Full method and limits:
+[BENCHMARK.md](apps/headless/docs/BENCHMARK.md).
 
 ## Agent workflow
 
