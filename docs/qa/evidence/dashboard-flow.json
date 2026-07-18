@@ -1,0 +1,1 @@
+{"commands":[{"command":"visit","parameters":{"url":"http://127.0.0.1:41739/designers/dashboard"}},{"command":"click","parameters":{"name":"Continue","role":"button"}}],"createdAt":1784358269.1634398,"version":1}

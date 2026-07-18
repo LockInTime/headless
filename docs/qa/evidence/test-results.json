@@ -1,0 +1,6 @@
+{
+  "result": "pass",
+  "runtime": "/usr/lib/chromium/chromium",
+  "fixture": "apps/headless/Tests/fixture-server.mjs",
+  "recordings": 10
+}

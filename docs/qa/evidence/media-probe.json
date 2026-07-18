@@ -1,0 +1,16 @@
+{
+  "minimumSeconds": 10,
+  "videos": [
+    {"file":"01-runtime-selection-snap-rejection.mp4","durationSeconds":18.000000,"codec":"mpeg4"},
+    {"file":"02-startup-session-navigation.mp4","durationSeconds":11.600000,"codec":"mpeg4"},
+    {"file":"03-screenshots-visual-comparison.mp4","durationSeconds":11.400000,"codec":"mpeg4"},
+    {"file":"04-diagnostics.mp4","durationSeconds":11.800000,"codec":"mpeg4"},
+    {"file":"05-network-emulation-mocking.mp4","durationSeconds":11.800000,"codec":"mpeg4"},
+    {"file":"06-safe-navigation-input.mp4","durationSeconds":11.600000,"codec":"mpeg4"},
+    {"file":"07-flows-reports.mp4","durationSeconds":10.600000,"codec":"mpeg4"},
+    {"file":"08-performance-animations.mp4","durationSeconds":11.400000,"codec":"mpeg4"},
+    {"file":"09-recording-artifact-lifecycle.mp4","durationSeconds":13.200000,"codec":"mpeg4"},
+    {"file":"10-mcp-stdio-invocation.mp4","durationSeconds":18.000000,"codec":"mpeg4"}
+  ],
+  "result": "pass"
+}
