@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        env:
+          HEADLESS_VERSION: ${{ needs.version.outputs.version }}
+        run: ./apps/headless/build.sh
+      - name: Unit tests
+        run: ./apps/headless/test.sh
+      - name: E2E
+        run: ./apps/headless/Tests/macos-e2e.sh
+      - name: Package
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cd apps/headless
+          ditto -c -k --keepParent Headless.app "Headless-${VERSION}-macos.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: apps/headless/Headless-${{ needs.version.outputs.version }}-macos.zip
+
+  linux-amd64:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: HEADLESS_LINUX_PLATFORM=linux/amd64 ./apps/headless/build-linux.sh
+      - name: E2E
+        run: ./apps/headless/Tests/linux-docker.sh
+      - name: Package
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cp apps/headless/build/headless-linux-amd64.tar.gz \
+            "apps/headless/build/headless-${VERSION}-linux-amd64.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-amd64
+          path: apps/headless/build/headless-${{ needs.version.outputs.version }}-linux-amd64.tar.gz
+
+  linux-arm64:
+    needs: version
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: HEADLESS_LINUX_PLATFORM=linux/arm64 ./apps/headless/build-linux.sh
+      - name: E2E
+        run: ./apps/headless/Tests/linux-docker.sh
+      - name: Package
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cp apps/headless/build/headless-linux-arm64.tar.gz \
+            "apps/headless/build/headless-${VERSION}-linux-arm64.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64
+          path: apps/headless/build/headless-${{ needs.version.outputs.version }}-linux-arm64.tar.gz
+
+  publish:
+    needs: [version, macos, linux-amd64, linux-arm64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Headless ${{ needs.version.outputs.version }}
+          body: |
+            ## Downloads
+
+            | File | Platform |
+            | --- | --- |
+            | `Headless-${{ needs.version.outputs.version }}-macos.zip` | macOS (ad-hoc signed `.app`) |
+            | `headless-${{ needs.version.outputs.version }}-linux-amd64.tar.gz` | Linux x86_64 |
+            | `headless-${{ needs.version.outputs.version }}-linux-arm64.tar.gz` | Linux arm64 |
+
+            ### Notes
+
+            - **macOS:** Unzip and run `Headless.app`. Gatekeeper may warn (ad-hoc signature; notarization not included yet). CLI: `Headless.app/Contents/Resources/bin/headless`.
+            - **Linux tarball:** Does not bundle Chromium. Install with `./install-linux.sh` after ensuring non-Snap Chromium and FFmpeg are available. The Docker production image remains the self-contained runtime (not published by this release).
+          files: |
+            dist/Headless-${{ needs.version.outputs.version }}-macos.zip
+            dist/headless-${{ needs.version.outputs.version }}-linux-amd64.tar.gz
+            dist/headless-${{ needs.version.outputs.version }}-linux-arm64.tar.gz
+          fail_on_unmatched_files: true
