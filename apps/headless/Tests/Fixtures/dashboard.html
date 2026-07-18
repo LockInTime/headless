@@ -9,11 +9,14 @@
     main { max-width: 900px; margin: auto; padding: 72px 40px; }
     section { min-height: 620px; padding: 32px; margin-bottom: 24px; background: white; border-radius: 24px; }
     .diagnostic-card { display: flex; align-items: center; color: rgb(18, 52, 86); gap: 12px; }
+    @keyframes ambient-probe { from { transform: translateX(0); } to { transform: translateX(1px); } }
+    .ambient-animation-probe { position: fixed; width: 1px; height: 1px; opacity: 0; animation: ambient-probe 1s linear infinite alternate; }
     button { border: 0; border-radius: 999px; padding: 14px 24px; background: #171714; color: white; font: inherit; }
     input { display: block; margin-top: 12px; padding: 12px; border: 1px solid #bbb; border-radius: 10px; font: inherit; }
   </style>
 </head>
 <body>
+  <div class="ambient-animation-probe" aria-hidden="true"></div>
   <main>
     <section><h1>Designers dashboard</h1><p>Review the active design work.</p></section>
     <section>

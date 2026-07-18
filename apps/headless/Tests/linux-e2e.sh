@@ -129,7 +129,9 @@ headless --session qa screenshot --role button --name Continue --output continue
 headless --session qa visual compare viewport.png viewport.png --output visual-diff.png | grep -q '"name":"visual-diff.png"'
 test -s "$HEADLESS_ARTIFACT_DIR/visual-diff.png"
 headless --session qa performance get | grep -q '"webVitals"'
-headless --session qa animations list | grep -q '"animations"'
+ANIMATIONS="$(headless --session qa animations list)"
+echo "$ANIMATIONS" | grep -q '"animations"'
+echo "$ANIMATIONS" | grep -q '"playState":"running"'
 headless --session qa network emulate --latency 25 --download-kbps 1000 --upload-kbps 500 | grep -q '"latencyMs":25'
 headless --session qa network emulate | grep -q '"offline":false'
 headless --session qa network mock set http://127.0.0.1:41739/api/diagnostic --body '{"mocked":true}' --status 201 | grep -q '"activeMocks":1'
@@ -165,19 +167,21 @@ if headless screenshot --output ../escape.png >/dev/null 2>&1; then
   exit 1
 fi
 headless --session qa record start --fps 5 | grep -q '"active":true'
-headless --session qa record status | grep -q '"active":true'
+RECORDING_STATUS="$(headless --session qa record status)"
+echo "$RECORDING_STATUS" | grep -q '"active":true'
+echo "$RECORDING_STATUS" | grep -Eq '"frames":[1-9][0-9]*'
 if headless --session qa record start >/dev/null 2>&1; then
   echo "a second recording was not rejected" >&2
   exit 1
 fi
-headless --session qa tour --full-page --pace 5000 | grep -q '"durationMs"'
+headless --session qa tour --full-page --pace 500 | grep -q '"durationMs"'
 headless --session qa click --role button --name Continue | grep -q '"clicked"'
 if ! NEXT_PAGE="$(headless --session qa wait --url /next --text 'Designer details' --settled --timeout 10000)"; then
   echo "$NEXT_PAGE" >&2
   exit 1
 fi
 echo "$NEXT_PAGE" | grep -q 'Designer Details'
-headless --session qa tour --full-page --pace 5000 | grep -q '"durationMs"'
+headless --session qa tour --full-page --pace 500 | grep -q '"durationMs"'
 headless --session qa record stop --output dashboard-flow.mp4 | grep -q '"name":"dashboard-flow.mp4"'
 headless --session qa record status | grep -q '"active":false'
 test -s "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4"
@@ -185,6 +189,13 @@ head -c 64 "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4" | grep -q 'ftyp'
 ffprobe -v error -select_streams v:0 \
   -show_entries stream=codec_name,width,height -of csv=p=0 \
   "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4" | grep -Eq '^[^,]+,[1-9][0-9]*,[1-9][0-9]*$'
+RECORDING_DURATION_MS="$(ffprobe -v error -show_entries format=duration -of csv=p=0 \
+  "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4" | awk '{printf "%d", $1 * 1000}')"
+test "$RECORDING_DURATION_MS" -ge 2000
+UNIQUE_RECORDING_FRAMES="$(ffmpeg -hide_banner -loglevel error \
+  -i "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4" -f framemd5 - \
+  | awk -F ', ' '!/^#/ {print $6}' | sort -u | wc -l)"
+test "$UNIQUE_RECORDING_FRAMES" -ge 8
 test "$(stat -c %a "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4")" = "600"
 headless artifacts list | grep -q '"name":"dashboard-flow.mp4"'
 headless --session qa back | grep -q 'Designers Dashboard'

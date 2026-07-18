@@ -21,18 +21,40 @@ enum CDPError: Error, CustomStringConvertible {
     }
 }
 
+private final class PendingCDPResponse: @unchecked Sendable {
+    private let lock = NSLock()
+    private let ready = DispatchSemaphore(value: 0)
+    private var response: Result<[String: Any], Error>?
+
+    func complete(_ value: Result<[String: Any], Error>) {
+        lock.lock()
+        guard case nil = response else { lock.unlock(); return }
+        response = value
+        lock.unlock()
+        ready.signal()
+    }
+
+    func wait(timeout: DispatchTime) -> Result<[String: Any], Error>? {
+        guard ready.wait(timeout: timeout) == .success else { return nil }
+        lock.lock(); defer { lock.unlock() }
+        return response
+    }
+}
+
 final class CDPConnection: @unchecked Sendable {
     private let transport: CDPTransport
-    // Event handlers run while `command` is reading the DevTools pipe. A
-    // recursive lock lets a handler send a no-reply protocol command (such as
-    // Fetch.continueRequest) before the original page operation completes.
-    private let lock = NSRecursiveLock()
+    private let stateLock = NSLock()
+    private let writeLock = NSLock()
     private let eventLock = NSLock()
+    private let readerQueue = DispatchQueue(label: "com.headless.cdp-reader", qos: .userInitiated)
     private var nextID = 1
+    private var pending: [Int: PendingCDPResponse] = [:]
+    private var closed = false
     private var eventHandler: (@Sendable ([String: Any]) -> Void)?
 
     init(inputDescriptor: Int32, outputDescriptor: Int32) {
         transport = RawDevToolsPipe(inputDescriptor: inputDescriptor, outputDescriptor: outputDescriptor)
+        readerQueue.async { [weak self] in self?.readLoop() }
     }
 
     func setEventHandler(_ handler: @escaping @Sendable ([String: Any]) -> Void) {
@@ -45,57 +67,108 @@ final class CDPConnection: @unchecked Sendable {
         sessionID: String? = nil,
         timeoutMilliseconds: Int32 = 125_000
     ) throws -> [String: Any] {
-        lock.lock(); defer { lock.unlock() }
-        let deadline = Date().addingTimeInterval(Double(timeoutMilliseconds) / 1_000)
-        let id = nextID
-        nextID += 1
-        var payload: [String: Any] = ["id": id, "method": method, "params": parameters]
-        if let sessionID { payload["sessionId"] = sessionID }
-        let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
-        guard let text = String(data: data, encoding: .utf8) else {
-            throw CDPError.invalidResponse("could not encode command")
+        let response = PendingCDPResponse()
+        let id = try reserveID(response: response)
+        do { try send(id: id, method: method, parameters: parameters, sessionID: sessionID) }
+        catch {
+            stateLock.lock(); pending.removeValue(forKey: id); stateLock.unlock()
+            throw error
         }
-        try transport.send(text: text)
-        while true {
-            let remaining = deadline.timeIntervalSinceNow
-            guard remaining > 0 else { throw CDPError.timedOut }
-            let remainingMilliseconds = Int32(max(1, min(125_000, remaining * 1_000)))
-            let data = Data(try transport.receiveText(timeoutMilliseconds: remainingMilliseconds).utf8)
-            guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-            guard (object["id"] as? NSNumber)?.intValue == id else {
-                eventLock.lock(); let handler = eventHandler; eventLock.unlock()
-                handler?(object)
-                continue
-            }
-            if let error = object["error"] as? [String: Any] {
-                throw CDPError.commandFailed(error["message"] as? String ?? String(describing: error))
-            }
-            return object["result"] as? [String: Any] ?? [:]
+        let timeout = DispatchTime.now() + .milliseconds(Int(timeoutMilliseconds))
+        guard let result = response.wait(timeout: timeout) else {
+            stateLock.lock(); pending.removeValue(forKey: id); stateLock.unlock()
+            throw CDPError.timedOut
         }
+        return try result.get()
     }
 
-    /// Sends a DevTools command whose response will be consumed by the active
-    /// `command` read loop. This is intentionally only for event-handler
-    /// acknowledgements that must unblock that active operation; callers do not
-    /// receive a result or error.
+    /// Sends an acknowledgement that does not need a result. The dedicated
+    /// reader consumes and discards its response while other commands remain
+    /// independently addressable by id.
     func sendWithoutWaiting(
         _ method: String,
         parameters: [String: Any] = [:],
         sessionID: String? = nil
     ) throws {
-        lock.lock(); defer { lock.unlock() }
+        let id = try reserveID(response: nil)
+        try send(id: id, method: method, parameters: parameters, sessionID: sessionID)
+    }
+
+    func close() {
+        stateLock.lock()
+        guard !closed else { stateLock.unlock(); return }
+        closed = true
+        let waiting = Array(pending.values)
+        pending.removeAll()
+        stateLock.unlock()
+        transport.close()
+        let error = CDPError.invalidResponse("DevTools pipe closed")
+        waiting.forEach { $0.complete(.failure(error)) }
+    }
+
+    private func reserveID(response: PendingCDPResponse?) throws -> Int {
+        stateLock.lock(); defer { stateLock.unlock() }
+        guard !closed else { throw CDPError.invalidResponse("DevTools pipe closed") }
         let id = nextID
         nextID += 1
+        if let response { pending[id] = response }
+        return id
+    }
+
+    private func send(
+        id: Int, method: String, parameters: [String: Any], sessionID: String?
+    ) throws {
         var payload: [String: Any] = ["id": id, "method": method, "params": parameters]
         if let sessionID { payload["sessionId"] = sessionID }
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
         guard let text = String(data: data, encoding: .utf8) else {
             throw CDPError.invalidResponse("could not encode command")
         }
+        writeLock.lock(); defer { writeLock.unlock() }
         try transport.send(text: text)
     }
 
-    func close() { transport.close() }
+    private func readLoop() {
+        while true {
+            do {
+                let text = try transport.receiveText(timeoutMilliseconds: 1_000)
+                let data = Data(text.utf8)
+                guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    continue
+                }
+                if let id = (object["id"] as? NSNumber)?.intValue {
+                    stateLock.lock(); let response = pending.removeValue(forKey: id); stateLock.unlock()
+                    guard let response else { continue }
+                    if let error = object["error"] as? [String: Any] {
+                        response.complete(.failure(CDPError.commandFailed(
+                            error["message"] as? String ?? String(describing: error)
+                        )))
+                    } else {
+                        response.complete(.success(object["result"] as? [String: Any] ?? [:]))
+                    }
+                } else {
+                    eventLock.lock(); let handler = eventHandler; eventLock.unlock()
+                    handler?(object)
+                }
+            } catch CDPError.timedOut {
+                stateLock.lock(); let shouldStop = closed; stateLock.unlock()
+                if shouldStop { return }
+            } catch {
+                failPending(error)
+                return
+            }
+        }
+    }
+
+    private func failPending(_ error: Error) {
+        stateLock.lock()
+        closed = true
+        let waiting = Array(pending.values)
+        pending.removeAll()
+        stateLock.unlock()
+        transport.close()
+        waiting.forEach { $0.complete(.failure(error)) }
+    }
 }
 
 private protocol CDPTransport: AnyObject, Sendable {

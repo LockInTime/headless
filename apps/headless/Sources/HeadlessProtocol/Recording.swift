@@ -59,6 +59,33 @@ public final class BrowserRecording: @unchecked Sendable {
         process.standardError = FileHandle.nullDevice
         do { try process.run() }
         catch { throw RecordingError.captureFailed(error.localizedDescription) }
+        let firstFrameDeadline = Date().addingTimeInterval(3)
+        var firstFrame: Data?
+        var firstFrameError: Error?
+        repeat {
+            do { firstFrame = try captureFrame() }
+            catch {
+                firstFrameError = error
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        } while firstFrame == nil && Date() < firstFrameDeadline
+        guard let firstFrame else {
+            try? inputPipe.fileHandleForWriting.close()
+            process.terminate()
+            process.waitUntilExit()
+            throw RecordingError.captureFailed(
+                "initial browser frame was unavailable: \(firstFrameError.map(String.init(describing:)) ?? "unknown error")"
+            )
+        }
+        do {
+            try inputPipe.fileHandleForWriting.write(contentsOf: firstFrame)
+            frameCount = 1
+        } catch {
+            try? inputPipe.fileHandleForWriting.close()
+            process.terminate()
+            process.waitUntilExit()
+            throw RecordingError.captureFailed(error.localizedDescription)
+        }
         queue.async { [weak self] in self?.captureLoop() }
     }
 

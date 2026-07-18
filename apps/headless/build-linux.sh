@@ -25,7 +25,8 @@ chmod 0755 build/linux/headless build/linux/headless-host build/linux/headless-m
 cp install-linux.sh build/linux/install-linux.sh
 cp docs/P1.md docs/P2.md build/linux/
 chmod 0755 build/linux/install-linux.sh
-PLATFORM_LABEL="${HEADLESS_LINUX_PLATFORM##*/}"
+PLATFORM_LABEL="${HEADLESS_LINUX_PLATFORM:-}"
+PLATFORM_LABEL="${PLATFORM_LABEL##*/}"
 if [ -z "$PLATFORM_LABEL" ]; then PLATFORM_LABEL="$(uname -m)"; fi
 ARCHIVE="build/headless-linux-$PLATFORM_LABEL.tar.gz"
 tar -czf "$ARCHIVE" -C build/linux headless headless-host headless-mcp install-linux.sh P1.md P2.md
