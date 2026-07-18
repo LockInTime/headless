@@ -54,6 +54,7 @@ second navigation (`reload` or a second visit) stalled on the Snap Chromium
 DevTools pipe and eventually showed Chromium's internal error page. No timing
 is recorded for that VM because the comparable workflow did not finish.
 
-The Docker benchmark above remains the supported Linux measurement. For this
-VM, use the Docker runtime or a native distribution Chromium package rather
-than the Snap Chromium package until its DevTools-pipe behaviour is resolved.
+The Docker benchmark above remains the supported Linux measurement. Runtime
+selection now rejects the Snap launcher before opening the DevTools pipe and
+reports the supported alternatives. For this VM, use the Docker runtime or a
+native distribution Chromium binary and confirm it with `headless runtime`.

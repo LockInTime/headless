@@ -1,10 +1,14 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 set -euo pipefail
-cd "${0:a:h}"
+cd "$(dirname "$0")"
 
 for tool in swift swiftc; do
   if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "headless tests: missing $tool. Install Xcode Command Line Tools with: xcode-select --install" >&2
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      echo "headless tests: missing $tool. Install Xcode Command Line Tools with: xcode-select --install" >&2
+    else
+      echo "headless tests: missing $tool. Install the Swift toolchain or run Tests/linux-docker.sh." >&2
+    fi
     exit 69
   fi
 done
@@ -13,7 +17,8 @@ SDK_ARGS=()
 if [[ "$(uname -s)" == "Darwin" ]]; then
   # Some Command Line Tools releases briefly ship a compiler newer than the
   # default SDK symlink. Choose the newest SDK the compiler can actually read.
-  for sdk in /Library/Developer/CommandLineTools/SDKs/MacOSX*.sdk(NOn); do
+  while IFS= read -r sdk; do
+    [[ -d "$sdk" ]] || continue
     if swiftc -module-cache-path build/module-cache -sdk "$sdk" \
         -target "$(uname -m)-apple-macos13.0" -typecheck \
         Sources/HeadlessProtocol/Protocol.swift >/dev/null 2>&1; then
@@ -21,7 +26,7 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
       SDK_ARGS=(--sdk "$sdk")
       break
     fi
-  done
+  done < <(find /Library/Developer/CommandLineTools/SDKs -maxdepth 1 -name 'MacOSX*.sdk' -print 2>/dev/null | sort -r)
   if [[ -z "${SDKROOT:-}" ]]; then
     echo "headless tests: no compatible macOS SDK was found. Update Xcode Command Line Tools." >&2
     exit 69

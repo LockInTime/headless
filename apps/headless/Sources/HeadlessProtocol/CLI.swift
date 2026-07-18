@@ -3,6 +3,7 @@ import Foundation
 public enum LocalCommand: Equatable, Sendable {
     case help
     case capabilities
+    case runtime
     case start
 }
 
@@ -56,6 +57,9 @@ public struct CLIParser {
         case "capabilities":
             try requireEmpty(arguments)
             return CLIInvocation(local: .capabilities, jsonOutput: true)
+        case "runtime":
+            try requireEmpty(arguments)
+            return CLIInvocation(local: .runtime, jsonOutput: true)
         case "start":
             try requireEmpty(arguments)
             return CLIInvocation(local: .start, jsonOutput: jsonOutput)
@@ -512,7 +516,7 @@ Core workflow:
   headless --session qa capture-info --json
 
 Commands:
-  start | status | stop
+  start | status | stop | runtime
   session create [NAME] | session list | session close NAME
   visit URL
   inspect [--interactive] [--text]

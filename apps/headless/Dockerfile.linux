@@ -29,6 +29,7 @@ COPY --from=builder /src/.build/release/headless-mcp /usr/local/bin/headless-mcp
 RUN chmod 0755 /usr/local/bin/headless /usr/local/bin/headless-host /usr/local/bin/headless-mcp
 USER headless
 ENV HEADLESS_HOST_EXECUTABLE=/usr/local/bin/headless-host
+ENV HEADLESS_CHROMIUM_EXECUTABLE=/usr/lib/chromium/chromium
 WORKDIR /home/headless
 CMD ["/usr/local/bin/headless", "help"]
 

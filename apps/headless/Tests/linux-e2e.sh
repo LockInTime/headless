@@ -29,6 +29,26 @@ if /opt/headless/package/install-linux.sh --prefix relative/path >/dev/null 2>&1
   echo "relative install prefix was not rejected" >&2
   exit 1
 fi
+if SNAP_INSTALL="$(HEADLESS_CHROMIUM_EXECUTABLE=/snap/bin/chromium \
+    /opt/headless/package/install-linux.sh --prefix "$INSTALL_ROOT/snap" 2>&1)"; then
+  echo "Snap Chromium was accepted by the installer" >&2
+  exit 1
+fi
+echo "$SNAP_INSTALL" | grep -q 'Snap Chromium is not supported'
+
+headless runtime | grep -q '"executable":"/usr/lib/chromium/chromium"'
+headless runtime | grep -q '"transport":"inherited-devtools-pipe"'
+if SNAP_RUNTIME="$(HEADLESS_CHROMIUM_EXECUTABLE=/snap/bin/chromium headless runtime 2>&1)"; then
+  echo "Snap Chromium was accepted by runtime selection" >&2
+  exit 1
+fi
+echo "$SNAP_RUNTIME" | grep -q 'UNSUPPORTED_BROWSER_RUNTIME'
+echo "$SNAP_RUNTIME" | grep -q 'Snap Chromium is not reliable'
+if RELATIVE_RUNTIME="$(HEADLESS_CHROMIUM_EXECUTABLE=relative/chromium headless runtime 2>&1)"; then
+  echo "a relative Chromium override was accepted" >&2
+  exit 1
+fi
+echo "$RELATIVE_RUNTIME" | grep -q 'must be absolute'
 
 headless start | grep -q '"ready":true'
 
@@ -40,6 +60,12 @@ test -z "$UNEXPECTED_TCP"
 headless session create qa | grep -q '"session":"qa"'
 headless session list | grep -q '"qa"'
 headless --session qa visit http://127.0.0.1:41739/designers/dashboard/ | grep -q 'Designers Dashboard'
+# Exercise the control-channel regression directly: the same session must
+# survive a second document, reload that document, go back, and reload again.
+headless --session qa visit http://127.0.0.1:41739/next/ | grep -q 'Designer Details'
+headless --session qa reload | grep -q 'Designer Details'
+headless --session qa back | grep -q 'Designers Dashboard'
+headless --session qa reload | grep -q 'Designers Dashboard'
 SNAPSHOT="$(headless --session qa inspect --interactive --text)"
 echo "$SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$SNAPSHOT" | grep -q '"name":"Reviewer"'
@@ -122,6 +148,9 @@ headless --session qa visit http://127.0.0.1:41739/designers/dashboard/ | grep -
 test -s "$HEADLESS_ARTIFACT_DIR/viewport.png"
 test -s "$HEADLESS_ARTIFACT_DIR/full-page.png"
 test -s "$HEADLESS_ARTIFACT_DIR/continue.png"
+test "$(od -An -tx1 -N8 "$HEADLESS_ARTIFACT_DIR/viewport.png" | tr -d ' \n')" = "89504e470d0a1a0a"
+test "$(od -An -tx1 -N8 "$HEADLESS_ARTIFACT_DIR/full-page.png" | tr -d ' \n')" = "89504e470d0a1a0a"
+test "$(od -An -tx1 -N8 "$HEADLESS_ARTIFACT_DIR/continue.png" | tr -d ' \n')" = "89504e470d0a1a0a"
 set -- $(od -An -tu1 -j 20 -N 4 "$HEADLESS_ARTIFACT_DIR/viewport.png")
 VIEWPORT_HEIGHT=$(($1 * 16777216 + $2 * 65536 + $3 * 256 + $4))
 set -- $(od -An -tu1 -j 20 -N 4 "$HEADLESS_ARTIFACT_DIR/full-page.png")
@@ -153,15 +182,31 @@ headless --session qa record stop --output dashboard-flow.mp4 | grep -q '"name":
 headless --session qa record status | grep -q '"active":false'
 test -s "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4"
 head -c 64 "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4" | grep -q 'ftyp'
+ffprobe -v error -select_streams v:0 \
+  -show_entries stream=codec_name,width,height -of csv=p=0 \
+  "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4" | grep -Eq '^[^,]+,[1-9][0-9]*,[1-9][0-9]*$'
 test "$(stat -c %a "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4")" = "600"
 headless artifacts list | grep -q '"name":"dashboard-flow.mp4"'
 headless --session qa back | grep -q 'Designers Dashboard'
 headless --session qa reload | grep -q 'Designers Dashboard'
 headless --session qa capture-info | grep -q '"engine":"chromium"'
+headless --session qa capture-info | grep -q '"browserExecutable":"/usr/lib/chromium/chromium"'
 headless --session qa visit http://127.0.0.1:41739/hostile/ | grep -q 'Hostile output fixture'
 BOUNDED_SNAPSHOT="$(headless --session qa inspect)"
 echo "$BOUNDED_SNAPSHOT" | grep -q '"truncated":true'
 test "$(printf %s "$BOUNDED_SNAPSHOT" | wc -c)" -lt 1048576
 headless session close qa | grep -q '"closed":"qa"'
+
+if [ -n "${HEADLESS_EVIDENCE_DIR:-}" ]; then
+  umask 077
+  mkdir -p "$HEADLESS_EVIDENCE_DIR"
+  cp "$HEADLESS_ARTIFACT_DIR"/*.png "$HEADLESS_EVIDENCE_DIR/"
+  cp "$HEADLESS_ARTIFACT_DIR"/*.mp4 "$HEADLESS_EVIDENCE_DIR/"
+  cp "$HEADLESS_ARTIFACT_DIR"/*.json "$HEADLESS_EVIDENCE_DIR/"
+  (
+    cd "$HEADLESS_EVIDENCE_DIR"
+    sha256sum ./*.png ./*.mp4 ./*.json > SHA256SUMS
+  )
+fi
 
 echo "Linux P2 end-to-end flow passed"

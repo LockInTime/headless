@@ -151,6 +151,7 @@ final class ChromiumProcess {
     private let child: ChromiumChildProcess
     let browserConnection: CDPConnection
     let headless: Bool
+    let runtime: ChromiumRuntimeSelection
     var processIdentifier: Int32 { child.processIdentifier }
     private let profileURL: URL
     private let sessionsLock = NSLock()
@@ -167,7 +168,8 @@ final class ChromiumProcess {
         _ = chmod(profileURL.path, 0o700)
         #endif
 
-        let executable = try ChromiumProcess.resolveExecutable()
+        runtime = try ChromiumRuntimeResolver().resolve()
+        let executable = runtime.executableURL
         headless = ProcessInfo.processInfo.environment["HEADLESS_HEADLESS"] != "0"
             && ProcessInfo.processInfo.environment["DISPLAY"] == nil
         var arguments = [
@@ -234,31 +236,11 @@ final class ChromiumProcess {
         if let session {
             session.handleEvent(event)
         } else if method == "Fetch.requestPaused" {
-            // Snap Chromium can emit a paused request from an internal target
-            // session that is not reported by Target.attachToTarget. Each local
-            // session attempts the continuation; only the owning CDP session
-            // accepts it, while the others return a harmless ignored error.
+            // A paused request from an internal target may not carry the
+            // attached page session. Each local session attempts continuation;
+            // only the owning session accepts it and the others are ignored.
             allSessions.forEach { $0.handleEvent(event) }
         }
-    }
-
-    private static func resolveExecutable() throws -> URL {
-        let environment = ProcessInfo.processInfo.environment
-        // Prefer the real Debian binary. Its /usr/bin/chromium shell wrapper is
-        // useful for humans but may consume or rearrange the fd 3/4 contract
-        // required by --remote-debugging-pipe.
-        let candidates = [
-            environment["HEADLESS_CHROMIUM_EXECUTABLE"],
-            "/usr/lib/chromium/chromium",
-            "/usr/bin/chromium",
-            "/usr/bin/chromium-browser",
-            "/usr/bin/google-chrome",
-        ]
-            .compactMap { $0 }
-        for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
-            return URL(fileURLWithPath: path)
-        }
-        throw CDPError.chromiumNotFound
     }
 }
 
@@ -421,23 +403,11 @@ final class LinuxBrowserSession: @unchecked Sendable {
 
     func reload() throws -> JSONValue {
         pauseRecordingCapture()
-        // Chromium's snap build can leave the DevTools pipe waiting forever
-        // for Page.reload. Re-navigate to the current safe web URL instead:
-        // it preserves the agent-visible reload result while using the same
-        // reliable Page.navigate path as `visit`.
-        let currentURL = try stateURL()
-        return try visit(currentURL)
+        _ = try command("Page.reload")
+        return try wait(parameters: ["settled": .bool(true), "timeoutMs": .number(20_000)])
     }
 
     func state() throws -> JSONValue { try evaluate("return globalThis.__headlessAgent.state();") }
-
-    private func stateURL() throws -> URL {
-        guard case .object(let state) = try state(),
-              let rawURL = state["url"]?.stringValue else {
-            throw CDPError.invalidResponse("page state did not return a URL")
-        }
-        return try normalizedWebURL(rawURL)
-    }
 
     func screenshot(
         parameters: [String: JSONValue],

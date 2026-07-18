@@ -37,6 +37,9 @@ final class LinuxBrowserHost: @unchecked Sendable {
                 "protocolVersion": .string(headlessProtocolVersion),
                 "recordingAvailable": .bool(BrowserRecording.isAvailable()),
                 "artifactDirectory": .string(artifacts.rootURL.path),
+                "browserExecutable": .string(browser.runtime.executableURL.path),
+                "browserRuntimeSource": .string(browser.runtime.source.rawValue),
+                "browserTransport": .string("inherited-devtools-pipe"),
             ]))
         }
         if request.command == .shutdown {
@@ -92,6 +95,9 @@ final class LinuxBrowserHost: @unchecked Sendable {
                 result = .object([
                     "engine": .string("chromium"), "headless": .bool(browser.headless),
                     "browserPid": .number(Double(browser.processIdentifier)),
+                    "browserExecutable": .string(browser.runtime.executableURL.path),
+                    "browserRuntimeSource": .string(browser.runtime.source.rawValue),
+                    "browserTransport": .string("inherited-devtools-pipe"),
                     "targetId": .string(session.targetID), "page": try session.state(),
                     "trace": .array(trace[name] ?? []),
                     "recording": recordings[name]?.status() ?? .object(["active": .bool(false)]),

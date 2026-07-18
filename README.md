@@ -73,7 +73,22 @@ apps/headless/build/linux/install-linux.sh
 ```
 
 Only Docker is needed to build. The output includes a portable tarball and an
-installer that checks Chromium and FFmpeg before copying both binaries.
+installer that checks Chromium and FFmpeg before copying the binaries. The
+Docker image is the supported self-contained Linux runtime and uses Debian's
+Chromium binary at `/usr/lib/chromium/chromium`.
+
+For a native Linux install, use a real Chromium binary supplied by the Linux
+distribution. Ubuntu's `/snap/bin/chromium` launcher resolves to
+`/usr/bin/snap`; it is rejected because repeated navigation is unreliable over
+Chromium's inherited DevTools pipe. If automatic detection is unsuitable, set
+`HEADLESS_CHROMIUM_EXECUTABLE` to an absolute, executable, non-Snap binary.
+Invalid overrides fail closed instead of silently selecting a different
+browser. Verify the exact selection before starting the host:
+
+```sh
+headless runtime
+headless start
+```
 
 Build an x86-64 binary from Apple Silicon with:
 
@@ -90,7 +105,9 @@ pnpm test:e2e:linux       # disposable Docker + sandboxed Chromium workflow
 ```
 
 The Linux E2E container receives `SYS_ADMIN` so Chromium can initialize its
-nested sandbox. Native VM deployment does not need that capability.
+nested sandbox. Native VM deployment does not need that capability. A passing
+Docker run retains verified PNG, MP4, JSON, and checksum evidence under
+`apps/headless/build/qa-evidence/`.
 
 Run the repeatable comparison against Selenium and Puppeteer with:
 
