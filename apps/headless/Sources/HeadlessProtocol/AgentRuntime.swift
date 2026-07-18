@@ -261,10 +261,17 @@ if (!globalThis.__headlessAgent) {
       else scrollBy({top: args.direction === 'up' ? -amount : amount, behavior: 'smooth'});
       return {direction: args.direction, amount};
     };
+    const blockingAnimationCount = () => document.getAnimations().filter(animation => {
+      if (animation.playState !== 'running') return false;
+      const timing = animation.effect?.getComputedTiming?.();
+      // Perpetual ambient animation must not prevent a loaded page from ever
+      // settling. Finite transitions still block until they finish.
+      return Number.isFinite(timing?.endTime);
+    }).length;
     const state = () => ({
       url: String(location.href).slice(0, 8192), title: String(document.title).slice(0, 512), readyState: document.readyState,
       text: normalize(document.body?.innerText).slice(0, 30000),
-      runningAnimations: document.getAnimations().filter(animation => animation.playState === 'running').length,
+      runningAnimations: blockingAnimationCount(),
       mutationQuietMs: Math.round(performance.now() - lastMutation),
       scrollY, contentHeight: document.documentElement.scrollHeight
     });
