@@ -144,6 +144,19 @@ Build an x86-64 binary from Apple Silicon with:
 HEADLESS_LINUX_PLATFORM=linux/amd64 ./apps/headless/build-linux.sh
 ```
 
+### GitHub Releases
+
+Pushing a version tag publishes downloadable packages:
+
+```sh
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Assets: macOS `Headless.app` zip, Linux amd64/arm64 tarballs. See the Actions
+`Release` workflow and the release notes on each tag for install caveats
+(Gatekeeper; Linux Chromium/FFmpeg).
+
 ## Tests
 
 ```sh
