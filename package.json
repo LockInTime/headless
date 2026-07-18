@@ -1,14 +1,14 @@
 {
-  "name": "chromeless",
+  "name": "headless",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter @chromeless/app build",
-    "build:linux": "pnpm --filter @chromeless/app build:linux",
-    "dev": "pnpm --filter @chromeless/app start",
-    "start": "pnpm --filter @chromeless/app start",
-    "test": "pnpm --filter @chromeless/app test",
-    "test:e2e:mac": "pnpm --filter @chromeless/app test:e2e:mac",
-    "test:e2e:linux": "pnpm --filter @chromeless/app test:e2e:linux"
+    "build": "pnpm --filter @headless/app build",
+    "build:linux": "pnpm --filter @headless/app build:linux",
+    "dev": "pnpm --filter @headless/app start",
+    "start": "pnpm --filter @headless/app start",
+    "test": "pnpm --filter @headless/app test",
+    "test:e2e:mac": "pnpm --filter @headless/app test:e2e:mac",
+    "test:e2e:linux": "pnpm --filter @headless/app test:e2e:linux"
   },
   "engines": {
     "node": ">=20",

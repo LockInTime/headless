@@ -8,4 +8,4 @@ importers:
 
   .: {}
 
-  apps/chromeless: {}
+  apps/headless: {}

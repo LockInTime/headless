@@ -1,0 +1,13 @@
+{
+  "name": "@headless/app",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "./build.sh",
+    "build:linux": "./build-linux.sh",
+    "start": "./build.sh && open Headless.app",
+    "test": "./test.sh",
+    "test:e2e:mac": "./Tests/macos-e2e.sh",
+    "test:e2e:linux": "./Tests/linux-docker.sh"
+  }
+}
