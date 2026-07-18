@@ -40,7 +40,7 @@ public final class BrowserRecording: @unchecked Sendable {
     private var failure: Error?
 
     public init(outputURL: URL, fps: Double, captureFrame: @escaping CaptureFrame) throws {
-        guard let executable = Self.resolveFFmpeg() else { throw RecordingError.unavailable }
+        guard let executable = Self.ffmpegExecutable() else { throw RecordingError.unavailable }
         self.outputURL = outputURL
         self.fps = fps
         self.captureFrame = captureFrame
@@ -151,15 +151,27 @@ public final class BrowserRecording: @unchecked Sendable {
         finished.signal()
     }
 
-    public static func isAvailable() -> Bool { resolveFFmpeg() != nil }
+    public static func isAvailable() -> Bool { ffmpegExecutable() != nil }
 
-    private static func resolveFFmpeg() -> URL? {
+    /// Resolve only an absolute regular executable. Recording and visual
+    /// comparison are local tools, but neither should be redirected by a
+    /// page-controlled or inherited PATH entry.
+    public static func ffmpegExecutable() -> URL? {
         let environment = ProcessInfo.processInfo.environment
         let candidates = [
             environment["HEADLESS_FFMPEG_EXECUTABLE"],
             "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg",
         ].compactMap { $0 }
-        return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
-            .map { URL(fileURLWithPath: $0) }
+        let manager = FileManager.default
+        for candidate in candidates where candidate.hasPrefix("/") {
+            let executable = URL(fileURLWithPath: candidate).resolvingSymlinksInPath().standardizedFileURL
+            guard manager.isExecutableFile(atPath: executable.path),
+                  let attributes = try? manager.attributesOfItem(atPath: executable.path),
+                  attributes[.type] as? FileAttributeType == .typeRegular else {
+                continue
+            }
+            return executable
+        }
+        return nil
     }
 }

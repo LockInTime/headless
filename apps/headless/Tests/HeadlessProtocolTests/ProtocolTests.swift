@@ -210,6 +210,12 @@ struct ProtocolTests {
         let record = try CLIParser().parse(["record", "start", "--fps", "8", "--output", "flow.mp4"])
         try expect(record.request?.command == .recordStart, "record start should parse")
         try expect(record.request?.parameters["fps"] == .number(8), "record FPS should parse")
+        try expectThrows("unsupported recorder selectors should fail instead of being ignored") {
+            _ = try CLIParser().parse(["record", "start", "--provider", "browser"])
+        }
+        try expectThrows("record requests should reject obsolete provider fields") {
+            try CommandRequest(command: .recordStart, parameters: ["provider": .string("browser")]).validate()
+        }
         try expectThrows("artifact path traversal should fail in the CLI") {
             _ = try CLIParser().parse(["screenshot", "--output", "../escape.png"])
         }

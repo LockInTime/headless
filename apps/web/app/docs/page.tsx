@@ -1,5 +1,6 @@
 import { CommandBlock, CopyPageButton } from "@/components/docs-copy-controls";
 import { HeadlessMark } from "@/components/headless-mark";
+import Link from "next/link";
 
 const coreCommands = [
   ["Navigation", "visit, back, reload, wait", "Move through a real browser session and wait for a URL, page text, or settled state."],
@@ -12,8 +13,8 @@ export default function DocsPage() {
   return (
     <main className="docs-shell">
       <nav className="docs-nav docs-container" aria-label="Documentation navigation">
-        <a className="brand" href="/" aria-label="Headless home"><HeadlessMark className="brand-mark" /><span>headless</span></a>
-        <div><a href="/">Overview</a><a className="active" href="/docs">Docs</a><a href="https://github.com/SarthakWade/headless">GitHub ↗</a></div>
+        <Link className="brand" href="/" aria-label="Headless home"><HeadlessMark className="brand-mark" /><span>headless</span></Link>
+        <div><Link href="/">Overview</Link><Link className="active" href="/docs">Docs</Link><a href="https://github.com/SarthakWade/headless">GitHub ↗</a></div>
       </nav>
 
       <div className="docs-container docs-layout">

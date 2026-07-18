@@ -17,10 +17,12 @@ public enum VisualComparisonError: Error, CustomStringConvertible {
 /// without adding a second image parser to either host.
 public enum VisualComparison {
     public static func compare(before: URL, after: URL, difference: URL) throws -> JSONValue {
-        let executable = "/usr/bin/env"
+        guard let executable = BrowserRecording.ffmpegExecutable() else {
+            throw VisualComparisonError.toolUnavailable
+        }
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["ffmpeg", "-hide_banner", "-y", "-i", before.path, "-i", after.path,
+        process.executableURL = executable
+        process.arguments = ["-hide_banner", "-y", "-i", before.path, "-i", after.path,
                              "-filter_complex", "[0:v][1:v]blend=all_mode=difference,format=rgba",
                              "-frames:v", "1", difference.path]
         let error = Pipe()

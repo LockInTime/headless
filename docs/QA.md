@@ -48,7 +48,7 @@ node /workspace/apps/headless/Tests/fixture-server.mjs
 | [Recording and artifact lifecycle](qa/evidence/09-recording-artifact-lifecycle.mp4) | [Probe results](qa/evidence/media-probe.json), [viewport](qa/evidence/lifecycle-viewport.png), and [full-page](qa/evidence/lifecycle-full-page.png) screenshots | `record start/status/stop`, rejection of a second recording, screenshots, `artifacts list`, and `capture-info` |
 | [MCP stdio invocation](qa/evidence/10-mcp-stdio-invocation.mp4) | [Probe results](qa/evidence/media-probe.json) | Real JSON-RPC requests piped to `headless-mcp`: `initialize`, `tools/list`, and two `tools/call` requests over stdio |
 
-The eight browser-visible files use `headless --session qa record start --provider browser --fps 5` and `record stop`. Each recording contains navigation, scrolling, input, tours, or reloads with waits between state changes. The two terminal files use FFmpeg `x11grab` on `DISPLAY=:99` against an xterm running the real commands.
+The eight browser-visible files use `headless --session qa record start --fps 5` and `record stop`. Each recording contains navigation, scrolling, input, tours, or reloads with waits between state changes. The two terminal files use FFmpeg `x11grab` on `DISPLAY=:99` against an xterm running the real commands.
 
 ## Command transcript
 
@@ -64,7 +64,7 @@ headless capabilities
 headless start
 headless session create qa
 headless session list
-headless --session qa record start --provider browser --fps 5 --output 02-startup-session-navigation.mp4
+headless --session qa record start --fps 5 --output 02-startup-session-navigation.mp4
 headless --session qa tour --full-page --pace 1000
 headless --session qa visit http://127.0.0.1:41739/next
 headless --session qa wait --url /next --text 'Designer details' --settled --timeout 10000
@@ -74,7 +74,7 @@ headless --session qa reload
 headless --session qa record stop
 
 # Screenshots and visual comparison
-headless --session qa record start --provider browser --fps 5 --output 03-screenshots-visual-comparison.mp4
+headless --session qa record start --fps 5 --output 03-screenshots-visual-comparison.mp4
 headless --session qa inspect --interactive --text
 headless --session qa screenshot --output visual-before.png
 headless --session qa scroll bottom
@@ -87,7 +87,7 @@ headless --session qa tour --full-page --pace 1000
 headless --session qa record stop
 
 # Diagnostics
-headless --session qa record start --provider browser --fps 5 --output 04-diagnostics.mp4
+headless --session qa record start --fps 5 --output 04-diagnostics.mp4
 headless --session qa reload
 headless --session qa console list --level error
 headless --session qa network list
@@ -97,7 +97,7 @@ headless --session qa qa report
 headless --session qa record stop
 
 # Network emulation and mocking
-headless --session qa record start --provider browser --fps 5 --output 05-network-emulation-mocking.mp4
+headless --session qa record start --fps 5 --output 05-network-emulation-mocking.mp4
 headless --session qa network emulate --latency 25 --download-kbps 1000 --upload-kbps 500
 headless --session qa reload
 headless --session qa network mock set http://127.0.0.1:41739/api/diagnostic --body '{"mocked":true}' --status 201 --content-type application/json
@@ -107,7 +107,7 @@ headless --session qa reload
 headless --session qa record stop
 
 # Safe navigation and input
-headless --session qa record start --provider browser --fps 5 --output 06-safe-navigation-input.mp4
+headless --session qa record start --fps 5 --output 06-safe-navigation-input.mp4
 headless --session qa inspect --interactive --text
 headless --session qa fill @e1 'QA reviewer'
 headless --session qa press Tab
@@ -122,7 +122,7 @@ headless --session qa wait --url /next --text 'Designer details' --settled --tim
 headless --session qa record stop
 
 # Flows and reports
-headless --session qa record start --provider browser --fps 5 --output 07-flows-reports.mp4
+headless --session qa record start --fps 5 --output 07-flows-reports.mp4
 headless --session qa flow start
 headless --session qa visit http://127.0.0.1:41739/designers/dashboard
 headless --session qa click --role button --name Continue
@@ -132,7 +132,7 @@ headless --session qa report create --output pr-report.json
 headless --session qa record stop
 
 # Performance and animation inspection
-headless --session qa record start --provider browser --fps 5 --output 08-performance-animations.mp4
+headless --session qa record start --fps 5 --output 08-performance-animations.mp4
 headless --session qa performance get
 headless --session qa animations list
 headless --session qa visit http://127.0.0.1:41739/next
@@ -142,9 +142,9 @@ headless --session qa animations list
 headless --session qa record stop
 
 # Recording and artifact lifecycle
-headless --session qa record start --provider browser --fps 5 --output 09-recording-artifact-lifecycle.mp4
+headless --session qa record start --fps 5 --output 09-recording-artifact-lifecycle.mp4
 headless --session qa record status
-headless --session qa record start --provider browser
+headless --session qa record start
 headless --session qa screenshot --output lifecycle-viewport.png
 headless artifacts list
 headless --session qa capture-info

@@ -13,6 +13,13 @@ restore_evidence_owner() {
     headless-p1-test chown -R "$(id -u):$(id -g)" /evidence >/dev/null 2>&1 || true
   chmod 0700 "$EVIDENCE_DIR" >/dev/null 2>&1 || true
 }
+file_mode() {
+  if stat -c %a "$1" >/dev/null 2>&1; then
+    stat -c %a "$1"
+  else
+    stat -f %Lp "$1"
+  fi
+}
 trap restore_evidence_owner EXIT INT TERM
 # SYS_ADMIN is limited to this disposable test container so Chromium can use
 # its nested namespace sandbox. The shipped host still runs as non-root and
@@ -29,6 +36,6 @@ trap - EXIT INT TERM
 test -s "$EVIDENCE_DIR/viewport.png"
 test -s "$EVIDENCE_DIR/full-page.png"
 test -s "$EVIDENCE_DIR/dashboard-flow.mp4"
-test "$(stat -c %a "$EVIDENCE_DIR/viewport.png")" = "600"
-test "$(stat -c %a "$EVIDENCE_DIR/dashboard-flow.mp4")" = "600"
+test "$(file_mode "$EVIDENCE_DIR/viewport.png")" = "600"
+test "$(file_mode "$EVIDENCE_DIR/dashboard-flow.mp4")" = "600"
 echo "Linux QA evidence: $EVIDENCE_DIR"

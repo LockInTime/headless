@@ -86,13 +86,8 @@ outer_cleanup() {
 
 run_outer() {
   require_command docker
-  local repository_root branch run_stamp
+  local repository_root run_stamp
   repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-  branch="$(git -C "$repository_root" branch --show-current)"
-  case "$branch" in
-    qa|qa/*) ;;
-    *) fail "refusing to run outside a qa branch (current: ${branch:-detached})" ;;
-  esac
 
   run_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   OUTPUT_DIR="${HEADLESS_QA_VIDEO_DIR:-$repository_root/build/qa-evidence/videos-$run_stamp}"
@@ -117,7 +112,9 @@ RUN apt-get update \
 USER headless
 DOCKERFILE
 
-  docker run --rm --name "headless-qa-videos-${run_stamp,,}" --shm-size=1g \
+  local container_name
+  container_name="headless-qa-videos-$(printf '%s' "$run_stamp" | tr '[:upper:]' '[:lower:]')"
+  docker run --rm --name "$container_name" --shm-size=1g \
     --cap-add=SYS_ADMIN -e HEADLESS_EVIDENCE_DIR=/evidence \
     -v "$repository_root:/workspace:ro" -v "$OUTPUT_DIR:/evidence" \
     "$VIDEO_IMAGE" "$SCRIPT_IN_CONTAINER" --inside
@@ -156,7 +153,10 @@ expect_output() {
   local pattern=$1
   shift
   local output
-  output="$("$@")"
+  if ! output="$("$@" 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    fail "command failed: $*"
+  fi
   printf '%s\n' "$output"
   grep -q "$pattern" <<<"$output" || fail "expected output was absent: $pattern"
 }
@@ -181,7 +181,7 @@ dashboard() {
 
 record_start() {
   ACTIVE_RECORDING=$1
-  expect_output '"active":true' headless --session qa record start --provider browser --fps 5 --output "$ACTIVE_RECORDING"
+  expect_output '"active":true' headless --session qa record start --fps 5 --output "$ACTIVE_RECORDING"
 }
 
 record_stop() {
@@ -342,7 +342,7 @@ browser_recording_artifacts() {
   dashboard
   record_start 09-recording-artifact-lifecycle.mp4
   expect_output '"active":true' headless --session qa record status
-  expect_failure 'already active' headless --session qa record start --provider browser
+  expect_failure 'already active' headless --session qa record start
   qa_pause 2
   expect_output '"name":"lifecycle-viewport.png"' headless --session qa screenshot --output lifecycle-viewport.png
   headless --session qa scroll bottom

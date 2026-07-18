@@ -1,7 +1,7 @@
 import Foundation
 import CoreFoundation
 
-public let headlessProtocolVersion = "0.3"
+public let headlessProtocolVersion = "0.4"
 public let headlessMaximumMessageBytes = 1_048_576
 
 public enum JSONValue: Codable, Equatable, Sendable {
@@ -262,11 +262,7 @@ public struct CommandRequest: Codable, Equatable, Sendable {
                 try validateArtifactName(output, expectedExtension: "png")
             }
         case .recordStart:
-            try allow(["provider", "output", "fps"])
-            let provider = try string("provider", maximumBytes: 32) ?? "auto"
-            guard ["auto", "browser", "ffmpeg"].contains(provider) else {
-                throw ProtocolValidationError.invalidParameter("Unsupported recording provider: \(provider)")
-            }
+            try allow(["output", "fps"])
             if let output = try string("output", maximumBytes: 128) {
                 try validateArtifactName(output, expectedExtension: "mp4")
             }

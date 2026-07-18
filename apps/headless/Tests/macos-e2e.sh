@@ -109,7 +109,9 @@ echo "$SUSPICIOUS_RESULT" | grep -q 'UNSAFE_RESOURCE_TYPE'
 "$CLI" --session qa visual compare viewport.png viewport.png --output visual-diff.png | grep -q '"name":"visual-diff.png"'
 test -s "$HEADLESS_ARTIFACT_DIR/visual-diff.png"
 "$CLI" --session qa performance get | grep -q '"webVitals"'
-"$CLI" --session qa animations list | grep -q '"animations"'
+ANIMATIONS="$("$CLI" --session qa animations list)"
+echo "$ANIMATIONS" | grep -q '"animations"'
+echo "$ANIMATIONS" | grep -q '"iterations":null'
 if NETWORK_SIMULATION="$($CLI --session qa network emulate --latency 25)"; then
   echo "WebKit network emulation was unexpectedly exposed" >&2
   exit 1

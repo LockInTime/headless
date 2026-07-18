@@ -278,14 +278,10 @@ public struct CLIParser {
         var args = Array(arguments.dropFirst())
         switch subcommand {
         case "start":
-            let provider = try removeOption("--provider", from: &args) ?? "auto"
             let output = try removeOption("--output", from: &args)
             let fpsText = try removeOption("--fps", from: &args)
             try requireEmpty(args)
-            guard ["auto", "browser", "ffmpeg"].contains(provider) else {
-                throw CLIParseError.invalidOption(provider)
-            }
-            var parameters: [String: JSONValue] = ["provider": .string(provider)]
+            var parameters: [String: JSONValue] = [:]
             if let output {
                 try validateArtifactName(output, expectedExtension: "mp4")
                 parameters["output"] = .string(output)
@@ -529,7 +525,7 @@ Commands:
   capture-info
   screenshot [REF | --role ROLE --name NAME | --full-page] [--output FILE.png]
   artifacts list
-  record start [--provider auto|browser|ffmpeg] [--fps N] [--output FILE.mp4]
+  record start [--fps N] [--output FILE.mp4]
   record status | record stop [--output FILE.mp4]
   qa report | qa clear
   console list [--level LEVEL] [--limit N]

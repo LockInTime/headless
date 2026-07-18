@@ -131,10 +131,11 @@ if (!globalThis.__headlessAgent) {
         elements = elements.filter(element => ['link','button','textbox','checkbox','radio','combobox','slider'].includes(role(element)) || element.tabIndex >= 0);
       }
       const limited = elements.slice(0, 250).map(describe);
+      const root = document.documentElement;
       const result = {
         url: String(location.href).slice(0, 8192), title: String(document.title).slice(0, 512),
         viewport: {width: innerWidth, height: innerHeight, scrollX, scrollY,
-          contentWidth: document.documentElement.scrollWidth, contentHeight: document.documentElement.scrollHeight},
+          contentWidth: root ? root.scrollWidth : 0, contentHeight: root ? root.scrollHeight : 0},
         elements: limited, truncated: elements.length > limited.length
       };
       if (includeText) result.text = normalize(document.body?.innerText).slice(0, 30000);
@@ -268,13 +269,20 @@ if (!globalThis.__headlessAgent) {
       // settling. Finite transitions still block until they finish.
       return Number.isFinite(timing?.endTime);
     }).length;
-    const state = () => ({
-      url: String(location.href).slice(0, 8192), title: String(document.title).slice(0, 512), readyState: document.readyState,
-      text: normalize(document.body?.innerText).slice(0, 30000),
-      runningAnimations: blockingAnimationCount(),
-      mutationQuietMs: Math.round(performance.now() - lastMutation),
-      scrollY, contentHeight: document.documentElement.scrollHeight
-    });
+    const state = () => {
+      const root = document.documentElement;
+      return {
+        url: String(location.href).slice(0, 8192), title: String(document.title).slice(0, 512),
+        // A page can be between documents immediately after navigation. Report
+        // it as loading so the host retries instead of dereferencing a missing
+        // root element and turning a normal navigation race into a failure.
+        readyState: root ? document.readyState : 'loading',
+        text: normalize(document.body?.innerText).slice(0, 30000),
+        runningAnimations: blockingAnimationCount(),
+        mutationQuietMs: Math.round(performance.now() - lastMutation),
+        scrollY, contentHeight: root ? root.scrollHeight : 0
+      };
+    };
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const tour = async args => {
       const pace = Math.min(5000, Math.max(100, Number(args.pace || 800)));
@@ -321,18 +329,20 @@ if (!globalThis.__headlessAgent) {
       };
     };
     const animations = () => {
+      const finiteNumber = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
       const all = document.getAnimations().slice(0, 100).map(animation => {
         const effect = animation.effect;
         const timing = effect?.getComputedTiming?.() || {};
         const target = effect?.target;
         return {
           target: target instanceof Element ? {ref: refFor(target), role: role(target), name: name(target)} : null,
-          playState: animation.playState, currentTime: typeof animation.currentTime === 'number' ? Math.round(animation.currentTime) : null,
-          playbackRate: animation.playbackRate,
-          durationMs: typeof timing.duration === 'number' ? timing.duration : null,
-          delayMs: typeof timing.delay === 'number' ? timing.delay : null,
-          progress: typeof timing.progress === 'number' ? Number(timing.progress.toFixed(4)) : null,
-          iterations: typeof timing.iterations === 'number' ? timing.iterations : null
+          playState: animation.playState,
+          currentTime: finiteNumber(animation.currentTime) === null ? null : Math.round(animation.currentTime),
+          playbackRate: finiteNumber(animation.playbackRate),
+          durationMs: finiteNumber(timing.duration),
+          delayMs: finiteNumber(timing.delay),
+          progress: finiteNumber(timing.progress) === null ? null : Number(timing.progress.toFixed(4)),
+          iterations: finiteNumber(timing.iterations)
         };
       });
       return {count: document.getAnimations().length, animations: all, truncated: document.getAnimations().length > all.length};
