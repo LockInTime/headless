@@ -9,7 +9,6 @@ enum CDPError: Error, CustomStringConvertible {
     case invalidResponse(String)
     case commandFailed(String)
     case timedOut
-    case chromiumNotFound
     case rootNotSupported
 
     var description: String {
@@ -17,7 +16,6 @@ enum CDPError: Error, CustomStringConvertible {
         case .invalidResponse(let value): return "Invalid Chromium response: \(value)"
         case .commandFailed(let value): return "Chromium command failed: \(value)"
         case .timedOut: return "Chromium operation timed out"
-        case .chromiumNotFound: return "Chromium was not found. Install the Chromeless Linux runtime package."
         case .rootNotSupported: return "Chromeless refuses to disable Chromium's sandbox. Run it as a non-root user."
         }
     }

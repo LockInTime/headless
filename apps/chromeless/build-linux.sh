@@ -31,4 +31,6 @@ ARCHIVE="build/chromeless-linux-$PLATFORM_LABEL.tar.gz"
 tar -czf "$ARCHIVE" -C build/linux chromeless chromeless-host chromeless-mcp install-linux.sh P1.md P2.md
 echo "Linux binaries: $PWD/build/linux"
 echo "Linux package: $PWD/$ARCHIVE"
-echo "Install Chromium from your Linux distribution, then put the CLI, host, and MCP binaries on PATH."
+echo "The Docker image includes Debian Chromium at /usr/lib/chromium/chromium."
+echo "The portable binaries require a native, non-Snap Chromium runtime; Ubuntu Snap Chromium is not supported."
+echo "Run chromeless runtime after installation to verify the selected executable."

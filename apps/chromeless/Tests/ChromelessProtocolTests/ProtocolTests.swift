@@ -239,6 +239,79 @@ struct ProtocolTests {
         }
     }
 
+    static func chromiumRuntimeSelection() throws {
+        let runtimeInvocation = try CLIParser().parse(["runtime"])
+        try expect(runtimeInvocation.local == .runtime, "runtime diagnostics command should parse")
+
+        let root = "/tmp/chromeless-runtime-test-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let bundled = root + "/lib/chromeless/chromium/chromium"
+        let system = root + "/system/chromium"
+        let overrideLink = root + "/override-chromium"
+        let snapWrapper = root + "/chromium-browser"
+        try FileManager.default.createDirectory(
+            atPath: (bundled as NSString).deletingLastPathComponent,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            atPath: (system as NSString).deletingLastPathComponent,
+            withIntermediateDirectories: true
+        )
+        try Data("bundled".utf8).write(to: URL(fileURLWithPath: bundled))
+        try Data("system".utf8).write(to: URL(fileURLWithPath: system))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bundled)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: system)
+        try FileManager.default.createSymbolicLink(atPath: overrideLink, withDestinationPath: system)
+        try Data("#!/bin/sh\nexec /snap/bin/chromium \"$@\"\n".utf8)
+            .write(to: URL(fileURLWithPath: snapWrapper))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: snapWrapper)
+
+        let bundledSelection = try ChromiumRuntimeResolver(
+            environment: [:], hostExecutablePath: root + "/bin/chromeless-host",
+            systemCandidates: [system]
+        ).resolve()
+        try expect(bundledSelection.source == .bundled, "bundled Chromium should be preferred")
+        try expect(bundledSelection.executableURL.path == bundled, "bundled Chromium path should be selected")
+
+        let overrideSelection = try ChromiumRuntimeResolver(
+            environment: ["CHROMELESS_CHROMIUM_EXECUTABLE": overrideLink],
+            hostExecutablePath: root + "/bin/chromeless-host", systemCandidates: [bundled]
+        ).resolve()
+        try expect(overrideSelection.source == .override, "a valid explicit override should be authoritative")
+        try expect(overrideSelection.executableURL.path == system, "override symlinks should resolve to a regular executable")
+
+        try expectThrows("a missing override must not fall through to a supported default") {
+            _ = try ChromiumRuntimeResolver(
+                environment: ["CHROMELESS_CHROMIUM_EXECUTABLE": root + "/missing"],
+                hostExecutablePath: root + "/bin/chromeless-host", systemCandidates: [system]
+            ).resolve()
+        }
+        try expectThrows("relative Chromium overrides should be rejected") {
+            _ = try ChromiumRuntimeResolver(
+                environment: ["CHROMELESS_CHROMIUM_EXECUTABLE": "relative/chromium"],
+                hostExecutablePath: root + "/bin/chromeless-host", systemCandidates: [system]
+            ).resolve()
+        }
+        try expectThrows("Snap Chromium overrides should be rejected before launch") {
+            _ = try ChromiumRuntimeResolver(
+                environment: ["CHROMELESS_CHROMIUM_EXECUTABLE": "/snap/bin/chromium"],
+                hostExecutablePath: root + "/bin/chromeless-host", systemCandidates: [system]
+            ).resolve()
+        }
+        try expectThrows("scripts that delegate to Snap Chromium should be rejected") {
+            _ = try ChromiumRuntimeResolver(
+                environment: ["CHROMELESS_CHROMIUM_EXECUTABLE": snapWrapper],
+                hostExecutablePath: root + "/bin/chromeless-host", systemCandidates: [system]
+            ).resolve()
+        }
+
+        let nativeAfterSnap = try ChromiumRuntimeResolver(
+            environment: [:], hostExecutablePath: root + "/unbundled/bin/chromeless-host",
+            systemCandidates: ["/snap/bin/chromium", system]
+        ).resolve()
+        try expect(nativeAfterSnap.executableURL.path == system, "automatic selection should skip Snap for a native runtime")
+    }
+
     static func artifactStoreRoundTrip() throws {
         let root = "/tmp/chromeless-artifact-test-\(UUID().uuidString)"
         defer { try? FileManager.default.removeItem(atPath: root) }
@@ -436,6 +509,7 @@ struct ProtocolTests {
             ("CLI timeout bound", cliRejectsUnboundedTimeout),
             ("CLI P1 artifacts", cliP1Artifacts),
             ("CLI P2 commands and boundaries", cliP2CommandsAndBoundaries),
+            ("Chromium runtime selection", chromiumRuntimeSelection),
             ("artifact store round-trip", artifactStoreRoundTrip),
             ("diagnostic summary", diagnosticSummary),
             ("diagnostic bounds and URL redaction", diagnosticsBoundAndRedacted),

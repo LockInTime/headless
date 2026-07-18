@@ -25,6 +25,11 @@ private struct HostLauncher {
 
     func start() throws -> CommandResponse {
         if let response = ping(), response.ok { return response }
+        #if os(Linux)
+        // Report an unsupported browser directly to the operator instead of
+        // hiding the host's startup error behind its detached stderr.
+        _ = try ChromiumRuntimeResolver().resolve()
+        #endif
         let executable = try resolveHostExecutable()
         let process = Process()
         process.executableURL = executable
@@ -106,6 +111,15 @@ do {
             print(agentHelp)
         case .capabilities:
             printJSON(capabilitiesDocument)
+        case .runtime:
+            #if os(Linux)
+            printJSON(try ChromiumRuntimeResolver().resolve().diagnostic)
+            #else
+            printJSON(.object([
+                "engine": .string("webkit"), "source": .string("system-framework"),
+                "supported": .bool(true), "transport": .string("native-webkit"),
+            ]))
+            #endif
         case .start:
             try printResponse(try HostLauncher().start())
         }
@@ -138,6 +152,13 @@ do {
     exit(69)
 } catch let error as HostLaunchError {
     let response = CommandResponse.failure(id: "unknown", code: "HOST_START_FAILED", message: error.description)
+    try? printResponse(response)
+    exit(69)
+} catch let error as ChromiumRuntimeError {
+    let response = CommandResponse.failure(
+        id: "unknown", code: "UNSUPPORTED_BROWSER_RUNTIME", message: error.description,
+        suggestion: "Run `chromeless runtime` after installing a supported Chromium runtime."
+    )
     try? printResponse(response)
     exit(69)
 } catch {
