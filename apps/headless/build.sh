@@ -13,6 +13,7 @@ done
 APP="Headless.app"
 ARCH="$(uname -m)"
 ICON="build/Headless.icns"
+VERSION="${HEADLESS_VERSION:-1.0.0}"
 mkdir -p build/module-cache build/swiftpm-module-cache build/bin
 
 # Select an SDK the installed Swift compiler can read. Apple occasionally ships
@@ -63,7 +64,7 @@ cp "$BIN_PATH/headless-mcp" "$APP/Contents/Resources/bin/headless-mcp"
 cp "$BIN_PATH/headless-mcp" build/bin/headless-mcp
 
 cp "$ICON" "$APP/Contents/Resources/Headless.icns"
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -73,8 +74,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>Headless</string>
   <key>CFBundleIdentifier</key><string>com.headless.app</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+  <key>CFBundleVersion</key><string>${VERSION}</string>
   <key>CFBundleIconFile</key><string>Headless</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
