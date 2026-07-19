@@ -22,6 +22,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: brew install ffmpeg
       - name: Build
         env:
           HEADLESS_VERSION: ${{ needs.version.outputs.version }}
@@ -29,7 +31,7 @@ jobs:
       - name: Unit tests
         run: ./apps/headless/test.sh
       - name: E2E
-        run: ./apps/headless/Tests/macos-e2e.sh
+        run: zsh ./apps/headless/Tests/macos-e2e.sh
       - name: Package
         env:
           VERSION: ${{ needs.version.outputs.version }}

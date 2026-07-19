@@ -12,11 +12,27 @@ HOST="$PWD/Headless.app/Contents/MacOS/Headless"
 
 PORT=$((43000 + RANDOM % 1000))
 RUNTIME="/tmp/headless-$(id -u)"
+mkdir -p "$RUNTIME"
+chmod 700 "$RUNTIME"
 export HEADLESS_SOCKET="$RUNTIME/macos-e2e-$$.sock"
 export HEADLESS_ARTIFACT_DIR="$RUNTIME/artifacts-macos-e2e-$$"
 export HEADLESS_HOST_EXECUTABLE="$HOST"
 export HEADLESS_FIXTURE_PORT="$PORT"
 LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-e2e.XXXXXX")"
+HOST_LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-host.XXXXXX")"
+export HEADLESS_HOST_LOG="$HOST_LOG"
+STEP="boot"
+
+fail() {
+  trap - ERR
+  print -u2 "macOS E2E failed during: $STEP"
+  print -u2 "---- fixture log ----"
+  cat "$LOG" >&2 || true
+  print -u2 "---- host log ----"
+  cat "$HOST_LOG" >&2 || true
+  exit 1
+}
+trap 'fail' ERR
 
 node Tests/fixture-server.mjs >"$LOG" 2>&1 &
 FIXTURE_PID=$!
@@ -25,27 +41,40 @@ cleanup() {
   "$CLI" stop >/dev/null 2>&1 || true
   kill "$FIXTURE_PID" >/dev/null 2>&1 || true
   rm -rf "$HEADLESS_ARTIFACT_DIR"
-  rm -f "$LOG"
+  rm -f "$LOG" "$HOST_LOG"
 }
 trap cleanup EXIT INT TERM
 
+STEP="fixture-server"
 for _ in {1..100}; do
   curl -fsS "http://127.0.0.1:$PORT/designers/dashboard" >/dev/null 2>&1 && break
   sleep 0.05
 done
 curl -fsS "http://127.0.0.1:$PORT/designers/dashboard" >/dev/null
 
-START_RESULT="$("$CLI" start)"
-echo "$START_RESULT" | grep -q '"ready":true'
+STEP="start-host"
+START_RESULT="$("$CLI" start)" || {
+  print -u2 "headless start failed:"
+  print -u2 "$START_RESULT"
+  fail
+}
+echo "$START_RESULT" | grep -q '"ready":true' || {
+  print -u2 "host did not become ready: $START_RESULT"
+  fail
+}
+echo "▸ host ready"
+STEP="tcp-check"
 HOST_PID="$(echo "$START_RESULT" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$HOST_PID"
 if lsof -nP -a -p "$HOST_PID" -iTCP -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; then
   echo "Headless host opened an unexpected TCP listener" >&2
-  exit 1
+  fail
 fi
+STEP="session-visit"
 "$CLI" session create qa | grep -q '"session":"qa"'
 "$CLI" session list | grep -q '"qa"'
 "$CLI" --session qa visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'
+STEP="inspect-diagnostics"
 SNAPSHOT="$("$CLI" --session qa inspect --interactive --text)"
 echo "$SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$SNAPSHOT" | grep -q '"name":"Reviewer"'
@@ -69,9 +98,10 @@ echo "$STORAGE" | grep -q 'qa-diagnostic-key'
 echo "$STORAGE" | grep -q 'qa-session-key'
 if SENSITIVE_STORAGE="$("$CLI" --session qa storage list --values)"; then
   echo "sensitive storage values were available without opt-in" >&2
-  exit 1
+  fail
 fi
 echo "$SENSITIVE_STORAGE" | grep -q 'SENSITIVE_DIAGNOSTICS_DISABLED'
+STEP="qa-report"
 QA_REPORT="$("$CLI" --session qa qa report)"
 echo "$QA_REPORT" | grep -q '"kind":"console"'
 echo "$QA_REPORT" | grep -q '"status":404'
@@ -79,30 +109,32 @@ echo "$QA_REPORT" | grep -q '"kind":"framework-error"'
 echo "$QA_REPORT" | grep -q '"kind":"local-not-found"'
 "$CLI" --session qa qa clear | grep -q '"cleared"'
 "$CLI" --session qa qa report | grep -q '"events":0'
+STEP="safe-input-navigation"
 "$CLI" --session qa fill @e1 'Ada Lovelace' | grep -q '"valueLength":12'
 "$CLI" --session qa press Escape | grep -q '"pressed":"Escape"'
 if EXTERNAL_RESULT="$("$CLI" --session qa click --role link --name 'External application')"; then
   echo "external application link was not blocked" >&2
-  exit 1
+  fail
 fi
 echo "$EXTERNAL_RESULT" | grep -q 'UNSAFE_NAVIGATION'
 if NON_WEB_RESULT="$("$CLI" --session qa click --role link --name 'Non-web browser URL')"; then
   echo "non-HTTP browser URL was not blocked" >&2
-  exit 1
+  fail
 fi
 echo "$NON_WEB_RESULT" | grep -q 'UNSAFE_NAVIGATION'
 if CREDENTIAL_RESULT="$("$CLI" --session qa click --role link --name 'Credential-bearing URL')"; then
   echo "credential-bearing browser URL was not blocked" >&2
-  exit 1
+  fail
 fi
 echo "$CREDENTIAL_RESULT" | grep -q 'UNSAFE_NAVIGATION'
 if SUSPICIOUS_RESULT="$("$CLI" --session qa click --role link --name 'Suspicious installer')"; then
   echo "suspicious installer link was not blocked" >&2
-  exit 1
+  fail
 fi
 echo "$SUSPICIOUS_RESULT" | grep -q 'UNSAFE_RESOURCE_TYPE'
 "$CLI" --session qa click --role button --name 'Scripted non-web navigation' | grep -q '"clicked"'
 "$CLI" --session qa wait --url /designers/dashboard --settled --timeout 10000 | grep -q 'Designers Dashboard'
+STEP="artifacts-visual"
 "$CLI" --session qa screenshot --output viewport.png | grep -q '"name":"viewport.png"'
 "$CLI" --session qa screenshot --full-page --output full-page.png | grep -q '"name":"full-page.png"'
 "$CLI" --session qa screenshot --role button --name Continue --output continue.png | grep -q '"name":"continue.png"'
@@ -112,11 +144,13 @@ test -s "$HEADLESS_ARTIFACT_DIR/visual-diff.png"
 ANIMATIONS="$("$CLI" --session qa animations list)"
 echo "$ANIMATIONS" | grep -q '"animations"'
 echo "$ANIMATIONS" | grep -q '"iterations":null'
-if NETWORK_SIMULATION="$($CLI --session qa network emulate --latency 25)"; then
+STEP="network-emulate-unsupported"
+if NETWORK_SIMULATION="$("$CLI" --session qa network emulate --latency 25)"; then
   echo "WebKit network emulation was unexpectedly exposed" >&2
-  exit 1
+  fail
 fi
 echo "$NETWORK_SIMULATION" | grep -q 'UNSUPPORTED_CAPABILITY'
+STEP="flows-reports"
 "$CLI" --session qa flow start | grep -q '"recording":true'
 "$CLI" --session qa visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'
 "$CLI" --session qa click --role button --name Continue | grep -q '"clicked"'
@@ -133,17 +167,18 @@ FULL_HEIGHT="$(sips -g pixelHeight "$HEADLESS_ARTIFACT_DIR/full-page.png" | awk 
 test "$FULL_HEIGHT" -gt "$VIEWPORT_HEIGHT"
 if "$CLI" --session qa screenshot --output viewport.png >/dev/null 2>&1; then
   echo "artifact overwrite was not rejected" >&2
-  exit 1
+  fail
 fi
 if "$CLI" screenshot --output ../escape.png >/dev/null 2>&1; then
   echo "artifact path traversal was not rejected" >&2
-  exit 1
+  fail
 fi
+STEP="recording"
 "$CLI" --session qa record start --fps 5 | grep -q '"active":true'
 "$CLI" --session qa record status | grep -q '"active":true'
 if "$CLI" --session qa record start >/dev/null 2>&1; then
   echo "a second recording was not rejected" >&2
-  exit 1
+  fail
 fi
 "$CLI" --session qa tour --full-page --pace 5000 | grep -q '"durationMs"'
 "$CLI" --session qa click --role button --name Continue | grep -q '"clicked"'
@@ -157,6 +192,7 @@ test "$(stat -f %Lp "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4")" = "600"
 "$CLI" artifacts list | grep -q '"name":"dashboard-flow.mp4"'
 "$CLI" --session qa back | grep -q 'Designers Dashboard'
 "$CLI" --session qa reload | grep -q 'Designers Dashboard'
+STEP="capture-hostile"
 CAPTURE="$("$CLI" --session qa capture-info)"
 echo "$CAPTURE" | grep -q '"engine":"webkit"'
 echo "$CAPTURE" | grep -q '"windowId"'

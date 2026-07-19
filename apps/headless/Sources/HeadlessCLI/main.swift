@@ -38,8 +38,16 @@ private struct HostLauncher {
         environment["HEADLESS_AGENT_HOST"] = "1"
         process.environment = environment
         process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        if let hostLog = environment["HEADLESS_HOST_LOG"], hostLog.hasPrefix("/") {
+            let logURL = URL(fileURLWithPath: hostLog)
+            FileManager.default.createFile(atPath: logURL.path, contents: nil)
+            let handle = try FileHandle(forWritingTo: logURL)
+            process.standardOutput = handle
+            process.standardError = handle
+        } else {
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+        }
         try process.run()
 
         let deadline = Date().addingTimeInterval(8)
