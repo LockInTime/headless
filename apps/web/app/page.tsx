@@ -238,13 +238,18 @@ export default function Home() {
               </a>
             </div>
           </div>
+          <p className="closing-credit">
+            Headless began as a fork of{" "}
+            <a href="https://github.com/antiwork/chromeless">
+              antiwork/chromeless <LinkGlyph kind="external" />
+            </a>
+            . With thanks to Sahil Lavingia for the original foundation.
+          </p>
         </div>
       </section>
 
       <footer className="wordmark-footer">
         <div className="container footer-meta">
-          <span>HEADLESS / AI BROWSER CONTROL</span>
-          <span>BUILT FOR AGENTS, NOT POINTERS</span>
           <a className="text-link" href="/docs">DOCUMENTATION <LinkGlyph kind="external" /></a>
         </div>
         <div className="footer-wordmark" aria-label="headless">headless</div>

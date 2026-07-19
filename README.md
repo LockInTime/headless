@@ -3,6 +3,10 @@
 Persistent browser control for agents, without Playwright scripts or screen
 coordinates.
 
+Headless began as a fork of
+[antiwork/chromeless](https://github.com/antiwork/chromeless). With thanks to
+Sahil Lavingia for the original foundation.
+
 Supported platforms: macOS, Linux (including Ubuntu and the common Linux test
 distros used in CI/Docker). Windows is not supported.
 
