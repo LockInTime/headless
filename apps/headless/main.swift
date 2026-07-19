@@ -216,10 +216,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     private var toastHide: DispatchWorkItem?
     private var lastProgress: CGFloat = 0
     private var onStartPage = false
+    private var pendingRestoredStartupURL: URL?
     private var agentControlEnabled = false
     var onClose: (() -> Void)?
 
-    init(url: URL?, size: NSSize?, snap: SnapJob?, isPrimary: Bool) {
+    init(
+        url: URL?, restoredStartupURL: URL? = nil, size: NSSize?, snap: SnapJob?, isPrimary: Bool
+    ) {
         let diagnosticsBridge = WebKitQABridge()
         qaBridge = diagnosticsBridge
         let conf = WKWebViewConfiguration()
@@ -300,7 +303,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
 
         installMouseMonitor()
 
-        if let url { navigate(to: url) } else { loadStartPage() }
+        if let url {
+            pendingRestoredStartupURL = restoredStartupURL
+            load(url)
+        } else {
+            loadStartPage()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -434,6 +442,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     // MARK: Navigation
 
     func navigate(to url: URL) {
+        pendingRestoredStartupURL = nil
+        load(url)
+    }
+
+    private func load(_ url: URL) {
         onStartPage = false
         if url.isFileURL {
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
@@ -458,6 +471,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     }
 
     func loadStartPage() {
+        pendingRestoredStartupURL = nil
         onStartPage = true
         webView.loadHTMLString(startPageHTML, baseURL: nil)
     }
@@ -638,7 +652,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         let u = webView.url?.absoluteString
-        if u != nil && u != "about:blank" { onStartPage = false }
+        if u != nil && u != "about:blank" {
+            pendingRestoredStartupURL = nil
+            onStartPage = false
+        }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -667,6 +684,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
         if e.code == NSURLErrorCancelled || e.code == 102 { return }
         qaBridge.store.append(kind: "request-failed", message: e.localizedDescription,
                               url: webView.url?.absoluteString)
+        if let restoredURL = pendingRestoredStartupURL {
+            pendingRestoredStartupURL = nil
+            if UserDefaults.standard.string(forKey: "LastURL") == restoredURL.absoluteString {
+                UserDefaults.standard.removeObject(forKey: "LastURL")
+            }
+            loadStartPage()
+            showToast("Previous page unavailable")
+            return
+        }
         if launchOptions.snap != nil {
             fputs("headless: load failed: \(e.localizedDescription)\n", stderr)
             exit(1)
@@ -793,14 +819,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         buildMenu()
 
-        let url: URL? = {
-            if isAgentHost { return nil }
-            if let u = launchOptions.url { return u }
-            if launchOptions.snap != nil { return nil }
-            if let s = UserDefaults.standard.string(forKey: "LastURL") { return URL(string: s) }
-            return nil
+        let restoredStartupURL: URL? = {
+            guard !isAgentHost, launchOptions.url == nil, launchOptions.snap == nil,
+                  let value = UserDefaults.standard.string(forKey: "LastURL") else { return nil }
+            return URL(string: value)
         }()
-        openWindow(url: url, size: launchOptions.size, snap: launchOptions.snap, isPrimary: true, sessionName: "default")
+        let url = isAgentHost ? nil : launchOptions.url ?? restoredStartupURL
+        openWindow(
+            url: url,
+            restoredStartupURL: restoredStartupURL,
+            size: launchOptions.size,
+            snap: launchOptions.snap,
+            isPrimary: true,
+            sessionName: "default"
+        )
         do {
             try agentServer.start { [weak self] request in
                 self?.handleAgentRequest(request) ?? CommandResponse.failure(
@@ -823,12 +855,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @discardableResult
     func openWindow(
         url: URL?,
+        restoredStartupURL: URL? = nil,
         size: NSSize? = nil,
         snap: SnapJob? = nil,
         isPrimary: Bool = false,
         sessionName: String? = nil
     ) -> BrowserWindowController {
-        let controller = BrowserWindowController(url: url, size: size, snap: snap, isPrimary: isPrimary)
+        let controller = BrowserWindowController(
+            url: url,
+            restoredStartupURL: restoredStartupURL,
+            size: size,
+            snap: snap,
+            isPrimary: isPrimary
+        )
         controller.onClose = { [weak self, weak controller] in
             guard let self, let controller else { return }
             self.controllers.removeAll { $0 === controller }

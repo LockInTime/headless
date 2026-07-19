@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "${0:a:h}/.."
 
-for tool in node curl lsof; do
+for tool in node curl defaults lsof; do
   command -v "$tool" >/dev/null 2>&1 || { echo "macOS E2E tests require $tool" >&2; exit 69; }
 done
 
@@ -20,16 +20,34 @@ export HEADLESS_HOST_EXECUTABLE="$HOST"
 export HEADLESS_FIXTURE_PORT="$PORT"
 LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-e2e.XXXXXX")"
 HOST_LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-host.XXXXXX")"
+RESTORE_LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-restore.XXXXXX")"
 export HEADLESS_HOST_LOG="$HOST_LOG"
 STEP="boot"
+RESTORE_PID=""
+DEFAULTS_DOMAIN="com.headless.app"
+DEFAULTS_HAD_LAST_URL=0
+DEFAULTS_LAST_URL=""
+if DEFAULTS_LAST_URL="$(defaults read "$DEFAULTS_DOMAIN" LastURL 2>/dev/null)"; then
+  DEFAULTS_HAD_LAST_URL=1
+fi
+
+restore_last_url() {
+  if [[ "$DEFAULTS_HAD_LAST_URL" == 1 ]]; then
+    defaults write "$DEFAULTS_DOMAIN" LastURL -string "$DEFAULTS_LAST_URL"
+  else
+    defaults delete "$DEFAULTS_DOMAIN" LastURL >/dev/null 2>&1 || true
+  fi
+}
 
 fail() {
   trap - ERR
-  print -u2 "macOS E2E failed during: $STEP"
-  print -u2 "---- fixture log ----"
+  print -r -u2 -- "macOS E2E failed during: $STEP"
+  print -r -u2 -- "---- fixture log ----"
   cat "$LOG" >&2 || true
-  print -u2 "---- host log ----"
+  print -r -u2 -- "---- host log ----"
   cat "$HOST_LOG" >&2 || true
+  print -r -u2 -- "---- restore log ----"
+  cat "$RESTORE_LOG" >&2 || true
   exit 1
 }
 trap 'fail' ERR
@@ -39,9 +57,13 @@ FIXTURE_PID=$!
 
 cleanup() {
   "$CLI" stop >/dev/null 2>&1 || true
+  if [[ -n "$RESTORE_PID" ]]; then
+    kill "$RESTORE_PID" >/dev/null 2>&1 || true
+  fi
   kill "$FIXTURE_PID" >/dev/null 2>&1 || true
+  restore_last_url
   rm -rf "$HEADLESS_ARTIFACT_DIR"
-  rm -f "$LOG" "$HOST_LOG"
+  rm -f "$LOG" "$HOST_LOG" "$RESTORE_LOG"
 }
 trap cleanup EXIT INT TERM
 
@@ -52,14 +74,59 @@ for _ in {1..100}; do
 done
 curl -fsS "http://127.0.0.1:$PORT/designers/dashboard" >/dev/null
 
+STEP="restored-url-fallback"
+UNAVAILABLE_PORT=$((PORT + 2000))
+if lsof -nP -iTCP:"$UNAVAILABLE_PORT" -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; then
+  echo "macOS E2E restore port is unexpectedly in use: $UNAVAILABLE_PORT" >&2
+  fail
+fi
+RESTORED_URL="http://127.0.0.1:$UNAVAILABLE_PORT/restored"
+defaults write "$DEFAULTS_DOMAIN" LastURL -string "$RESTORED_URL"
+HEADLESS_AGENT_HOST=0 "$HOST" >"$RESTORE_LOG" 2>&1 &
+RESTORE_PID=$!
+for _ in {1..100}; do
+  "$CLI" status >/dev/null 2>&1 && break
+  sleep 0.05
+done
+"$CLI" status | grep -q '"ready":true'
+RESTORED_URL_CLEARED=0
+for _ in {1..300}; do
+  if ! defaults read "$DEFAULTS_DOMAIN" LastURL >/dev/null 2>&1; then
+    RESTORED_URL_CLEARED=1
+    break
+  fi
+  sleep 0.05
+done
+if [[ "$RESTORED_URL_CLEARED" != 1 ]]; then
+  echo "failed restored URL was not cleared" >&2
+  "$CLI" qa report >&2 || true
+  fail
+fi
+sleep 1
+RESTORED_SNAPSHOT="$("$CLI" inspect --text)"
+echo "$RESTORED_SNAPSHOT" | grep -q 'search or enter a url'
+"$CLI" stop >/dev/null
+for _ in {1..100}; do
+  ! kill -0 "$RESTORE_PID" >/dev/null 2>&1 && break
+  sleep 0.05
+done
+if kill -0 "$RESTORE_PID" >/dev/null 2>&1; then
+  echo "manual restore-test host did not stop" >&2
+  fail
+fi
+wait "$RESTORE_PID" || true
+RESTORE_PID=""
+restore_last_url
+echo "▸ unavailable restored URL fell back to the start page"
+
 STEP="start-host"
 START_RESULT="$("$CLI" start)" || {
-  print -u2 "headless start failed:"
-  print -u2 "$START_RESULT"
+  print -r -u2 -- "headless start failed:"
+  print -r -u2 -- "$START_RESULT"
   fail
 }
 echo "$START_RESULT" | grep -q '"ready":true' || {
-  print -u2 "host did not become ready: $START_RESULT"
+  print -r -u2 -- "host did not become ready: $START_RESULT"
   fail
 }
 echo "▸ host ready"
