@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import github from "@/public/scan-github.png";
 
 /** Viewport for the capture below — must match scan-github.png pixel size. */
-const VIEWPORT = { width: 1152, height: 669 } as const;
+const VIEWPORT = { width: 1152, height: 610 } as const;
 
 type PixelBox = { x: number; y: number; width: number; height: number };
 
@@ -26,8 +26,8 @@ const steps: InspectStep[] = [
     ref: "@e8",
     role: "link",
     name: "Pricing",
-    bounds: { x: 647, y: 16, width: 68, height: 40 },
-    tag: { top: 10.5, left: 48.5 },
+    bounds: { x: 395, y: 13, width: 40, height: 22 },
+    tag: { top: 9.5, left: 27 },
     command: "headless --session qa inspect --interactive --text",
     result: "64 elements · refs @e1–@e64",
   },
@@ -35,8 +35,8 @@ const steps: InspectStep[] = [
     ref: "@e12",
     role: "textbox",
     name: "Enter your email",
-    bounds: { x: 243, y: 416, width: 260, height: 41 },
-    tag: { top: 53.5, left: 3.5 },
+    bounds: { x: 382, y: 252, width: 152, height: 27 },
+    tag: { top: 49.5, left: 8 },
     command: 'headless --session qa fill --ref @e12 --text "you@company.com"',
     result: '✓ filled textbox "Enter your email"',
   },
@@ -44,8 +44,8 @@ const steps: InspectStep[] = [
     ref: "@e13",
     role: "button",
     name: "Sign up for GitHub",
-    bounds: { x: 508, y: 412, width: 185, height: 48 },
-    tag: { top: 71.5, left: 42 },
+    bounds: { x: 538, y: 251, width: 111, height: 30 },
+    tag: { top: 52, left: 43 },
     command: "headless --session qa click --ref @e13",
     result: '✓ clicked button "Sign up for GitHub"',
     action: true,
@@ -106,7 +106,7 @@ export function ScanFrame() {
           alt=""
           width={VIEWPORT.width}
           height={VIEWPORT.height}
-          sizes="(max-width: 980px) 100vw, 50vw"
+          sizes="(max-width: 980px) 100vw, 55vw"
           priority
           className="scan-canvas-img"
         />
