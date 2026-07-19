@@ -18,7 +18,7 @@ html[data-theme="light"] .hero-pixel-blast { mix-blend-mode: multiply; opacity: 
 .beam-vignette { position: absolute; inset: 0; background: radial-gradient(circle at 78% 30%, transparent 5%, rgba(var(--black-rgb),.15) 45%, rgba(var(--black-rgb),.94) 100%); }
 .nav { height: 86px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(var(--ink-rgb),.11); font-family: var(--font-mono), monospace; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
 .brand { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; text-transform: lowercase; letter-spacing: -.03em; color: var(--ink); }
-.brand-mark { display: block; flex: 0 0 auto; width: 25px; height: 25px; color: var(--ink); }
+.brand-mark { display: block; flex: 0 0 auto; width: 25px; height: 25px; background: currentColor; -webkit-mask: url("/headless-mark.svg") center / contain no-repeat; mask: url("/headless-mark.svg") center / contain no-repeat; }
 .nav-links { display: flex; align-items: center; gap: 28px; color: var(--muted); }.nav-links a:hover { color: var(--amber-ink); }
 .theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; transition: border-color .2s, color .2s; }
 .theme-toggle:hover { border-color: var(--amber-ink); color: var(--amber-ink); }

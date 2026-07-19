@@ -22,6 +22,10 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Headless — browser control for agents",
   description: "Persistent, secure browser control for AI agents. No screen coordinates. No browser scripts.",
+  icons: {
+    icon: [{ url: "/headless-mark.svg", type: "image/svg+xml" }],
+    shortcut: "/headless-mark.svg",
+  },
 };
 
 const setInitialTheme = `(function(){try{var s=localStorage.getItem("theme");var t=s==="light"||s==="dark"?s:(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();`;
