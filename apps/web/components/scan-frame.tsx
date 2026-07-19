@@ -1,64 +1,181 @@
-import Image from "next/image";
-import dashboard from "@/public/scan-dashboard.png";
+"use client";
 
-/**
- * Real coordinates from a real `headless inspect --interactive` run against
- * a live local page (viewport 1152×669) — not hand-drawn placeholders.
- * Percentages below are those pixel bounds divided by the viewport size.
- */
-type Tag = {
-  id: string;
+import Image from "next/image";
+import { useEffect, useMemo, useState } from "react";
+import github from "@/public/scan-github.png";
+
+/** Viewport for the capture below — must match scan-github.png pixel size. */
+const VIEWPORT = { width: 1152, height: 669 } as const;
+
+type PixelBox = { x: number; y: number; width: number; height: number };
+
+type InspectStep = {
+  ref: string;
   role: string;
   name: string;
-  box: { top: number; left: number; width: number; height: number };
-  label: { top?: number; bottom?: number; left?: number; right?: number; align: "left" | "right" };
-  delay: string;
-  safe?: boolean;
+  bounds: PixelBox;
+  tag: { top: number; left: number };
+  command: string;
+  result: string;
+  action?: boolean;
 };
 
-const tags: Tag[] = [
-  { id: "@e1", role: "link", name: "Designers", box: { top: 15.4, left: 1.4, width: 15.2, height: 5.1 }, label: { top: 22, left: 1.4, align: "left" }, delay: "0.75s" },
-  { id: "@e2", role: "textbox", name: "Search", box: { top: 4.3, left: 75.3, width: 21.7, height: 5.2 }, label: { top: 11.5, right: 2.8, align: "right" }, delay: "0.42s" },
-  { id: "@e3", role: "button", name: "Continue", box: { top: 91.9, left: 86.2, width: 9.2, height: 5.2 }, label: { bottom: 9, right: 4.6, align: "right" }, delay: "2.5s", safe: true },
+/** Pixel bounds from `headless inspect --interactive` on github.com (viewport screenshot). */
+const steps: InspectStep[] = [
+  {
+    ref: "@e8",
+    role: "link",
+    name: "Pricing",
+    bounds: { x: 647, y: 16, width: 68, height: 40 },
+    tag: { top: 10.5, left: 48.5 },
+    command: "headless --session qa inspect --interactive --text",
+    result: "64 elements · refs @e1–@e64",
+  },
+  {
+    ref: "@e12",
+    role: "textbox",
+    name: "Enter your email",
+    bounds: { x: 243, y: 416, width: 260, height: 41 },
+    tag: { top: 53.5, left: 3.5 },
+    command: 'headless --session qa fill --ref @e12 --text "you@company.com"',
+    result: '✓ filled textbox "Enter your email"',
+  },
+  {
+    ref: "@e13",
+    role: "button",
+    name: "Sign up for GitHub",
+    bounds: { x: 508, y: 412, width: 185, height: 48 },
+    tag: { top: 71.5, left: 42 },
+    command: "headless --session qa click --ref @e13",
+    result: '✓ clicked button "Sign up for GitHub"',
+    action: true,
+  },
 ];
 
-/** Signature hero graphic: a real page, actually inspected by Headless, with live @ref tags. */
+const STEP_MS = 3200;
+
+function toPercent(box: PixelBox) {
+  return {
+    top: (box.y / VIEWPORT.height) * 100,
+    left: (box.x / VIEWPORT.width) * 100,
+    width: (box.width / VIEWPORT.width) * 100,
+    height: (box.height / VIEWPORT.height) * 100,
+  };
+}
+
+/** Hero demo: viewport screenshot + inspect bounds from the same Headless session. */
 export function ScanFrame() {
+  const [active, setActive] = useState(0);
+  const [ready, setReady] = useState(false);
+
+  const resolvedSteps = useMemo(
+    () => steps.map((step) => ({ ...step, box: toPercent(step.bounds) })),
+    [],
+  );
+
+  useEffect(() => {
+    setReady(true);
+    const timer = window.setInterval(() => {
+      setActive((index) => (index + 1) % resolvedSteps.length);
+    }, STEP_MS);
+    return () => window.clearInterval(timer);
+  }, [resolvedSteps.length]);
+
+  const step = resolvedSteps[active];
+
   return (
-    <div className="scan-frame" role="img" aria-label="Headless inspecting a real local page: a sidebar link, a search field, and a Continue button each receive a live semantic reference tag from a real accessibility-tree query">
+    <div
+      className="scan-frame"
+      role="img"
+      aria-label="Headless inspecting github.com: semantic refs for a nav link, email field, and sign-up button from a live accessibility tree"
+    >
       <div className="scan-frame-head">
         <span className="scan-dot" />
         <span className="scan-dot" />
         <span className="scan-dot" />
-        <p>127.0.0.1/designers/dashboard</p>
-        <b>inspect --interactive</b>
+        <p>github.com</p>
+        <span className="scan-head-status">
+          <span className="scan-head-pulse" />
+          live inspect
+        </span>
       </div>
-      <div className="scan-canvas">
-        <Image src={dashboard} alt="" fill sizes="(max-width: 980px) 100vw, 50vw" priority className="scan-canvas-img" />
-        <div className="scan-line" aria-hidden="true" />
 
-        {tags.map((tag) => (
-          <div key={tag.id} className="scan-box" style={{ top: `${tag.box.top}%`, left: `${tag.box.left}%`, width: `${tag.box.width}%`, height: `${tag.box.height}%`, animationDelay: tag.delay, ...(tag.safe ? { borderColor: "var(--teal)" } : {}) }} />
-        ))}
+      <div className={`scan-canvas${ready ? " scan-canvas-ready" : ""}`}>
+        <Image
+          src={github}
+          alt=""
+          width={VIEWPORT.width}
+          height={VIEWPORT.height}
+          sizes="(max-width: 980px) 100vw, 50vw"
+          priority
+          className="scan-canvas-img"
+        />
 
-        {tags.map((tag) => (
+        <div className="scan-overlay" aria-hidden="true">
+          <div className="scan-grid" />
+          <div className="scan-vignette" />
+          <div className="scan-line" />
+
+          {resolvedSteps.map((item, index) => {
+            const isActive = index === active;
+            return (
+              <div
+                key={item.ref}
+                className={`scan-target${isActive ? " scan-target-active" : ""}${item.action ? " scan-target-action" : ""}`}
+                style={{
+                  top: `${item.box.top}%`,
+                  left: `${item.box.left}%`,
+                  width: `${item.box.width}%`,
+                  height: `${item.box.height}%`,
+                }}
+              >
+                <span className="scan-target-corner scan-target-corner-tl" />
+                <span className="scan-target-corner scan-target-corner-tr" />
+                <span className="scan-target-corner scan-target-corner-bl" />
+                <span className="scan-target-corner scan-target-corner-br" />
+              </div>
+            );
+          })}
+
+          {resolvedSteps.map((item, index) => {
+            const isActive = index === active;
+            return (
+              <div
+                key={`${item.ref}-tag`}
+                className={`scan-tag${isActive ? " scan-tag-active" : ""}${item.action ? " scan-tag-action" : ""}`}
+                style={{ top: `${item.tag.top}%`, left: `${item.tag.left}%` }}
+              >
+                <span className="scan-tag-ref">{item.ref}</span>
+                <span className="scan-tag-role">{item.role}</span>
+                <span className="scan-tag-name">&ldquo;{item.name}&rdquo;</span>
+              </div>
+            );
+          })}
+
           <div
-            key={`${tag.id}-label`}
-            className={`scan-tag scan-tag-${tag.label.align}${tag.safe ? " scan-tag-safe" : ""}`}
+            className="scan-cursor"
             style={{
-              top: tag.label.top !== undefined ? `${tag.label.top}%` : undefined,
-              bottom: tag.label.bottom !== undefined ? `${tag.label.bottom}%` : undefined,
-              left: tag.label.left !== undefined ? `${tag.label.left}%` : undefined,
-              right: tag.label.right !== undefined ? `${tag.label.right}%` : undefined,
-              animationDelay: tag.delay,
+              top: `${step.box.top + step.box.height / 2}%`,
+              left: `${step.box.left + step.box.width / 2}%`,
             }}
-          >
-            <span className="scan-tag-pill">
-              <b>{tag.id}</b>
-              {tag.role} <i>&ldquo;{tag.name}&rdquo;</i>
-            </span>
-          </div>
-        ))}
+          />
+        </div>
+      </div>
+
+      <div className="scan-terminal">
+        <div className="scan-terminal-row">
+          <span className="scan-terminal-prompt">$</span>
+          <code key={step.command}>{step.command}</code>
+        </div>
+        <div className="scan-terminal-row scan-terminal-result">
+          <span className="scan-terminal-prompt">&gt;</span>
+          <code key={step.result}>{step.result}</code>
+        </div>
+        <div className="scan-terminal-steps" aria-hidden="true">
+          {resolvedSteps.map((item, index) => (
+            <span key={item.ref} className={index === active ? "scan-step-active" : undefined} />
+          ))}
+        </div>
       </div>
     </div>
   );

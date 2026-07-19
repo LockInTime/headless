@@ -1,10 +1,23 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { IBM_Plex_Mono, Inter } from "next/font/google";
+import { Instrument_Sans, JetBrains_Mono, Source_Sans_3 } from "next/font/google";
 import { cn } from "@/lib/utils";
 
-const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-mono" });
-const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
+const instrumentSans = Instrument_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-display",
+});
+const sourceSans = Source_Sans_3({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-body",
+});
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-mono",
+});
 
 export const metadata: Metadata = {
   title: "Headless — browser control for agents",
@@ -15,7 +28,11 @@ const setInitialTheme = `(function(){try{var s=localStorage.getItem("theme");var
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={cn(plexMono.variable, inter.variable)} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={cn(instrumentSans.variable, sourceSans.variable, jetbrainsMono.variable)}
+      suppressHydrationWarning
+    >
       <body>
         <script dangerouslySetInnerHTML={{ __html: setInitialTheme }} />
         {children}

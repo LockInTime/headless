@@ -1,9 +1,14 @@
 import { HeadlessMark } from "@/components/headless-mark";
 import { BenchmarkChart } from "@/components/benchmark-chart";
-import { EfficiencyChart } from "@/components/efficiency-chart";
+import { RuntimeChart } from "@/components/efficiency-chart";
 import { BeamsBackground } from "@/components/ui/beams-background";
+import { PixelBlast } from "@/components/ui/pixel-blast";
 import { ScanFrame } from "@/components/scan-frame";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LinkGlyph } from "@/components/link-glyph";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { ArrowDownIcon, ArrowUpRightIcon } from "lucide-react";
 
 const commands = [
   ["01", "Visit", "Open a local or authenticated page."],
@@ -36,7 +41,25 @@ export default function Home() {
   return (
     <main className="site-shell">
       <section className="hero">
-        <BeamsBackground className="hero-beams" />
+        <div className="hero-beams" aria-hidden="true">
+          <BeamsBackground className="hero-beams-static" />
+          <PixelBlast
+            className="hero-pixel-blast"
+            variant="circle"
+            pixelSize={5}
+            color="#FFB020"
+            patternScale={3}
+            patternDensity={1.1}
+            pixelSizeJitter={0.35}
+            enableRipples
+            rippleSpeed={0.35}
+            rippleThickness={0.1}
+            rippleIntensityScale={1.1}
+            speed={0.45}
+            edgeFade={0.3}
+            transparent
+          />
+        </div>
 
         <nav className="nav container" aria-label="Main navigation">
           <a className="brand" href="#top" aria-label="Headless home">
@@ -47,7 +70,9 @@ export default function Home() {
             <a href="#workflow">Workflow</a>
             <a href="#capabilities">Capabilities</a>
             <a href="/docs">Docs</a>
-            <a href="https://github.com/SarthakWade/headless">GitHub ↗</a>
+            <a href="https://github.com/SarthakWade/headless" className="nav-external">
+              GitHub <LinkGlyph kind="external" />
+            </a>
             <ThemeToggle />
           </div>
         </nav>
@@ -62,8 +87,31 @@ export default function Home() {
               Headless turns browser QA into a small, inspectable command surface, so an agent can navigate, test, record, and explain without screen coordinates or a brittle script stack.
             </p>
             <div className="hero-actions">
-              <a className="button button-primary" href="#workflow">See the workflow <span>↓</span></a>
-              <a className="button button-quiet" href="/docs">Read the docs <span>↗</span></a>
+              <a
+                href="#workflow"
+                className={cn(
+                  buttonVariants({ variant: "default", size: "cta" }),
+                  "hover:-translate-y-0.5",
+                )}
+              >
+                See the workflow
+                <ArrowDownIcon
+                  data-icon="inline-end"
+                  strokeWidth={1.75}
+                  className="size-4 transition-transform duration-200 group-hover/button:translate-y-0.5"
+                />
+              </a>
+              <a
+                href="/docs"
+                className={buttonVariants({ variant: "quiet", size: "cta" })}
+              >
+                Read the docs
+                <ArrowUpRightIcon
+                  data-icon="inline-end"
+                  strokeWidth={1.75}
+                  className="size-4 transition-transform duration-200 group-hover/button:translate-x-0.5 group-hover/button:-translate-y-0.5"
+                />
+              </a>
             </div>
           </div>
           <ScanFrame />
@@ -86,7 +134,7 @@ export default function Home() {
         </div>
         <div className="container benchmark-grid-2">
           <div className="benchmark-chart-panel"><div><span>Agent token footprint / lower is better</span><p>Headless warm = 1×</p></div><BenchmarkChart /></div>
-          <div className="benchmark-chart-panel"><div><span>Efficiency map / two metrics at once</span><p>4 workflows</p></div><EfficiencyChart /></div>
+          <div className="benchmark-chart-panel"><div><span>CPU time per run / lower is better</span><p>Headless warm = 1×</p></div><RuntimeChart /></div>
         </div>
         <div className="container benchmark-table-wrap">
           <table className="benchmark-table">
@@ -94,7 +142,7 @@ export default function Home() {
             <tbody>{benchmarks.map(([name, variant, tokens, wallTime, cpuTime, memory]) => <tr className={name === "Headless" && variant === "warm" ? "benchmark-highlight" : ""} key={`${name}-${variant}`}><td><b>{name}</b>{variant && <span>{variant}</span>}</td><td>{tokens}</td><td>{wallTime}</td><td>{cpuTime}</td><td>{memory}</td></tr>)}</tbody>
           </table>
         </div>
-        <div className="container benchmark-footnote"><p><span className="benchmark-definition"><b>Warm</b> starts with the Headless host and session ready. <b>Cold</b> includes starting both.</span><span>Estimated tokens measure workflow source size, not billed LLM tokens. Point-in-time snapshot; repeat before comparing a change.</span></p><a href="https://github.com/SarthakWade/headless/blob/main/apps/headless/docs/BENCHMARK.md">Read the method ↗</a></div>
+        <div className="container benchmark-footnote"><p><span className="benchmark-definition"><b>Warm</b> starts with the Headless host and session ready. <b>Cold</b> includes starting both.</span><span>Estimated tokens measure workflow source size, not billed LLM tokens. Point-in-time snapshot; repeat before comparing a change.</span></p><a className="text-link" href="https://github.com/SarthakWade/headless/blob/main/apps/headless/docs/BENCHMARK.md">Read the method <LinkGlyph kind="external" /></a></div>
       </section>
 
       <section id="workflow" className="section container workflow">
@@ -131,16 +179,65 @@ export default function Home() {
           </div>
           <div className="capability-list">
             {capabilities.map(([title, description, safe], index) => (
-              <article key={title} className={safe ? "capability-row capability-row-safe" : "capability-row"}><span>0{index + 1}</span><div><h3>{title}</h3><p>{description}</p></div><b>↗</b></article>
+              <article key={title} className={safe ? "capability-row capability-row-safe" : "capability-row"}>
+                <span>0{index + 1}</span>
+                <div><h3>{title}</h3><p>{description}</p></div>
+                <LinkGlyph kind="forward" className="capability-glyph" />
+              </article>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="section container closing">
-        <div className="closing-panel">
-          <div><div className="section-label">Run it where your agent runs</div><h2>Your VM has a browser<br />now. <em>Use it.</em></h2></div>
-          <div className="closing-action"><p>One CLI protocol. The same commands over MCP. Purpose-built for the last mile of software QA.</p><a className="button button-primary" href="https://github.com/SarthakWade/headless">Open Headless <span>↗</span></a></div>
+      <section className="section closing">
+        <div className="closing-blast" aria-hidden="true">
+          <PixelBlast
+            className="closing-pixel-blast"
+            variant="circle"
+            pixelSize={5}
+            color="#FFB020"
+            patternScale={3}
+            patternDensity={1.05}
+            pixelSizeJitter={0.3}
+            enableRipples
+            rippleSpeed={0.35}
+            rippleThickness={0.1}
+            rippleIntensityScale={1}
+            speed={0.4}
+            edgeFade={0.45}
+            transparent
+          />
+        </div>
+        <div className="container closing-inner">
+          <div className="closing-panel">
+            <div>
+              <div className="section-label">Run it where your agent runs</div>
+              <h2>
+                Your VM has a browser
+                <br />
+                now. <em>Use it.</em>
+              </h2>
+            </div>
+            <div className="closing-action">
+              <p>
+                One CLI protocol. The same commands over MCP. Purpose-built for the last mile of software QA.
+              </p>
+              <a
+                href="https://github.com/SarthakWade/headless"
+                className={cn(
+                  buttonVariants({ variant: "default", size: "cta" }),
+                  "mt-6 hover:-translate-y-0.5",
+                )}
+              >
+                Open Headless
+                <ArrowUpRightIcon
+                  data-icon="inline-end"
+                  strokeWidth={1.75}
+                  className="size-4 transition-transform duration-200 group-hover/button:translate-x-0.5 group-hover/button:-translate-y-0.5"
+                />
+              </a>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -148,7 +245,7 @@ export default function Home() {
         <div className="container footer-meta">
           <span>HEADLESS / AI BROWSER CONTROL</span>
           <span>BUILT FOR AGENTS, NOT POINTERS</span>
-          <a href="/docs">DOCUMENTATION ↗</a>
+          <a className="text-link" href="/docs">DOCUMENTATION <LinkGlyph kind="external" /></a>
         </div>
         <div className="footer-wordmark" aria-label="headless">headless</div>
       </footer>
