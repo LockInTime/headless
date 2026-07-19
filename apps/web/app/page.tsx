@@ -1,6 +1,6 @@
 import { HeadlessMark } from "@/components/headless-mark";
 import { BenchmarkChart } from "@/components/benchmark-chart";
-import { RuntimeChart } from "@/components/efficiency-chart";
+import { EfficiencyChart } from "@/components/efficiency-chart";
 import { BeamsBackground } from "@/components/ui/beams-background";
 import { PixelBlast } from "@/components/ui/pixel-blast";
 import { ScanFrame } from "@/components/scan-frame";
@@ -134,7 +134,7 @@ export default function Home() {
         </div>
         <div className="container benchmark-grid-2">
           <div className="benchmark-chart-panel"><div><span>Agent token footprint / lower is better</span><p>Headless warm = 1×</p></div><BenchmarkChart /></div>
-          <div className="benchmark-chart-panel"><div><span>CPU time per run / lower is better</span><p>Headless warm = 1×</p></div><RuntimeChart /></div>
+          <div className="benchmark-chart-panel"><div><span>Wall time vs CPU time per run</span><p>The gap is waiting, not computing</p></div><EfficiencyChart /></div>
         </div>
         <div className="container benchmark-table-wrap">
           <table className="benchmark-table">
