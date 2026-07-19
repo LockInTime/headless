@@ -85,7 +85,7 @@ export default function Home() {
           ))}
         </div>
         <div className="container benchmark-grid-2">
-          <div className="benchmark-chart-panel"><div><span>Workflow footprint / lower is better</span><p>Headless warm = 1×</p></div><BenchmarkChart /></div>
+          <div className="benchmark-chart-panel"><div><span>Agent token footprint / lower is better</span><p>Headless warm = 1×</p></div><BenchmarkChart /></div>
           <div className="benchmark-chart-panel"><div><span>Efficiency map / two metrics at once</span><p>4 workflows</p></div><EfficiencyChart /></div>
         </div>
         <div className="container benchmark-table-wrap">

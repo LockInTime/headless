@@ -3,6 +3,7 @@
 import {
   CartesianGrid,
   ReferenceLine,
+  ResponsiveContainer,
   Scatter,
   ScatterChart,
   Tooltip,
@@ -81,20 +82,22 @@ function Bubble({ cx, cy, payload }: { cx?: number; cy?: number; payload?: Point
 
 export function EfficiencyChart() {
   return (
-    <div className="eff-chart" role="img" aria-label="Efficiency map: Headless clusters near the origin on both CPU time and estimated tokens, with a smaller wall-time bubble than Selenium and Puppeteer, which use less CPU time only at a much higher token and CPU cost.">
+    <div className="eff-chart" role="img" aria-label="Efficiency map: Headless uses fewer estimated tokens and less CPU time than Selenium and Puppeteer. Its larger bubbles show that the measured wall time was higher.">
       <span className="eff-caption-y">Estimated tokens</span>
       <span className="eff-annotation"><i>most efficient</i> ↙</span>
 
-      <ScatterChart margin={{ top: 34, right: 24, bottom: 26, left: 8 }} responsive style={{ width: "100%", height: "100%" }}>
-        <CartesianGrid stroke="var(--line)" strokeDasharray="3 3" />
-        <XAxis type="number" dataKey="cpu" domain={[0, 2700]} ticks={xTicks} tickFormatter={(v) => xTickLabels[v] ?? ""} tick={{ fill: "#5C6662", fontFamily: "var(--font-mono), monospace", fontSize: 9 }} axisLine={{ stroke: "var(--line)" }} tickLine={false} />
-        <YAxis type="number" dataKey="tokens" domain={[0, 600]} ticks={[0, 150, 300, 450, 600]} tick={{ fill: "#5C6662", fontFamily: "var(--font-mono), monospace", fontSize: 9 }} axisLine={{ stroke: "var(--line)" }} tickLine={false} width={30} />
-        <ZAxis type="number" dataKey="wall" range={[13, 26]} />
-        <ReferenceLine x={0} stroke="rgba(79,216,196,.5)" />
-        <ReferenceLine y={0} stroke="rgba(79,216,196,.5)" />
-        <Tooltip content={EfficiencyTooltip} cursor={{ stroke: "var(--line)", strokeDasharray: "3 3" }} />
-        <Scatter data={points} shape={<Bubble />} isAnimationActive={false} />
-      </ScatterChart>
+      <ResponsiveContainer width="100%" height="100%">
+        <ScatterChart margin={{ top: 34, right: 24, bottom: 26, left: 8 }}>
+          <CartesianGrid stroke="var(--line)" strokeDasharray="3 3" />
+          <XAxis type="number" dataKey="cpu" domain={[0, 2700]} ticks={xTicks} tickFormatter={(v) => xTickLabels[v] ?? ""} tick={{ fill: "var(--muted)", fontFamily: "var(--font-mono), monospace", fontSize: 9 }} axisLine={{ stroke: "var(--line)" }} tickLine={false} />
+          <YAxis type="number" dataKey="tokens" domain={[0, 600]} ticks={[0, 150, 300, 450, 600]} tick={{ fill: "var(--muted)", fontFamily: "var(--font-mono), monospace", fontSize: 9 }} axisLine={{ stroke: "var(--line)" }} tickLine={false} width={30} />
+          <ZAxis type="number" dataKey="wall" range={[13, 26]} />
+          <ReferenceLine x={0} stroke="rgba(79,216,196,.5)" />
+          <ReferenceLine y={0} stroke="rgba(79,216,196,.5)" />
+          <Tooltip content={EfficiencyTooltip} cursor={{ stroke: "var(--line)", strokeDasharray: "3 3" }} />
+          <Scatter data={points} shape={<Bubble />} isAnimationActive={false} />
+        </ScatterChart>
+      </ResponsiveContainer>
 
       <span className="eff-caption-x">CPU time — bubble size = wall time</span>
     </div>
