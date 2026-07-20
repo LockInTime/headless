@@ -223,7 +223,7 @@ export default function Home() {
                 One CLI protocol. The same commands over MCP. Purpose-built for the last mile of software QA.
               </p>
               <a
-                href="https://github.com/SarthakWade/headless"
+                href="https://github.com/SarthakWade/headless/releases"
                 className={cn(
                   buttonVariants({ variant: "default", size: "cta" }),
                   "mt-6 hover:-translate-y-0.5",
