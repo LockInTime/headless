@@ -76,13 +76,7 @@ public struct CLIParser {
             let url = try normalizedWebURL(arguments[0])
             return remote(.visit, session: session, parameters: ["url": .string(url.absoluteString)], jsonOutput: jsonOutput)
         case "inspect":
-            var args = arguments
-            let interactive = removeFlag("--interactive", from: &args)
-            let includeText = removeFlag("--text", from: &args)
-            try requireEmpty(args)
-            return remote(.inspect, session: session, parameters: [
-                "interactive": .bool(interactive), "text": .bool(includeText),
-            ], jsonOutput: jsonOutput)
+            return try parseInspect(arguments, session: session, jsonOutput: jsonOutput)
         case "click":
             return try parseTargeted(.click, arguments: arguments, session: session, jsonOutput: jsonOutput)
         case "fill":
@@ -171,6 +165,31 @@ public struct CLIParser {
         }
     }
 
+    private func parseInspect(_ arguments: [String], session: String?, jsonOutput: Bool) throws -> CLIInvocation {
+        var args = arguments
+        let interactive = removeFlag("--interactive", from: &args)
+        let includeText = removeFlag("--text", from: &args)
+        let context = try removeOption("--context", from: &args)
+        let task = try removeOption("--task", from: &args)
+        try requireEmpty(args)
+
+        if let context, !["full", "actions"].contains(context) {
+            throw CLIParseError.invalidOption(context)
+        }
+        if let task, task.isEmpty || task.utf8.count > 512 {
+            throw CLIParseError.invalidOption("--task")
+        }
+
+        let mode = context ?? (interactive ? "actions" : "full")
+        var parameters: [String: JSONValue] = [
+            "interactive": .bool(interactive || mode == "actions"),
+            "text": .bool(includeText),
+            "context": .string(mode),
+        ]
+        if let task { parameters["task"] = .string(task) }
+        return remote(.inspect, session: session, parameters: parameters, jsonOutput: jsonOutput)
+    }
+
     private func parseTargeted(
         _ command: CommandName,
         arguments: [String],
@@ -249,12 +268,36 @@ public struct CLIParser {
     ) throws -> CLIInvocation {
         var args = arguments
         let fullPage = removeFlag("--full-page", from: &args)
+        let everyViewport = removeFlag("--every-viewport", from: &args)
+        let bySection = removeFlag("--by-section", from: &args)
         let role = try removeOption("--role", from: &args)
         let name = try removeOption("--name", from: &args)
         let output = try removeOption("--output", from: &args)
+        let formatText = try removeOption("--format", from: &args)
+        let clipboard = removeFlag("--clipboard", from: &args)
+        let format = try screenshotFormat(explicit: formatText, output: output)
+        if everyViewport && bySection { throw CLIParseError.conflictingTarget }
+        if everyViewport || bySection {
+            try requireEmpty(args)
+            guard !fullPage, role == nil, name == nil else { throw CLIParseError.conflictingTarget }
+            guard format.isImage else { throw CLIParseError.invalidOption("--format pdf") }
+            guard !clipboard else { throw CLIParseError.invalidOption("--clipboard") }
+            var parameters: [String: JSONValue] = [
+                "fullPage": .bool(false),
+                "series": .string(everyViewport ? "viewport" : "section"),
+                "format": .string(format.rawValue),
+            ]
+            if let output {
+                let prefix = try screenshotSeriesPrefix(output)
+                parameters["outputPrefix"] = .string(prefix)
+            }
+            return remote(.screenshot, session: session, parameters: parameters, jsonOutput: jsonOutput)
+        }
         var parameters: [String: JSONValue] = ["fullPage": .bool(fullPage)]
+        parameters["format"] = .string(format.rawValue)
+        if clipboard { parameters["clipboard"] = .bool(true) }
         if let output {
-            try validateArtifactName(output, expectedExtension: "png")
+            try validateArtifactName(output, expectedExtensions: format.artifactExtensions)
             parameters["output"] = .string(output)
         }
         if let target = args.first {
@@ -269,6 +312,22 @@ public struct CLIParser {
         return remote(.screenshot, session: session, parameters: parameters, jsonOutput: jsonOutput)
     }
 
+    private func screenshotSeriesPrefix(_ value: String) throws -> String {
+        let lower = value.lowercased()
+        let prefix: String
+        if lower.hasSuffix(".png") {
+            prefix = String(value.dropLast(4))
+        } else if lower.hasSuffix(".jpg") {
+            prefix = String(value.dropLast(4))
+        } else if lower.hasSuffix(".jpeg") {
+            prefix = String(value.dropLast(5))
+        } else {
+            prefix = value
+        }
+        try validateArtifactPrefix(prefix)
+        return prefix
+    }
+
     private func parseRecord(
         _ arguments: [String], session: String?, jsonOutput: Bool
     ) throws -> CLIInvocation {
@@ -280,17 +339,25 @@ public struct CLIParser {
         case "start":
             let output = try removeOption("--output", from: &args)
             let fpsText = try removeOption("--fps", from: &args)
+            let formatText = try removeOption("--format", from: &args)
+            let qualityText = try removeOption("--quality", from: &args)
             try requireEmpty(args)
             var parameters: [String: JSONValue] = [:]
+            let format = try recordingFormat(explicit: formatText, output: output)
             if let output {
-                try validateArtifactName(output, expectedExtension: "mp4")
+                try validateArtifactName(output, expectedExtensions: [format.fileExtension])
                 parameters["output"] = .string(output)
             }
+            parameters["format"] = .string(format.rawValue)
             if let fpsText {
                 guard let fps = Double(fpsText), fps >= 1, fps <= 30 else {
                     throw CLIParseError.invalidNumber(fpsText)
                 }
                 parameters["fps"] = .number(fps)
+            }
+            if let qualityText {
+                let quality = try RecordingQuality.parse(qualityText)
+                parameters["quality"] = .string(quality.rawValue)
             }
             return remote(.recordStart, session: session, parameters: parameters, jsonOutput: jsonOutput)
         case "status":
@@ -301,7 +368,7 @@ public struct CLIParser {
             try requireEmpty(args)
             var parameters: [String: JSONValue] = [:]
             if let output {
-                try validateArtifactName(output, expectedExtension: "mp4")
+                try validateArtifactName(output, expectedExtensions: RecordingFormat.artifactExtensions)
                 parameters["output"] = .string(output)
             }
             return remote(.recordStop, session: session, parameters: parameters, jsonOutput: jsonOutput)
@@ -515,7 +582,7 @@ Commands:
   start | status | stop | runtime
   session create [NAME] | session list | session close NAME
   visit URL
-  inspect [--interactive] [--text]
+  inspect [--interactive] [--context full|actions] [--task TEXT] [--text]
   click REF | click --role ROLE [--name NAME]
   fill REF TEXT | press KEY
   scroll [up|down|top|bottom] [--amount PX]
@@ -523,10 +590,11 @@ Commands:
   wait [--settled] [--url PATTERN] [--text TEXT] [--timeout MS]
   tour [--full-page] [--pace PX_PER_SECOND]
   capture-info
-  screenshot [REF | --role ROLE --name NAME | --full-page] [--output FILE.png]
+  screenshot [REF | --role ROLE --name NAME | --full-page] [--format png|jpg|jpeg|pdf] [--output FILE] [--clipboard]
+  screenshot --every-viewport|--by-section [--format png|jpg|jpeg] [--output PREFIX]
   artifacts list
-  record start [--fps N] [--output FILE.mp4]
-  record status | record stop [--output FILE.mp4]
+  record start [--fps N] [--format mp4|mov|webm|gif] [--quality fast|balanced|high] [--output FILE]
+  record status | record stop [--output FILE]
   qa report | qa clear
   console list [--level LEVEL] [--limit N]
   network list [--failed] [--status CODE] [--limit N]
@@ -552,8 +620,14 @@ public let capabilitiesDocument: JSONValue = .object([
     "protocolVersion": .string(headlessProtocolVersion),
     "transport": .array([.string("local-unix-socket")]),
     "commands": .array(CommandName.allCases.map { .string($0.rawValue) }),
-    "artifacts": .array([.string("png"), .string("mp4"), .string("json")]),
+    "artifacts": .array([.string("png"), .string("jpg"), .string("jpeg"), .string("pdf"), .string("mp4"), .string("mov"), .string("webm"), .string("gif"), .string("json")]),
+    "screenshotFormats": .array([.string("png"), .string("jpg"), .string("jpeg"), .string("pdf")]),
+    "screenshotClipboard": .string("macOS image screenshots only"),
+    "recordingFormats": .array([.string("mp4"), .string("mov"), .string("webm"), .string("gif")]),
+    "recordingQuality": .array([.string("fast"), .string("balanced"), .string("high")]),
     "recordingProviders": .array([.string("browser-ffmpeg")]),
+    "inspectContexts": .array([.string("full"), .string("actions")]),
+    "screenshotSeries": .array([.string("viewport"), .string("section")]),
     "security": .object([
         "tcpListener": .bool(false),
         "arbitraryJavaScript": .bool(false),

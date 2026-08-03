@@ -39,7 +39,7 @@ node /workspace/apps/headless/Tests/fixture-server.mjs
 | --- | --- | --- |
 | [Runtime selection and Snap rejection](qa/evidence/01-runtime-selection-snap-rejection.mp4) | [Probe results](qa/evidence/media-probe.json) and [test results](qa/evidence/test-results.json) | Bundled runtime selection with `headless runtime`; explicit Snap rejection with `HEADLESS_CHROMIUM_EXECUTABLE=/snap/bin/chromium headless runtime`; capabilities output |
 | [Startup, session, and navigation](qa/evidence/02-startup-session-navigation.mp4) | [Probe results](qa/evidence/media-probe.json) | `headless start`, `session create qa`, dashboard and details visits, `wait`, `reload`, `back`, and a full-page tour |
-| [Screenshots and visual comparison](qa/evidence/03-screenshots-visual-comparison.mp4) | [Probe results](qa/evidence/media-probe.json), [before](qa/evidence/visual-before.png), [after](qa/evidence/visual-after.png), [full page](qa/evidence/visual-full-page.png), and [diff](qa/evidence/visual-diff.png) PNGs | Viewport and full-page `screenshot`, targeted input with `fill`, and `visual compare` producing before, after, and diff PNGs |
+| [Screenshots and visual comparison](qa/evidence/03-screenshots-visual-comparison.mp4) | [Probe results](qa/evidence/media-probe.json), [before](qa/evidence/visual-before.png), [after](qa/evidence/visual-after.png), [full page](qa/evidence/visual-full-page.png), and [diff](qa/evidence/visual-diff.png) PNGs | Viewport and full-page `screenshot`, targeted input with `fill`, and `visual compare` producing before, after, and diff PNGs. The E2E suites also verify JPG/JPEG, single-capture PDF, macOS image clipboard output, MOV, and WebM artifacts. |
 | [Diagnostics](qa/evidence/04-diagnostics.mp4) | [Probe results](qa/evidence/media-probe.json) | Page reload plus `console list`, `network list`, `cookies list`, `storage list`, and `qa report` with values kept redacted |
 | [Network emulation and mocking](qa/evidence/05-network-emulation-mocking.mp4) | [Probe results](qa/evidence/media-probe.json) | `network emulate`, fixture reload, `network mock set`, mocked reload, `network mock clear`, and restored reload |
 | [Safe navigation and input](qa/evidence/06-safe-navigation-input.mp4) | [Probe results](qa/evidence/media-probe.json) | `fill`, `press`, blocked external, non-web, credential-bearing, and installer links, blocked scripted navigation, and an allowed Continue action |
@@ -75,10 +75,14 @@ headless --session qa record stop
 
 # Screenshots and visual comparison
 headless --session qa record start --fps 5 --output 03-screenshots-visual-comparison.mp4
-headless --session qa inspect --interactive --text
+headless --session qa inspect --context actions --task "click Continue"
 headless --session qa screenshot --output visual-before.png
+headless --session qa screenshot --format jpg --output visual-before.jpg
+headless --session qa screenshot --format pdf --full-page --output visual-full-page.pdf
 headless --session qa scroll bottom
 headless --session qa screenshot --full-page --output visual-full-page.png
+headless --session qa screenshot --every-viewport --format jpg --output visual-scroll
+headless --session qa screenshot --by-section --output visual-sections
 headless --session qa scroll top
 headless --session qa fill @e1 'QA reviewer'
 headless --session qa screenshot --output visual-after.png
@@ -108,7 +112,7 @@ headless --session qa record stop
 
 # Safe navigation and input
 headless --session qa record start --fps 5 --output 06-safe-navigation-input.mp4
-headless --session qa inspect --interactive --text
+headless --session qa inspect --context actions --task "click Continue"
 headless --session qa fill @e1 'QA reviewer'
 headless --session qa press Tab
 headless --session qa press Escape
@@ -179,7 +183,7 @@ ffprobe -v error -show_entries format=duration \
   -of default=nokey=1:noprint_wrappers=1 "$VIDEO"
 ```
 
-The run fails unless all ten files are non-empty, contain a video stream, and last at least 10 seconds. It also scans MP4, JSON, and PNG artifacts for the fixture's sensitive test strings. It then checksums every MP4, JSON, and PNG file and verifies `SHA256SUMS` with `sha256sum -c`.
+The run fails unless all ten files are non-empty, contain a video stream, and last at least 10 seconds. It also scans video, JSON, and image artifacts for the fixture's sensitive test strings. It then checksums every generated evidence file and verifies `SHA256SUMS` with `sha256sum -c`.
 
 ## Test results
 

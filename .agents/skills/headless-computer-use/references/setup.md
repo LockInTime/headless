@@ -53,7 +53,7 @@ $SANDBOX start
 $SANDBOX exec capabilities
 $SANDBOX exec session create agent-qa
 $SANDBOX exec --session agent-qa visit https://example.com
-$SANDBOX exec --session agent-qa inspect --interactive --text
+$SANDBOX exec --session agent-qa inspect --context actions --task "find primary action"
 ```
 
 The wrapper builds the `production` target, starts one persistent non-root
@@ -139,7 +139,7 @@ The server exposes one `headless` tool. Supply the normal CLI arguments without
 the executable name:
 
 ```json
-{"argv":["--session","agent-qa","inspect","--interactive","--text"]}
+{"argv":["--session","agent-qa","inspect","--context","actions","--task","find primary action"]}
 ```
 
 Keep MCP on stdio locally or invoke it through SSH. Do not expose the Unix socket,

@@ -309,10 +309,14 @@ final class LinuxBrowserSession: @unchecked Sendable {
         return try wait(parameters: ["settled": .bool(true), "timeoutMs": .number(20_000)])
     }
 
-    func inspect(interactive: Bool, includeText: Bool) throws -> JSONValue {
+    func inspect(interactive: Bool, includeText: Bool, context: String, task: String?) throws -> JSONValue {
         try evaluate(
-            "return globalThis.__headlessAgent.snapshot(interactive, includeText);",
-            input: ["interactive": interactive, "includeText": includeText]
+            "return globalThis.__headlessAgent.snapshot(interactive, includeText, options);",
+            input: [
+                "interactive": interactive,
+                "includeText": includeText,
+                "options": ["context": context, "task": task ?? ""],
+            ]
         )
     }
 
@@ -411,11 +415,16 @@ final class LinuxBrowserSession: @unchecked Sendable {
 
     func screenshot(
         parameters: [String: JSONValue],
+        format: ScreenshotFormat = .png,
         timeoutMilliseconds: Int32 = 30_000
     ) throws -> Data {
+        if format == .pdf {
+            return try printPDF(parameters: parameters, timeoutMilliseconds: timeoutMilliseconds)
+        }
         var capture: [String: Any] = [
-            "format": "png", "fromSurface": true, "captureBeyondViewport": false,
+            "format": format.browserScreenshotFormat, "fromSurface": true, "captureBeyondViewport": false,
         ]
+        if format == .jpeg { capture["quality"] = 88 }
         let hasTarget = parameters["target"] != nil || parameters["role"] != nil || parameters["name"] != nil
         if hasTarget {
             capture["captureBeyondViewport"] = true
@@ -449,6 +458,47 @@ final class LinuxBrowserSession: @unchecked Sendable {
             throw CDPError.invalidResponse("Page.captureScreenshot data")
         }
         return data
+    }
+
+    private func printPDF(
+        parameters: [String: JSONValue],
+        timeoutMilliseconds: Int32
+    ) throws -> Data {
+        let hasTarget = parameters["target"] != nil || parameters["role"] != nil || parameters["name"] != nil
+        if hasTarget {
+            throw CDPError.commandFailed("PDF capture is not supported for element targets")
+        }
+        var printParameters: [String: Any] = [
+            "printBackground": true,
+            "preferCSSPageSize": true,
+        ]
+        if parameters["fullPage"]?.boolValue != true {
+            printParameters["paperWidth"] = 11
+            printParameters["paperHeight"] = 8.5
+        }
+        let response = try command(
+            "Page.printToPDF",
+            parameters: printParameters,
+            timeoutMilliseconds: timeoutMilliseconds
+        )
+        guard let base64 = response["data"] as? String, let data = Data(base64Encoded: base64) else {
+            throw CDPError.invalidResponse("Page.printToPDF data")
+        }
+        return data
+    }
+
+    func screenshotSeriesPlan(mode: String) throws -> JSONValue {
+        try evaluate(
+            "return globalThis.__headlessAgent.screenshotPlan(args);",
+            input: ["args": ["mode": mode]]
+        )
+    }
+
+    func scrollToCapturePoint(y: Double) throws -> JSONValue {
+        try evaluate(
+            "return await globalThis.__headlessAgent.scrollToCapturePoint(args);",
+            input: ["args": ["y": y]]
+        )
     }
 
     func recordingFrame() throws -> Data {
@@ -729,6 +779,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
           const includeText = __input.includeText;
           const args = __input.args;
           const key = __input.key;
+          const options = __input.options || {};
           \(agentRuntimeJavaScript)
           \(body)
         })()

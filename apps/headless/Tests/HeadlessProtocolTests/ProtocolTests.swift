@@ -158,6 +158,80 @@ struct ProtocolTests {
                 parameters: ["fullPage": .bool(true), "target": .string("@e1")]
             ).validate()
         }
+        try CommandRequest(
+            id: "valid-screenshot-series", command: .screenshot,
+            parameters: ["series": .string("viewport"), "outputPrefix": .string("dashboard-scroll")]
+        ).validate()
+        try CommandRequest(
+            id: "valid-jpeg-screenshot", command: .screenshot,
+            parameters: ["format": .string("jpeg"), "output": .string("dashboard.jpeg")]
+        ).validate()
+        try CommandRequest(
+            id: "valid-pdf-screenshot", command: .screenshot,
+            parameters: ["format": .string("pdf"), "output": .string("dashboard.pdf")]
+        ).validate()
+        try expectThrows("invalid screenshot series should be rejected") {
+            try CommandRequest(
+                id: "bad-screenshot-series", command: .screenshot,
+                parameters: ["series": .string("footer")]
+            ).validate()
+        }
+        try expectThrows("screenshot series should reject path prefixes") {
+            try CommandRequest(
+                id: "bad-screenshot-prefix", command: .screenshot,
+                parameters: ["series": .string("section"), "outputPrefix": .string("../sections")]
+            ).validate()
+        }
+        try expectThrows("screenshot series should not combine with a single output") {
+            try CommandRequest(
+                id: "bad-screenshot-series-output", command: .screenshot,
+                parameters: ["series": .string("viewport"), "output": .string("one.png")]
+            ).validate()
+        }
+        try expectThrows("screenshot series should reject PDF") {
+            try CommandRequest(
+                id: "bad-screenshot-series-pdf", command: .screenshot,
+                parameters: ["series": .string("viewport"), "format": .string("pdf")]
+            ).validate()
+        }
+        try expectThrows("screenshot series should reject clipboard") {
+            try CommandRequest(
+                id: "bad-screenshot-series-clipboard", command: .screenshot,
+                parameters: ["series": .string("section"), "clipboard": .bool(true)]
+            ).validate()
+        }
+        try expectThrows("screenshot output extension should match format") {
+            try CommandRequest(
+                id: "bad-screenshot-format-extension", command: .screenshot,
+                parameters: ["format": .string("pdf"), "output": .string("dashboard.png")]
+            ).validate()
+        }
+        try CommandRequest(
+            id: "valid-webm-recording", command: .recordStart,
+            parameters: ["format": .string("webm"), "quality": .string("high"), "output": .string("flow.webm")]
+        ).validate()
+        try expectThrows("recording output extension should match start format") {
+            try CommandRequest(
+                id: "bad-recording-format-extension", command: .recordStart,
+                parameters: ["format": .string("mov"), "output": .string("flow.mp4")]
+            ).validate()
+        }
+        try CommandRequest(
+            id: "valid-inspect-context", command: .inspect,
+            parameters: ["context": .string("actions"), "task": .string("search open ai")]
+        ).validate()
+        try expectThrows("invalid inspect context should be rejected") {
+            try CommandRequest(
+                id: "bad-inspect-context", command: .inspect,
+                parameters: ["context": .string("debug")]
+            ).validate()
+        }
+        try expectThrows("inspect task should remain bounded") {
+            try CommandRequest(
+                id: "long-inspect-task", command: .inspect,
+                parameters: ["task": .string(String(repeating: "x", count: 513))]
+            ).validate()
+        }
     }
 
     static func cliVisit() throws {
@@ -179,6 +253,20 @@ struct ProtocolTests {
             invocation.request?.parameters == ["role": .string("button"), "name": .string("Continue")],
             "semantic target should parse"
         )
+    }
+
+    static func cliInspectContextAndTask() throws {
+        let invocation = try CLIParser().parse([
+            "inspect", "--context", "actions", "--task", "search open ai", "--text",
+        ])
+        try expect(invocation.request?.command == .inspect, "inspect command should parse")
+        try expect(invocation.request?.parameters["context"] == .string("actions"), "inspect context should parse")
+        try expect(invocation.request?.parameters["interactive"] == .bool(true), "actions context should imply interactive output")
+        try expect(invocation.request?.parameters["task"] == .string("search open ai"), "inspect task should parse")
+        try expect(invocation.request?.parameters["text"] == .bool(true), "inspect text flag should parse")
+        try expectThrows("invalid inspect context should fail in the CLI") {
+            _ = try CLIParser().parse(["inspect", "--context", "debug"])
+        }
     }
 
     static func cliRejectsConflictingClickTarget() throws {
@@ -207,11 +295,47 @@ struct ProtocolTests {
         ])
         try expect(screenshot.request?.command == .screenshot, "screenshot command should parse")
         try expect(screenshot.request?.parameters["output"] == .string("continue.png"), "screenshot output should parse")
-        let record = try CLIParser().parse(["record", "start", "--fps", "8", "--output", "flow.mp4"])
+        let jpegScreenshot = try CLIParser().parse([
+            "screenshot", "--format", "jpeg", "--output", "continue.jpeg", "--clipboard",
+        ])
+        try expect(jpegScreenshot.request?.parameters["format"] == .string("jpeg"), "screenshot format should parse")
+        try expect(jpegScreenshot.request?.parameters["clipboard"] == .bool(true), "screenshot clipboard should parse")
+        let viewportSeries = try CLIParser().parse([
+            "screenshot", "--every-viewport", "--format", "jpg", "--output", "dashboard-scroll",
+        ])
+        try expect(viewportSeries.request?.command == .screenshot, "viewport screenshot series should parse")
+        try expect(viewportSeries.request?.parameters["series"] == .string("viewport"), "viewport series should parse")
+        try expect(viewportSeries.request?.parameters["format"] == .string("jpeg"), "viewport series format should parse")
+        try expect(viewportSeries.request?.parameters["outputPrefix"] == .string("dashboard-scroll"), "series prefix should parse")
+        let sectionSeries = try CLIParser().parse([
+            "screenshot", "--by-section", "--output", "dashboard-sections.jpeg",
+        ])
+        try expect(sectionSeries.request?.parameters["series"] == .string("section"), "section series should parse")
+        try expect(sectionSeries.request?.parameters["outputPrefix"] == .string("dashboard-sections"), "series prefix should strip image extension")
+        try expectThrows("series screenshot must reject element targets") {
+            _ = try CLIParser().parse(["screenshot", "--every-viewport", "@e1"])
+        }
+        try expectThrows("series screenshot must reject full-page mode") {
+            _ = try CLIParser().parse(["screenshot", "--by-section", "--full-page"])
+        }
+        try expectThrows("series screenshot must reject PDF") {
+            _ = try CLIParser().parse(["screenshot", "--by-section", "--format", "pdf"])
+        }
+        try expectThrows("series screenshot must reject clipboard") {
+            _ = try CLIParser().parse(["screenshot", "--every-viewport", "--clipboard"])
+        }
+        let record = try CLIParser().parse([
+            "record", "start", "--fps", "8", "--format", "webm", "--quality", "high", "--output", "flow.webm",
+        ])
         try expect(record.request?.command == .recordStart, "record start should parse")
         try expect(record.request?.parameters["fps"] == .number(8), "record FPS should parse")
+        try expect(record.request?.parameters["format"] == .string("webm"), "recording format should parse")
+        try expect(record.request?.parameters["quality"] == .string("high"), "recording quality should parse")
         try expectThrows("unsupported recorder selectors should fail instead of being ignored") {
             _ = try CLIParser().parse(["record", "start", "--provider", "browser"])
+        }
+        try expectThrows("recording output mismatch should fail") {
+            _ = try CLIParser().parse(["record", "start", "--format", "mov", "--output", "flow.mp4"])
         }
         try expectThrows("record requests should reject obsolete provider fields") {
             try CommandRequest(command: .recordStart, parameters: ["provider": .string("browser")]).validate()
@@ -510,6 +634,7 @@ struct ProtocolTests {
             ("strict request fields", rejectsUnexpectedRequestFields),
             ("CLI visit", cliVisit),
             ("CLI semantic click", cliSemanticClick),
+            ("CLI inspect context and task", cliInspectContextAndTask),
             ("CLI conflicting target", cliRejectsConflictingClickTarget),
             ("CLI settled wait", cliWaitDefaultsToSettled),
             ("CLI timeout bound", cliRejectsUnboundedTimeout),

@@ -53,13 +53,17 @@ Puppeteer **499**. Full method and limits:
 headless start
 headless session create qa
 headless --session qa visit localhost:3000/designers/dashboard
-headless --session qa inspect --interactive --text
+headless --session qa inspect --context actions --task "click Continue"
 headless --session qa record start --fps 10
 headless --session qa tour --full-page
 headless --session qa click --role button --name Continue
 headless --session qa wait --url /next --settled
 headless --session qa record stop --output dashboard-flow.mp4
 headless --session qa screenshot --full-page --output next-page.png
+headless --session qa screenshot --format jpg --output next-page.jpg --clipboard
+headless --session qa screenshot --format pdf --full-page --output next-page.pdf
+headless --session qa screenshot --every-viewport --output dashboard-scroll
+headless --session qa screenshot --by-section --output dashboard-sections
 headless --session qa qa report
 headless --session qa console list --level error
 headless --session qa network list --failed
@@ -67,10 +71,22 @@ headless --session qa styles get --role button --name Continue --property displa
 headless artifacts list
 ```
 
-`inspect` returns roles, names, media URLs, decoded image/video dimensions,
-load state, safety markers, bounds, and references such as `@e1`.
+`inspect --context actions` returns the visible controls an agent can act on:
+buttons, links, fields, selects, upload inputs, menus, and tabs. Add
+`--task "search open ai"` to rank those controls by task relevance instead of
+sending page noise first. `inspect --context full` keeps the broader media and
+rendering snapshot. `inspect` returns roles, names, media URLs, decoded
+image/video dimensions, load state, safety markers, bounds, and references
+such as `@e1`.
 `capture-info` returns the browser surface, page state, action trace, and
 recording state for an external recorder or QA harness.
+
+For scrollable-page QA, use `screenshot --every-viewport --output PREFIX` for
+one image per viewport-height scroll stop. Use
+`screenshot --by-section --output PREFIX` to capture around visible headings and
+sections. Add `--format jpg` for JPEG series; PDF is single-capture only. The
+output prefix creates numbered artifacts such as `dashboard-scroll-001.png` or
+`dashboard-scroll-001.jpg`.
 
 When an action fails, use the on-demand diagnostic commands instead of an
 interactive DevTools UI: `console list`, `network list|get`, `styles get`,
@@ -95,15 +111,21 @@ report evidence.`
 
 ## Evidence capture
 
-Built-in recording captures browser pixels to MP4 through FFmpeg. It works in
-headless Linux and does not include OS chrome or audio. For an OS recorder, OBS,
-or a CI recorder, use `capture-info` to get the window or browser process and
-keep using the same navigation commands.
+Built-in recording captures browser pixels through FFmpeg as MP4, MOV, WebM, or
+GIF. Pick the container at `record start` with `--format`; the `record stop`
+output must use the same extension. The status response includes FPS,
+container, codec, quality, frame count, dropped frames, and duration. Recordings
+do not include OS chrome or audio. For an OS recorder, OBS, or a CI recorder,
+use `capture-info` to get the window or browser process and keep using the same
+navigation commands.
 
-Screenshots support the viewport, full page, or one element. `inspect` exposes
-rendered media with its source, decoded dimensions, load and playback state,
-safety marker, poster, and accessible name;
-screenshots and recordings capture the visible media pixels.
+Screenshots support PNG, JPG/JPEG, and single-capture PDF. macOS can also copy
+image screenshots to the clipboard with `--clipboard`; Linux rejects clipboard
+capture because VM clipboards are not reliable by default. Screenshots support
+the viewport, full page, one element, every viewport-height scroll stop, or each
+visible section/heading. `inspect` exposes rendered media with its source,
+decoded dimensions, load and playback state, safety marker, poster, and
+accessible name; screenshots and recordings capture the visible media pixels.
 
 ## Build
 
@@ -171,8 +193,8 @@ pnpm test:e2e:linux       # disposable Docker + sandboxed Chromium workflow
 
 The Linux E2E container receives `SYS_ADMIN` so Chromium can initialize its
 nested sandbox. Native VM deployment does not need that capability. A passing
-Docker run retains verified PNG, MP4, JSON, and checksum evidence under
-`apps/headless/build/qa-evidence/`.
+Docker run retains verified PNG/JPG/PDF, MP4/WebM, JSON, and checksum evidence
+under `apps/headless/build/qa-evidence/`.
 
 Run the repeatable comparison against Selenium and Puppeteer with:
 

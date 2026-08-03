@@ -6,8 +6,8 @@ import Link from "next/link";
 
 const coreCommands = [
   ["Navigation", "visit, back, reload, wait", "Move through a real browser session and wait for a URL, page text, or settled state."],
-  ["Interaction", "inspect, click, fill, press, scroll", "Use accessibility roles and names instead of mouse coordinates or selectors."],
-  ["Evidence", "screenshot, record, visual compare, report", "Create private PNG, MP4, diff, flow, and PR-report artifacts."],
+  ["Interaction", "inspect, click, fill, press, scroll", "Use task-ranked controls and accessibility roles instead of mouse coordinates or selectors."],
+  ["Evidence", "screenshot, record, visual compare, report", "Create private PNG/JPG/PDF, MP4/MOV/WebM/GIF, diff, flow, and PR-report artifacts."],
   ["Diagnostics", "console, network, styles, cookies, storage", "Investigate only when something fails; sensitive values remain redacted by default."],
 ];
 
@@ -22,7 +22,7 @@ export default function DocsPage() {
       <div className="docs-container docs-layout">
         <aside className="docs-sidebar">
           <p>GET STARTED</p>
-          <a href="#first-run">First run</a><a href="#workflow">QA workflow</a><a href="#commands">Core commands</a><a href="#safety">Safety</a>
+          <a href="#first-run">First run</a><a href="#workflow">QA workflow</a><a href="#commands">Core commands</a><a href="#context">Context pruning</a><a href="#scrollable">Scrollable evidence</a><a href="#safety">Safety</a>
           <p>PLATFORMS</p>
           <a href="#linux">Linux + Docker</a><a href="#macos">macOS</a>
         </aside>
@@ -36,14 +36,14 @@ export default function DocsPage() {
             <p className="docs-label">01 / First run</p>
             <h2>Start a session.</h2>
             <p>Start the host, create a session, then visit the app. The session stays isolated until you close it.</p>
-            <CommandBlock>{`headless start\nheadless session create qa\nheadless --session qa visit localhost:3000/designers/dashboard\nheadless --session qa inspect --interactive --text`}</CommandBlock>
+            <CommandBlock>{`headless start\nheadless session create qa\nheadless --session qa visit localhost:3000/designers/dashboard\nheadless --session qa inspect --context actions --task "click Continue"`}</CommandBlock>
           </section>
 
           <section id="workflow">
             <p className="docs-label">02 / A QA workflow</p>
             <h2>Capture the proof.</h2>
             <p>Record the path you need, then stop and create a report.</p>
-            <CommandBlock>{`headless --session qa record start --fps 10\nheadless --session qa click --role button --name Continue\nheadless --session qa wait --url /next --settled\nheadless --session qa record stop --output dashboard-flow.mp4\nheadless --session qa report create --output pr-report.json`}</CommandBlock>
+            <CommandBlock>{`headless --session qa record start --fps 10 --format mp4\nheadless --session qa click --role button --name Continue\nheadless --session qa wait --url /next --settled\nheadless --session qa record stop --output dashboard-flow.mp4\nheadless --session qa report create --output pr-report.json`}</CommandBlock>
           </section>
 
           <section id="commands">
@@ -54,8 +54,20 @@ export default function DocsPage() {
             </div>
           </section>
 
+          <section id="context">
+            <p className="docs-label">04 / Context pruning</p>
+            <h2>Show the useful controls.</h2>
+            <p>Use <code>{'inspect --context actions --task "search open ai"'}</code> to return visible buttons, links, fields, selects, upload inputs, menus, and tabs first. Use <code>inspect --context full</code> when the broader page snapshot is needed.</p>
+          </section>
+
+          <section id="scrollable">
+            <p className="docs-label">05 / Scrollable evidence</p>
+            <h2>Capture the whole scroll.</h2>
+            <p>Use <code>screenshot --every-viewport --output dashboard-scroll</code> for one image per viewport-height scroll stop. Use <code>screenshot --by-section --output dashboard-sections</code> for headings, sections, and regions. Add <code>--format jpg</code> for JPEG series; PDF is single-capture only.</p>
+          </section>
+
           <section id="safety">
-            <p className="docs-label">04 / Safety by default</p>
+            <p className="docs-label">06 / Safety by default</p>
             <h2>Keep the browser local.</h2>
             <p>Headless uses a private Unix socket, not a public DevTools port. Only HTTP(S) navigation is allowed. Diagnostic secrets are redacted.</p>
           </section>

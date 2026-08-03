@@ -24,6 +24,10 @@ enum AgentOperationError: Error, CustomStringConvertible {
 
 private let agentWorld = WKContentWorld.world(name: "HeadlessAgent")
 
+struct ScreenshotArtifactData {
+    let data: Data
+    let clipboardCopied: Bool
+}
 
 extension BrowserWindowController {
     func agentVisit(_ url: URL, timeout: TimeInterval = 20) throws -> JSONValue {
@@ -32,10 +36,14 @@ extension BrowserWindowController {
         return try agentWait(parameters: ["settled": .bool(true), "timeoutMs": .number(timeout * 1_000)])
     }
 
-    func agentInspect(interactive: Bool, includeText: Bool) throws -> JSONValue {
+    func agentInspect(interactive: Bool, includeText: Bool, context: String, task: String?) throws -> JSONValue {
         try callAgent(
-            "return globalThis.__headlessAgent.snapshot(interactive, includeText);",
-            arguments: ["interactive": interactive, "includeText": includeText]
+            "return globalThis.__headlessAgent.snapshot(interactive, includeText, options);",
+            arguments: [
+                "interactive": interactive,
+                "includeText": includeText,
+                "options": ["context": context, "task": task ?? ""],
+            ]
         )
     }
 
@@ -120,6 +128,31 @@ extension BrowserWindowController {
     }
 
     func agentScreenshot(parameters: [String: JSONValue]) throws -> Data {
+        try agentScreenshotData(parameters: parameters, format: .png, copyToClipboard: false).data
+    }
+
+    func agentScreenshotData(
+        parameters: [String: JSONValue],
+        format: ScreenshotFormat,
+        copyToClipboard: Bool
+    ) throws -> ScreenshotArtifactData {
+        let image = try agentScreenshotImage(parameters: parameters)
+        guard let data = encodeScreenshot(image, format: format) else {
+            throw AgentOperationError.invalidResult
+        }
+        if copyToClipboard {
+            guard format.isImage else {
+                throw AgentOperationError.operationFailed("Clipboard output is only supported for image screenshots")
+            }
+            onMain {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.writeObjects([image])
+            }
+        }
+        return ScreenshotArtifactData(data: data, clipboardCopied: copyToClipboard)
+    }
+
+    private func agentScreenshotImage(parameters: [String: JSONValue]) throws -> NSImage {
         var requestedRect: CGRect?
         let hasTarget = parameters["target"] != nil || parameters["role"] != nil || parameters["name"] != nil
         if hasTarget {
@@ -165,13 +198,59 @@ extension BrowserWindowController {
             throw AgentOperationError.timedOut("screenshot")
         }
         lock.lock(); let result = captured; lock.unlock()
-        guard let image = try result?.get(),
-              let representation = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: representation),
-              let png = bitmap.representation(using: .png, properties: [:]) else {
-            throw AgentOperationError.invalidResult
+        guard let image = try result?.get() else { throw AgentOperationError.invalidResult }
+        return image
+    }
+
+    private func encodeScreenshot(_ image: NSImage, format: ScreenshotFormat) -> Data? {
+        switch format {
+        case .png:
+            return bitmapData(for: image, type: .png, properties: [:])
+        case .jpeg:
+            return bitmapData(for: image, type: .jpeg, properties: [.compressionFactor: 0.88])
+        case .pdf:
+            return pdfData(for: image)
         }
-        return png
+    }
+
+    private func bitmapData(
+        for image: NSImage,
+        type: NSBitmapImageRep.FileType,
+        properties: [NSBitmapImageRep.PropertyKey: Any]
+    ) -> Data? {
+        guard let representation = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: representation) else { return nil }
+        return bitmap.representation(using: type, properties: properties)
+    }
+
+    private func pdfData(for image: NSImage) -> Data? {
+        var rect = CGRect(origin: .zero, size: image.size)
+        guard rect.width > 0, rect.height > 0 else { return nil }
+        let data = NSMutableData()
+        guard let consumer = CGDataConsumer(data: data as CFMutableData),
+              let context = CGContext(consumer: consumer, mediaBox: &rect, nil),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
+        context.beginPDFPage(nil)
+        context.draw(cgImage, in: rect)
+        context.endPDFPage()
+        context.closePDF()
+        return data as Data
+    }
+
+    func agentScreenshotSeriesPlan(mode: String) throws -> JSONValue {
+        try callAgent(
+            "return globalThis.__headlessAgent.screenshotPlan(args);",
+            arguments: ["args": ["mode": mode]]
+        )
+    }
+
+    func agentScrollToCapturePoint(y: Double) throws -> JSONValue {
+        try callAgent(
+            "return await globalThis.__headlessAgent.scrollToCapturePoint(args);",
+            arguments: ["args": ["y": y]]
+        )
     }
 
     func agentQAReport() -> JSONValue { qaBridge.store.report() }

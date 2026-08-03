@@ -20,7 +20,7 @@ type InspectStep = {
   action?: boolean;
 };
 
-/** Pixel bounds from `headless inspect --interactive` on github.com (viewport screenshot). */
+/** Pixel bounds from `headless inspect --context actions` on github.com (viewport screenshot). */
 const steps: InspectStep[] = [
   {
     ref: "@e8",
@@ -28,7 +28,7 @@ const steps: InspectStep[] = [
     name: "Pricing",
     bounds: { x: 395, y: 13, width: 40, height: 22 },
     tag: { top: 9.5, left: 27 },
-    command: "headless --session qa inspect --interactive --text",
+    command: 'headless --session qa inspect --context actions --task "find signup controls"',
     result: "64 elements · refs @e1–@e64",
   },
   {

@@ -1,6 +1,6 @@
 ---
 name: headless-computer-use
-description: Launch and operate this repository's Headless browser as a safe, persistent browser-computer-use tool through its CLI or stdio MCP adapter. Use when an agent needs to browse or test a website, inspect an accessibility snapshot, click/fill/press/scroll semantically, wait for page state, capture screenshots or MP4 recordings, replay flows, compare visuals, inspect console/network/styles/performance, mock or emulate test traffic, or produce end-to-end QA evidence with the Headless codebase on macOS or Linux.
+description: Launch and operate this repository's Headless browser as a safe, persistent browser-computer-use tool through its CLI or stdio MCP adapter. Use when an agent needs to browse or test a website, inspect an accessibility snapshot, click/fill/press/scroll semantically, wait for page state, capture screenshots or browser recordings, replay flows, compare visuals, inspect console/network/styles/performance, mock or emulate test traffic, or produce end-to-end QA evidence with the Headless codebase on macOS or Linux.
 ---
 
 # Headless Computer Use
@@ -29,7 +29,7 @@ as unsupported.
 1. Start the host.
 2. Create a task-specific named session.
 3. Visit only an HTTP(S) URL within the user's task.
-4. Inspect the page with `inspect --interactive --text`.
+4. Inspect the page with `inspect --context actions --task "..."`.
 5. Prefer role/name targeting; otherwise use a ref from the latest inspection.
 6. After navigation or a substantial rerender, wait for the expected URL, text,
    or settled state and inspect again before the next interaction.
@@ -42,10 +42,10 @@ headless start
 headless capabilities
 headless session create agent-qa
 headless --session agent-qa visit http://localhost:3000
-headless --session agent-qa inspect --interactive --text
+headless --session agent-qa inspect --context actions --task "click Continue"
 headless --session agent-qa click --role button --name Continue
 headless --session agent-qa wait --url /next --settled --timeout 10000
-headless --session agent-qa inspect --interactive --text
+headless --session agent-qa inspect --context actions --task "verify next page"
 headless session close agent-qa
 ```
 
@@ -56,8 +56,10 @@ the page changes or a ref stops matching. Never invent a ref or guess coordinate
 
 Use this priority:
 
-1. `inspect --interactive --text` for page structure, content, controls, media,
-   safety markers, and refs.
+1. `inspect --context actions --task "..."` for a ranked map of visible
+   controls and refs. Use `--interactive` as the legacy alias or
+   `--context full --text` when page structure, body text, or media detail is
+   needed.
 2. Targeted state and diagnostics such as `styles get`, `console list`,
    `network list`, `performance get`, or `animations list`.
 3. `screenshot` when layout, rendering, canvas, imagery, or visual regression
@@ -73,9 +75,12 @@ Start recording before the actions under test, add a paced full-page tour when a
 human needs to see the page, and stop recording on success or failure.
 
 ```sh
-headless --session agent-qa record start --fps 10
+headless --session agent-qa record start --fps 10 --format mp4
 headless --session agent-qa tour --full-page --pace 500
 headless --session agent-qa screenshot --full-page --output before.png
+headless --session agent-qa screenshot --format jpg --output before.jpg
+headless --session agent-qa screenshot --every-viewport --output page-scroll
+headless --session agent-qa screenshot --by-section --output page-sections
 headless --session agent-qa click --role button --name Continue
 headless --session agent-qa wait --url /next --text "Designer details" --settled
 headless --session agent-qa screenshot --full-page --output after.png
@@ -88,6 +93,10 @@ Do not equate recording duration with total test duration. Report the commands
 tested, assertions made, media duration/frame evidence, and any untested feature
 separately. Read [references/commands.md](references/commands.md) for the complete
 command map, failure workflow, flow replay, comparison, and evidence checks.
+PNG is the default screenshot format. JPG/JPEG is available for lighter image
+evidence, PDF is single-capture only, and macOS image screenshots can use
+`--clipboard`. Built-in recordings support MP4, MOV, WebM, and GIF; choose the
+format at `record start` and stop with the same output extension.
 
 ## Diagnose failures before changing the application
 

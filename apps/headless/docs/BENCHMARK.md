@@ -26,6 +26,11 @@ fastest. The reusable P2 flow command reduces orchestration work for real
 agent-driven repeats, but this benchmark retains the comparable explicit CLI
 workflow rather than claiming an unmeasured flow speedup.
 
+Task-aware inspection was added after this benchmark.
+`inspect --context actions --task "..."` prunes the page to visible controls
+and ranks them by the agent's current goal. Re-run the benchmark before quoting
+any new token number for that workflow.
+
 ## Method
 
 Each workflow uses Chromium 150 and FFmpeg 5.1 to produce the same two
