@@ -107,7 +107,9 @@ private func requestTimeout(_ request: CommandRequest) -> TimeInterval {
     }
     if request.command == .tour { return 125 }
     if request.command == .recordStop { return 30 }
-    if request.command == .screenshot { return 30 }
+    if request.command == .screenshot {
+        return request.parameters["series"]?.stringValue == nil ? 30 : 125
+    }
     return 15
 }
 
@@ -147,6 +149,9 @@ do {
     fputs("headless: \(error.description)\n", stderr)
     exit(64)
 } catch let error as ProtocolValidationError {
+    fputs("headless: \(error.description)\n", stderr)
+    exit(64)
+} catch let error as CaptureFormatError {
     fputs("headless: \(error.description)\n", stderr)
     exit(64)
 } catch let error as LocalTransportError {

@@ -918,18 +918,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             explicit: parameters["format"]?.stringValue,
             output: nil
         )
-        let plan = try controller.agentScreenshotSeriesPlan(mode: mode)
-        let points = try screenshotSeriesPoints(from: plan)
+        let rawPlan = try controller.agentScreenshotSeriesPlan(mode: mode)
+        let plan = try parseScreenshotSeriesPlan(rawPlan)
+        let points = plan.points
         let prefix = try screenshotSeriesPrefix(parameters: parameters, mode: mode)
-        var reserved: [URL] = []
+        defer { _ = try? controller.agentScrollToCapturePoint(y: plan.initialY) }
+        let reserved = try reserveScreenshotSeriesArtifacts(
+            store: artifacts, points: points, prefix: prefix, mode: mode, format: format
+        )
         do {
-            reserved = try points.enumerated().map { index, point in
-                let name = try screenshotSeriesArtifactName(
-                    prefix: prefix, mode: mode, index: index + 1, count: points.count, point: point,
-                    format: format
-                )
-                return try artifacts.reserve(requestedName: name, extension: format.fileExtension, prefix: prefix)
-            }
             let metadata = try points.enumerated().map { index, point -> JSONValue in
                 _ = try controller.agentScrollToCapturePoint(y: point.y)
                 let data = try controller.agentScreenshotData(
@@ -937,7 +934,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ).data
                 return try artifacts.writeReserved(data, to: reserved[index])
             }
-            return screenshotSeriesSummary(mode: mode, points: points, artifacts: metadata)
+            return screenshotSeriesSummary(
+                mode: mode, points: points, artifacts: metadata,
+                truncated: plan.truncated, totalPoints: plan.totalPoints
+            )
         } catch {
             artifacts.discardReserved(reserved)
             throw error
@@ -1271,6 +1271,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                suggestion: "Executable files, installers, scripts, and disk images are blocked. Use normal web pages or media only.")
             }
             return failure(request, code: "INVALID_URL", message: error.description)
+        } catch let error as CaptureFormatError {
+            return failure(request, code: "INVALID_CAPTURE_FORMAT", message: error.description)
         } catch let error as RecordingError {
             let code: String
             let suggestion: String?

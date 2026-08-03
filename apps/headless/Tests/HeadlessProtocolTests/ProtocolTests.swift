@@ -168,8 +168,26 @@ struct ProtocolTests {
         ).validate()
         try CommandRequest(
             id: "valid-pdf-screenshot", command: .screenshot,
-            parameters: ["format": .string("pdf"), "output": .string("dashboard.pdf")]
+            parameters: [
+                "format": .string("pdf"), "fullPage": .bool(true),
+                "output": .string("dashboard.pdf"),
+            ]
         ).validate()
+        try expectThrows("PDF screenshots should require full-page mode") {
+            try CommandRequest(
+                id: "bad-viewport-pdf", command: .screenshot,
+                parameters: ["format": .string("pdf"), "output": .string("dashboard.pdf")]
+            ).validate()
+        }
+        try expectThrows("PDF screenshots should reject element targets consistently") {
+            try CommandRequest(
+                id: "bad-target-pdf", command: .screenshot,
+                parameters: [
+                    "format": .string("pdf"), "fullPage": .bool(true),
+                    "target": .string("@e1"), "output": .string("element.pdf"),
+                ]
+            ).validate()
+        }
         try expectThrows("invalid screenshot series should be rejected") {
             try CommandRequest(
                 id: "bad-screenshot-series", command: .screenshot,
@@ -180,6 +198,12 @@ struct ProtocolTests {
             try CommandRequest(
                 id: "bad-screenshot-prefix", command: .screenshot,
                 parameters: ["series": .string("section"), "outputPrefix": .string("../sections")]
+            ).validate()
+        }
+        try expectThrows("output prefixes without a screenshot series should be rejected") {
+            try CommandRequest(
+                id: "unused-screenshot-prefix", command: .screenshot,
+                parameters: ["outputPrefix": .string("ignored")]
             ).validate()
         }
         try expectThrows("screenshot series should not combine with a single output") {
@@ -300,6 +324,16 @@ struct ProtocolTests {
         ])
         try expect(jpegScreenshot.request?.parameters["format"] == .string("jpeg"), "screenshot format should parse")
         try expect(jpegScreenshot.request?.parameters["clipboard"] == .bool(true), "screenshot clipboard should parse")
+        let pdfScreenshot = try CLIParser().parse([
+            "screenshot", "--format", "pdf", "--full-page", "--output", "page.pdf",
+        ])
+        try expect(pdfScreenshot.request?.parameters["fullPage"] == .bool(true), "PDF should parse in full-page mode")
+        try expectThrows("viewport PDF should fail in the CLI") {
+            _ = try CLIParser().parse(["screenshot", "--format", "pdf", "--output", "page.pdf"])
+        }
+        try expectThrows("element PDF should fail in the CLI") {
+            _ = try CLIParser().parse(["screenshot", "@e1", "--format", "pdf", "--full-page"])
+        }
         let viewportSeries = try CLIParser().parse([
             "screenshot", "--every-viewport", "--format", "jpg", "--output", "dashboard-scroll",
         ])
@@ -481,6 +515,57 @@ struct ProtocolTests {
         }
     }
 
+    static func screenshotSeriesHelpers() throws {
+        let rawPlan = JSONValue.object([
+            "initialY": .number(240),
+            "truncated": .bool(true),
+            "totalPoints": .number(100),
+            "points": .array([
+                .object(["y": .number(0), "label": .string("top"), "kind": .string("viewport")]),
+                .object(["y": .number(900), "label": .string("bottom"), "kind": .string("viewport")]),
+            ]),
+        ])
+        let plan = try parseScreenshotSeriesPlan(rawPlan)
+        try expect(plan.initialY == 240, "series plans should retain the initial scroll position")
+        try expect(plan.points.count == 2, "series plans should parse capture points")
+        try expect(plan.truncated && plan.totalPoints == 100, "series plans should report truncation")
+        try expectThrows("invalid initial scroll positions should fail") {
+            _ = try parseScreenshotSeriesPlan(.object([
+                "initialY": .number(-1),
+                "points": .array([.object(["y": .number(0)])]),
+            ]))
+        }
+
+        let root = "/tmp/headless-series-test-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let store = try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": root])
+        let collisionName = try screenshotSeriesArtifactName(
+            prefix: "capture", mode: "viewport", index: 2, count: plan.points.count,
+            point: plan.points[1], format: .png
+        )
+        _ = try store.write(
+            Data([0x01]), requestedName: collisionName, extension: "png", prefix: "unused"
+        )
+        try expectThrows("a later series collision should fail atomically") {
+            _ = try reserveScreenshotSeriesArtifacts(
+                store: store, points: plan.points, prefix: "capture",
+                mode: "viewport", format: .png
+            )
+        }
+        let firstName = try screenshotSeriesArtifactName(
+            prefix: "capture", mode: "viewport", index: 1, count: plan.points.count,
+            point: plan.points[0], format: .png
+        )
+        try expect(
+            !FileManager.default.fileExists(atPath: root + "/" + firstName),
+            "partial series reservations should be removed after a later collision"
+        )
+        try expect(RecordingFormat.webm.videoCodec == "vp9", "recording metadata should report the codec, not encoder")
+        try expect(!agentRuntimeJavaScript.contains("hints.push('select')"), "inspect must not advertise a missing select command")
+        try expect(!agentRuntimeJavaScript.contains("hints.push('upload')"), "inspect must not advertise a missing upload command")
+        try expect(!agentRuntimeJavaScript.contains("hints.push('slide')"), "inspect must not advertise a missing slide command")
+    }
+
     static func diagnosticSummary() throws {
         let store = QADiagnosticStore()
         store.append(kind: "console", level: "error", message: "Next.js hydration mismatch")
@@ -642,6 +727,7 @@ struct ProtocolTests {
             ("CLI P2 commands and boundaries", cliP2CommandsAndBoundaries),
             ("Chromium runtime selection", chromiumRuntimeSelection),
             ("artifact store round-trip", artifactStoreRoundTrip),
+            ("screenshot series helpers", screenshotSeriesHelpers),
             ("diagnostic summary", diagnosticSummary),
             ("diagnostic bounds and URL redaction", diagnosticsBoundAndRedacted),
             ("diagnostic services", diagnosticServices),

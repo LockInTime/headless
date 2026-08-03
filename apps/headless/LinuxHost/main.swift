@@ -38,24 +38,24 @@ final class LinuxBrowserHost: @unchecked Sendable {
             explicit: parameters["format"]?.stringValue,
             output: nil
         )
-        let plan = try session.screenshotSeriesPlan(mode: mode)
-        let points = try screenshotSeriesPoints(from: plan)
+        let rawPlan = try session.screenshotSeriesPlan(mode: mode)
+        let plan = try parseScreenshotSeriesPlan(rawPlan)
+        let points = plan.points
         let prefix = try screenshotSeriesPrefix(parameters: parameters, mode: mode)
-        var reserved: [URL] = []
+        defer { _ = try? session.scrollToCapturePoint(y: plan.initialY) }
+        let reserved = try reserveScreenshotSeriesArtifacts(
+            store: artifacts, points: points, prefix: prefix, mode: mode, format: format
+        )
         do {
-            reserved = try points.enumerated().map { index, point in
-                let name = try screenshotSeriesArtifactName(
-                    prefix: prefix, mode: mode, index: index + 1, count: points.count, point: point,
-                    format: format
-                )
-                return try artifacts.reserve(requestedName: name, extension: format.fileExtension, prefix: prefix)
-            }
             let metadata = try points.enumerated().map { index, point -> JSONValue in
                 _ = try session.scrollToCapturePoint(y: point.y)
                 let data = try session.screenshot(parameters: [:], format: format)
                 return try artifacts.writeReserved(data, to: reserved[index])
             }
-            return screenshotSeriesSummary(mode: mode, points: points, artifacts: metadata)
+            return screenshotSeriesSummary(
+                mode: mode, points: points, artifacts: metadata,
+                truncated: plan.truncated, totalPoints: plan.totalPoints
+            )
         } catch {
             artifacts.discardReserved(reserved)
             throw error
@@ -334,6 +334,8 @@ final class LinuxBrowserHost: @unchecked Sendable {
                 id: request.id, code: code, message: error.description,
                 suggestion: suggestion
             )
+        } catch let error as CaptureFormatError {
+            return .failure(id: request.id, code: "INVALID_CAPTURE_FORMAT", message: error.description)
         } catch let error as ArtifactError {
             return .failure(id: request.id, code: "ARTIFACT_ERROR", message: error.description)
         } catch {

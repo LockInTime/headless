@@ -57,13 +57,13 @@ export default function DocsPage() {
           <section id="context">
             <p className="docs-label">04 / Context pruning</p>
             <h2>Show the useful controls.</h2>
-            <p>Use <code>{'inspect --context actions --task "search open ai"'}</code> to return visible buttons, links, fields, selects, upload inputs, menus, and tabs first. Use <code>inspect --context full</code> when the broader page snapshot is needed.</p>
+            <p>Use <code>{'inspect --context actions --task "search open ai"'}</code> to rank visible controls for the task. Each <code>actions</code> field lists only executable protocol verbs: <code>click</code> or <code>fill</code>. Use <code>inspect --context full</code> when the broader page snapshot is needed.</p>
           </section>
 
           <section id="scrollable">
             <p className="docs-label">05 / Scrollable evidence</p>
             <h2>Capture the whole scroll.</h2>
-            <p>Use <code>screenshot --every-viewport --output dashboard-scroll</code> for one image per viewport-height scroll stop. Use <code>screenshot --by-section --output dashboard-sections</code> for headings, sections, and regions. Add <code>--format jpg</code> for JPEG series; PDF is single-capture only.</p>
+            <p>Use <code>screenshot --every-viewport --output dashboard-scroll</code> for up to 80 viewport-height stops, always including the bottom; bounded results report <code>truncated</code> and <code>totalPoints</code>. Section series capture headings and regions, and both modes restore the original scroll position. Add <code>--format jpg</code> for JPEG series; PDF requires <code>--full-page</code>.</p>
           </section>
 
           <section id="safety">

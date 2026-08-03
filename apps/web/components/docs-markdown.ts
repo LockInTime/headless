@@ -34,7 +34,7 @@ headless --session qa report create --output pr-report.json
 
 ## Context pruning
 
-Use \`inspect --context actions --task "search open ai"\` when the agent needs a clean action map. It returns visible buttons, links, fields, selects, upload inputs, menus, and tabs first, ranked for the current task. Use \`inspect --context full\` only when the broader page snapshot is needed.
+Use \`inspect --context actions --task "search open ai"\` when the agent needs a clean action map. It returns visible controls ranked for the current task, while each \`actions\` field contains only protocol verbs that can actually run (\`click\` or \`fill\`). Use \`inspect --context full\` only when the broader page snapshot is needed.
 
 ## Scrollable page evidence
 
@@ -43,7 +43,7 @@ headless --session qa screenshot --every-viewport --output dashboard-scroll
 headless --session qa screenshot --by-section --format jpg --output dashboard-sections
 \`\`\`
 
-Use viewport screenshots for every 100vh scroll stop, and section screenshots for headings, sections, and regions. Series commands create numbered PNG or JPG artifacts from the prefix. Single screenshots also support JPG/JPEG, PDF, and macOS image clipboard output.
+Use viewport screenshots for up to 80 100vh scroll stops, always including the final bottom position; bounded results report \`truncated\` and \`totalPoints\`. Series capture restores the original scroll position and creates numbered PNG or JPG artifacts from the prefix. PDF requires \`--full-page\`; macOS image screenshots can also use clipboard output.
 
 ## Safety
 

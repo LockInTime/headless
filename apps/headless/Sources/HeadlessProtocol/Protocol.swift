@@ -278,6 +278,11 @@ public struct CommandRequest: Codable, Equatable, Sendable {
             if format == .pdf && parameters["clipboard"]?.boolValue == true {
                 throw ProtocolValidationError.invalidParameter("Clipboard output is only supported for image screenshots")
             }
+            if format == .pdf && (parameters["fullPage"]?.boolValue != true || hasTarget) {
+                throw ProtocolValidationError.invalidParameter(
+                    "PDF screenshots require fullPage without an element target"
+                )
+            }
             if series != nil && (parameters["fullPage"]?.boolValue == true || hasTarget || parameters["output"] != nil) {
                 throw ProtocolValidationError.invalidParameter("Use screenshot series without --full-page, output file, or element target")
             }
@@ -288,6 +293,11 @@ public struct CommandRequest: Codable, Equatable, Sendable {
                 try validateArtifactName(output, expectedExtensions: format.artifactExtensions)
             }
             if let outputPrefix = try string("outputPrefix", maximumBytes: 80) {
+                guard series != nil else {
+                    throw ProtocolValidationError.invalidParameter(
+                        "Screenshot outputPrefix requires a screenshot series"
+                    )
+                }
                 try validateArtifactPrefix(outputPrefix)
             }
         case .recordStart:

@@ -84,7 +84,7 @@ public enum RecordingFormat: String, CaseIterable, Sendable {
     public var videoCodec: String {
         switch self {
         case .mp4, .mov: return "mpeg4"
-        case .webm: return "libvpx-vp9"
+        case .webm: return "vp9"
         case .gif: return "gif"
         }
     }

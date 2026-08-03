@@ -293,6 +293,9 @@ public struct CLIParser {
             }
             return remote(.screenshot, session: session, parameters: parameters, jsonOutput: jsonOutput)
         }
+        if format == .pdf && (!fullPage || role != nil || name != nil || !args.isEmpty) {
+            throw CLIParseError.invalidOption("PDF screenshots require --full-page without an element target")
+        }
         var parameters: [String: JSONValue] = ["fullPage": .bool(fullPage)]
         parameters["format"] = .string(format.rawValue)
         if clipboard { parameters["clipboard"] = .bool(true) }
@@ -590,7 +593,8 @@ Commands:
   wait [--settled] [--url PATTERN] [--text TEXT] [--timeout MS]
   tour [--full-page] [--pace PX_PER_SECOND]
   capture-info
-  screenshot [REF | --role ROLE --name NAME | --full-page] [--format png|jpg|jpeg|pdf] [--output FILE] [--clipboard]
+  screenshot [REF | --role ROLE --name NAME | --full-page] [--format png|jpg|jpeg] [--output FILE] [--clipboard]
+  screenshot --full-page --format pdf [--output FILE.pdf]
   screenshot --every-viewport|--by-section [--format png|jpg|jpeg] [--output PREFIX]
   artifacts list
   record start [--fps N] [--format mp4|mov|webm|gif] [--quality fast|balanced|high] [--output FILE]
@@ -622,6 +626,7 @@ public let capabilitiesDocument: JSONValue = .object([
     "commands": .array(CommandName.allCases.map { .string($0.rawValue) }),
     "artifacts": .array([.string("png"), .string("jpg"), .string("jpeg"), .string("pdf"), .string("mp4"), .string("mov"), .string("webm"), .string("gif"), .string("json")]),
     "screenshotFormats": .array([.string("png"), .string("jpg"), .string("jpeg"), .string("pdf")]),
+    "pdfScreenshots": .string("full-page only"),
     "screenshotClipboard": .string("macOS image screenshots only"),
     "recordingFormats": .array([.string("mp4"), .string("mov"), .string("webm"), .string("gif")]),
     "recordingQuality": .array([.string("fast"), .string("balanced"), .string("high")]),

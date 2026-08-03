@@ -94,7 +94,7 @@ tested, assertions made, media duration/frame evidence, and any untested feature
 separately. Read [references/commands.md](references/commands.md) for the complete
 command map, failure workflow, flow replay, comparison, and evidence checks.
 PNG is the default screenshot format. JPG/JPEG is available for lighter image
-evidence, PDF is single-capture only, and macOS image screenshots can use
+evidence, PDF requires `--full-page`, and macOS image screenshots can use
 `--clipboard`. Built-in recordings support MP4, MOV, WebM, and GIF; choose the
 format at `record start` and stop with the same output extension.
 

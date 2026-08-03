@@ -71,10 +71,11 @@ headless --session qa styles get --role button --name Continue --property displa
 headless artifacts list
 ```
 
-`inspect --context actions` returns the visible controls an agent can act on:
-buttons, links, fields, selects, upload inputs, menus, and tabs. Add
-`--task "search open ai"` to rank those controls by task relevance instead of
-sending page noise first. `inspect --context full` keeps the broader media and
+`inspect --context actions` returns visible controls ranked for the task. Each
+control's `actions` list contains only protocol verbs that can run (`click` or
+`fill`); unsupported controls never advertise nonexistent commands. Add `--task
+"search open ai"` to rank controls by relevance instead of sending page noise
+first. `inspect --context full` keeps the broader media and
 rendering snapshot. `inspect` returns roles, names, media URLs, decoded
 image/video dimensions, load state, safety markers, bounds, and references
 such as `@e1`.
@@ -82,9 +83,12 @@ such as `@e1`.
 recording state for an external recorder or QA harness.
 
 For scrollable-page QA, use `screenshot --every-viewport --output PREFIX` for
-one image per viewport-height scroll stop. Use
+up to 80 viewport-height scroll stops, always including the final bottom
+position. Results report `truncated` and `totalPoints` when a longer page is
+bounded. Use
 `screenshot --by-section --output PREFIX` to capture around visible headings and
-sections. Add `--format jpg` for JPEG series; PDF is single-capture only. The
+sections. Series capture restores the original scroll position. Add `--format
+jpg` for JPEG series; PDF requires `--full-page` and is not a series format. The
 output prefix creates numbered artifacts such as `dashboard-scroll-001.png` or
 `dashboard-scroll-001.jpg`.
 
@@ -119,7 +123,7 @@ do not include OS chrome or audio. For an OS recorder, OBS, or a CI recorder,
 use `capture-info` to get the window or browser process and keep using the same
 navigation commands.
 
-Screenshots support PNG, JPG/JPEG, and single-capture PDF. macOS can also copy
+Screenshots support PNG, JPG/JPEG, and full-page PDF. macOS can also copy
 image screenshots to the clipboard with `--clipboard`; Linux rejects clipboard
 capture because VM clipboards are not reliable by default. Screenshots support
 the viewport, full page, one element, every viewport-height scroll stop, or each

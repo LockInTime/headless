@@ -24,11 +24,27 @@ public struct ScreenshotSeriesPoint: Equatable, Sendable {
     }
 }
 
-public func screenshotSeriesPoints(from plan: JSONValue) throws -> [ScreenshotSeriesPoint] {
+public struct ScreenshotSeriesPlan: Equatable, Sendable {
+    public let initialY: Double
+    public let points: [ScreenshotSeriesPoint]
+    public let truncated: Bool
+    public let totalPoints: Int
+
+    public init(initialY: Double, points: [ScreenshotSeriesPoint], truncated: Bool, totalPoints: Int) {
+        self.initialY = initialY
+        self.points = points
+        self.truncated = truncated
+        self.totalPoints = totalPoints
+    }
+}
+
+public func parseScreenshotSeriesPlan(_ plan: JSONValue) throws -> ScreenshotSeriesPlan {
     guard case .object(let object) = plan,
           case .array(let values)? = object["points"] else {
         throw ScreenshotSeriesError.invalidPlan
     }
+    let initialY = object["initialY"]?.numberValue ?? 0
+    guard initialY.isFinite, initialY >= 0 else { throw ScreenshotSeriesError.invalidPlan }
     let points = try values.prefix(80).map { value -> ScreenshotSeriesPoint in
         guard case .object(let item) = value,
               let y = item["y"]?.numberValue, y.isFinite else {
@@ -41,7 +57,22 @@ public func screenshotSeriesPoints(from plan: JSONValue) throws -> [ScreenshotSe
         )
     }
     guard !points.isEmpty else { throw ScreenshotSeriesError.emptyPlan }
-    return points
+    let truncated = object["truncated"]?.boolValue ?? (values.count > points.count)
+    let totalPointsValue = object["totalPoints"]?.numberValue ?? Double(values.count)
+    guard totalPointsValue.isFinite, totalPointsValue.rounded(.towardZero) == totalPointsValue,
+          totalPointsValue >= Double(points.count), totalPointsValue <= 100_000_000 else {
+        throw ScreenshotSeriesError.invalidPlan
+    }
+    return ScreenshotSeriesPlan(
+        initialY: initialY,
+        points: points,
+        truncated: truncated || values.count > points.count,
+        totalPoints: Int(totalPointsValue)
+    )
+}
+
+public func screenshotSeriesPoints(from plan: JSONValue) throws -> [ScreenshotSeriesPoint] {
+    try parseScreenshotSeriesPlan(plan).points
 }
 
 public func screenshotSeriesPrefix(parameters: [String: JSONValue], mode: String) throws -> String {
@@ -78,7 +109,9 @@ public func screenshotSeriesArtifactName(
 public func screenshotSeriesSummary(
     mode: String,
     points: [ScreenshotSeriesPoint],
-    artifacts: [JSONValue]
+    artifacts: [JSONValue],
+    truncated: Bool = false,
+    totalPoints: Int? = nil
 ) -> JSONValue {
     let positions = points.enumerated().map { index, point in
         JSONValue.object([
@@ -93,7 +126,34 @@ public func screenshotSeriesSummary(
         "count": .number(Double(artifacts.count)),
         "artifacts": .array(artifacts),
         "positions": .array(positions),
+        "truncated": .bool(truncated),
+        "totalPoints": .number(Double(totalPoints ?? points.count)),
     ])
+}
+
+public func reserveScreenshotSeriesArtifacts(
+    store: ArtifactStore,
+    points: [ScreenshotSeriesPoint],
+    prefix: String,
+    mode: String,
+    format: ScreenshotFormat
+) throws -> [URL] {
+    var reserved: [URL] = []
+    do {
+        for (index, point) in points.enumerated() {
+            let name = try screenshotSeriesArtifactName(
+                prefix: prefix, mode: mode, index: index + 1, count: points.count,
+                point: point, format: format
+            )
+            reserved.append(try store.reserve(
+                requestedName: name, extension: format.fileExtension, prefix: prefix
+            ))
+        }
+        return reserved
+    } catch {
+        store.discardReserved(reserved)
+        throw error
+    }
 }
 
 private func screenshotSeriesSlug(_ value: String, fallback: String) -> String {

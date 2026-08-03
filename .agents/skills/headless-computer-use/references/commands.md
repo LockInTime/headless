@@ -75,7 +75,10 @@ Screenshot format notes:
 
 - PNG is the default.
 - JPG/JPEG is useful for lighter visual evidence.
-- PDF is single-capture page evidence, not a scroll-series format.
+- PDF requires `--full-page` and cannot target an element or scroll series.
+- Screenshot series restore the original scroll position. Viewport series are
+  bounded to 80 artifacts, retain the final bottom position, and report
+  `truncated` plus `totalPoints` when bounded.
 - `--clipboard` is macOS image-only; Linux rejects it because VM clipboards are
   not reliable by default.
 
