@@ -309,13 +309,21 @@ final class LinuxBrowserSession: @unchecked Sendable {
         return try wait(parameters: ["settled": .bool(true), "timeoutMs": .number(20_000)])
     }
 
-    func inspect(interactive: Bool, includeText: Bool, context: String, task: String?) throws -> JSONValue {
-        try evaluate(
+    func inspect(parameters: [String: JSONValue]) throws -> JSONValue {
+        var options: [String: Any] = [
+            "context": parameters["context"]?.stringValue ?? "full",
+            "task": parameters["task"]?.stringValue ?? "",
+        ]
+        if let within = parameters["within"]?.stringValue { options["within"] = within }
+        if let limit = parameters["limit"]?.numberValue { options["limit"] = limit }
+        if let budget = parameters["budget"]?.numberValue { options["budget"] = budget }
+        if let depth = parameters["depth"]?.numberValue { options["depth"] = depth }
+        return try evaluate(
             "return globalThis.__headlessAgent.snapshot(interactive, includeText, options);",
             input: [
-                "interactive": interactive,
-                "includeText": includeText,
-                "options": ["context": context, "task": task ?? ""],
+                "interactive": parameters["interactive"]?.boolValue ?? false,
+                "includeText": parameters["text"]?.boolValue ?? false,
+                "options": options,
             ]
         )
     }

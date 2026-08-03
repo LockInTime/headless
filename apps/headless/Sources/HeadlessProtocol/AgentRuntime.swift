@@ -2,8 +2,11 @@ public let agentRuntimeJavaScript = #"""
 if (!globalThis.__headlessAgent) {
   globalThis.__headlessAgent = (() => {
     let nextRef = 1;
+    let nextRegionRef = 1;
     const refs = new WeakMap();
+    const regionRefs = new WeakMap();
     let current = new Map();
+    let currentRegions = new Map();
     let lastMutation = performance.now();
     new MutationObserver(() => { lastMutation = performance.now(); })
       .observe(document, {subtree: true, childList: true, attributes: true, characterData: true});
@@ -107,9 +110,39 @@ if (!globalThis.__headlessAgent) {
       current.set(ref, element);
       return ref;
     };
-    const candidates = () => Array.from(document.querySelectorAll(
-      'a[href],button,input,textarea,select,summary,[role],[contenteditable="true"],[tabindex],img,video,audio,canvas,svg'
-    )).filter(visible);
+    const elementSelector = 'a[href],button,input,textarea,select,summary,[role],[contenteditable="true"],[tabindex],img,video,audio,canvas,svg';
+    const regionSelector = 'main,nav,aside,header,footer,section,article,form,dialog,[role="main"],[role="navigation"],[role="region"],[role="dialog"],[role="form"],[role="search"],[role="complementary"],h1,h2,h3,h4,h5,h6';
+    const headingLevel = element => {
+      const match = element?.tagName?.match(/^H([1-6])$/i);
+      return match ? Number(match[1]) : null;
+    };
+    const scopeRoots = scope => {
+      if (!scope || scope === document || scope === document.documentElement) return [document.documentElement];
+      const level = headingLevel(scope);
+      if (!level) return [scope];
+      const roots = [scope];
+      for (let sibling = scope.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
+        const siblingLevel = headingLevel(sibling);
+        if (siblingLevel && siblingLevel <= level) break;
+        roots.push(sibling);
+      }
+      return roots;
+    };
+    const scopedQuery = (scope, selector) => {
+      const result = [];
+      const seen = new Set();
+      for (const root of scopeRoots(scope)) {
+        if (!root) continue;
+        const add = element => {
+          if (!seen.has(element)) { seen.add(element); result.push(element); }
+        };
+        if (root.matches?.(selector)) add(root);
+        for (const element of root.querySelectorAll?.(selector) || []) add(element);
+      }
+      return result;
+    };
+    const candidates = (scope = document) => scopedQuery(scope, elementSelector).filter(visible);
+    const regionCandidates = (scope = document) => scopedQuery(scope, regionSelector).filter(visible);
     const taskTerms = task => normalize(task).toLowerCase().split(/[^a-z0-9]+/).filter(term => term.length > 1).slice(0, 24);
     const rankingText = element => [
       role(element), name(element), element.getAttribute('placeholder'), element.getAttribute('aria-label'),
@@ -153,6 +186,108 @@ if (!globalThis.__headlessAgent) {
       return elements.map(element => rank(element, terms, phrase))
         .sort((left, right) => right.score - left.score);
     };
+    const regionRole = element => {
+      const explicit = element.getAttribute('role');
+      if (explicit) return explicit.split(/\s+/)[0].toLowerCase().slice(0, 64);
+      const tag = element.tagName.toLowerCase();
+      return ({main: 'main', nav: 'navigation', aside: 'complementary', header: 'banner',
+        footer: 'contentinfo', section: 'region', article: 'article', form: 'form', dialog: 'dialog'}[tag]
+        || (/^h[1-6]$/.test(tag) ? 'heading' : tag));
+    };
+    const regionName = element => {
+      const labelledBy = element.getAttribute('aria-labelledby');
+      if (labelledBy) {
+        const labelled = labelledBy.split(/\s+/).map(id => document.getElementById(id)?.innerText || '').join(' ');
+        if (normalize(labelled)) return clipped(labelled, 160);
+      }
+      if (normalize(element.getAttribute('aria-label'))) return clipped(element.getAttribute('aria-label'), 160);
+      if (headingLevel(element)) return clipped(element.innerText || element.textContent, 160);
+      const heading = element.querySelector('h1,h2,h3,h4,h5,h6');
+      if (heading && normalize(heading.innerText || heading.textContent)) {
+        return clipped(heading.innerText || heading.textContent, 160);
+      }
+      return clipped(element.getAttribute('title') || element.getAttribute('id') || regionRole(element), 160);
+    };
+    const regionRefFor = element => {
+      let ref = regionRefs.get(element);
+      if (!ref) { ref = `@r${nextRegionRef++}`; regionRefs.set(element, ref); }
+      currentRegions.set(ref, element);
+      return ref;
+    };
+    const resolveRegion = reference => {
+      if (!reference) return document;
+      const element = currentRegions.get(reference);
+      if (!element || !element.isConnected || !visible(element)) {
+        currentRegions.delete(reference);
+        throw new Error(`REGION_NOT_FOUND:${reference}`);
+      }
+      return element;
+    };
+    const regionDepth = (element, scope) => {
+      if (headingLevel(element)) return Math.max(0, headingLevel(element) - 1);
+      let depth = 0;
+      for (let parent = element.parentElement; parent && parent !== scope && parent !== document.body; parent = parent.parentElement) {
+        if (parent.matches?.(regionSelector) && !headingLevel(parent)) depth += 1;
+      }
+      return depth;
+    };
+    const rankRegion = (element, task) => {
+      const terms = taskTerms(task);
+      const phrase = normalize(task).toLowerCase().slice(0, 128);
+      const sample = normalize(`${regionRole(element)} ${regionName(element)} ${element.innerText || ''}`).toLowerCase().slice(0, 2000);
+      let score = 0;
+      const reasons = [];
+      if (phrase && sample.includes(phrase)) { score += 40; reasons.push('task phrase match'); }
+      for (const term of terms) if (sample.includes(term)) score += 14;
+      const rect = element.getBoundingClientRect();
+      if (rect.top >= 0 && rect.top <= innerHeight) { score += 10; reasons.push('in viewport'); }
+      if (regionRole(element) === 'main') score += 4;
+      return {element, score, reasons: Array.from(new Set(reasons)).slice(0, 4)};
+    };
+    const describeRegion = (entry, scope, includeRelevance) => {
+      const element = entry.element || entry;
+      const rect = element.getBoundingClientRect();
+      const actions = candidates(element).filter(isInteractive).length;
+      const text = normalize(scopeRoots(element).map(root => root.innerText || '').join(' '));
+      const item = {
+        ref: regionRefFor(element), role: regionRole(element), name: regionName(element),
+        depth: regionDepth(element, scope), actions, textChars: text.length,
+        bounds: {x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height)}
+      };
+      const level = headingLevel(element);
+      if (level) item.headingLevel = level;
+      if (includeRelevance) item.relevance = {score: Math.round(entry.score), reasons: entry.reasons};
+      return item;
+    };
+    const textCandidates = scope => {
+      const selector = 'h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,pre,code,caption,th,td';
+      const seen = new Set();
+      return scopedQuery(scope, selector).filter(visible).flatMap(element => {
+        const text = clipped(element.innerText || element.textContent, 600);
+        const key = text.toLowerCase();
+        if (!text || seen.has(key)) return [];
+        seen.add(key);
+        return [{element, text}];
+      });
+    };
+    const rankText = (entry, task) => {
+      const terms = taskTerms(task);
+      const phrase = normalize(task).toLowerCase().slice(0, 128);
+      const value = entry.text.toLowerCase();
+      let score = 0;
+      const reasons = [];
+      if (phrase && value.includes(phrase)) { score += 40; reasons.push('task phrase match'); }
+      for (const term of terms) if (value.includes(term)) score += 16;
+      if (headingLevel(entry.element)) { score += 8; reasons.push('heading'); }
+      const rect = entry.element.getBoundingClientRect();
+      if (rect.top >= 0 && rect.top <= innerHeight) { score += 6; reasons.push('in viewport'); }
+      return {...entry, score, reasons: Array.from(new Set(reasons)).slice(0, 4)};
+    };
+    const describeText = (entry, includeRelevance) => {
+      const item = {ref: refFor(entry.element), role: role(entry.element), text: entry.text};
+      if (includeRelevance) item.relevance = {score: Math.round(entry.score), reasons: entry.reasons};
+      return item;
+    };
     const describe = (entry, includeRelevance) => {
       const element = entry.element || entry;
       const rect = element.getBoundingClientRect();
@@ -195,27 +330,96 @@ if (!globalThis.__headlessAgent) {
       }
       return item;
     };
+    const encodedBytes = value => new TextEncoder().encode(JSON.stringify(value)).length;
+    const pruneToBudget = (result, available, requestedBudget) => {
+      const budget = requestedBudget || null;
+      const arrays = ['regions', 'elements', 'snippets'].filter(key => Array.isArray(result[key]));
+      const refresh = () => {
+        const omitted = {};
+        for (const key of arrays) omitted[key] = Math.max(0, (available[key] || 0) - result[key].length);
+        result.omitted = omitted;
+        result.truncated = Object.values(omitted).some(value => value > 0);
+        result.contextStats = {
+          encodedBytes: 0,
+          estimatedTokens: 0,
+          budget,
+          budgetApplied: Boolean(budget)
+        };
+        for (let pass = 0; pass < 2; pass += 1) {
+          const bytes = encodedBytes(result);
+          result.contextStats.encodedBytes = bytes;
+          result.contextStats.estimatedTokens = Math.ceil(bytes / 4);
+        }
+      };
+      refresh();
+      if (budget) {
+        const maximumBytes = budget * 4;
+        while (encodedBytes(result) > maximumBytes) {
+          const populated = arrays.filter(key => result[key].length > 0);
+          if (populated.length === 0) {
+            if (typeof result.text === 'string' && result.text.length > 0) {
+              result.text = result.text.slice(0, Math.max(0, result.text.length - 256));
+              refresh();
+              continue;
+            }
+            break;
+          }
+          populated.sort((left, right) => encodedBytes(result[right][result[right].length - 1]) - encodedBytes(result[left][result[left].length - 1]));
+          result[populated[0]].pop();
+          refresh();
+        }
+      }
+      refresh();
+      return result;
+    };
     const snapshot = (interactiveOnly, includeText, options = {}) => {
       current = new Map();
-      let elements = candidates();
-      const contextMode = options.context === 'actions' || interactiveOnly ? 'actions' : 'full';
+      const allowedContexts = new Set(['summary', 'outline', 'text', 'actions', 'full']);
+      const requestedContext = allowedContexts.has(options.context) ? options.context : 'full';
+      const contextMode = interactiveOnly && requestedContext === 'full' ? 'actions' : requestedContext;
       const task = clipped(options.task, 512);
-      if (contextMode === 'actions') {
-        elements = elements.filter(isInteractive);
-      }
-      const ranked = rankedElements(elements, task);
-      const limited = ranked.slice(0, 250).map(entry => describe(entry, Boolean(task)));
+      const scope = resolveRegion(clipped(options.within, 16));
+      const defaultLimits = {summary: 12, outline: 40, text: 12, actions: 20, full: 250};
+      const defaultBudgets = {summary: 1200, outline: 1600, text: 1500, actions: 1200, full: null};
+      const limit = Math.min(250, Math.max(1, Number(options.limit || defaultLimits[contextMode])));
+      const budget = options.budget ? Math.min(16000, Math.max(256, Number(options.budget))) : defaultBudgets[contextMode];
+      const depth = Math.min(8, Math.max(0, Number(options.depth ?? 3)));
       const root = document.documentElement;
       const result = {
         url: String(location.href).slice(0, 8192), title: String(document.title).slice(0, 512),
         contextMode,
         viewport: {width: innerWidth, height: innerHeight, scrollX, scrollY,
           contentWidth: root ? root.scrollWidth : 0, contentHeight: root ? root.scrollHeight : 0},
-        elements: limited, truncated: ranked.length > limited.length
+        untrustedContent: true
       };
       if (task) result.task = task;
-      if (includeText) result.text = normalize(document.body?.innerText).slice(0, 30000);
-      return result;
+      if (options.within) result.within = options.within;
+      const available = {};
+      if (contextMode === 'actions' || contextMode === 'full' || contextMode === 'summary') {
+        let elements = candidates(scope);
+        if (contextMode !== 'full') elements = elements.filter(isInteractive);
+        const ranked = rankedElements(elements, task);
+        const maximum = contextMode === 'summary' ? Math.min(limit, 8) : limit;
+        result.elements = ranked.slice(0, maximum).map(entry => describe(entry, Boolean(task)));
+        available.elements = ranked.length;
+      }
+      if (contextMode === 'outline' || contextMode === 'summary') {
+        const ranked = regionCandidates(scope).map(element => rankRegion(element, task))
+          .filter(entry => regionDepth(entry.element, scope) <= depth)
+          .sort((left, right) => task ? right.score - left.score : left.element.getBoundingClientRect().top - right.element.getBoundingClientRect().top);
+        result.regions = ranked.slice(0, limit).map(entry => describeRegion(entry, scope, Boolean(task)));
+        available.regions = ranked.length;
+      }
+      if (contextMode === 'text') {
+        const ranked = textCandidates(scope).map(entry => rankText(entry, task))
+          .sort((left, right) => task ? right.score - left.score : left.element.getBoundingClientRect().top - right.element.getBoundingClientRect().top);
+        result.snippets = ranked.slice(0, limit).map(entry => describeText(entry, Boolean(task)));
+        available.snippets = ranked.length;
+      }
+      if (includeText) {
+        result.text = normalize(scopeRoots(scope).map(root => root.innerText || root.textContent || '').join(' ')).slice(0, 30000);
+      }
+      return pruneToBudget(result, available, budget);
     };
     const resolve = target => {
       const element = current.get(target);

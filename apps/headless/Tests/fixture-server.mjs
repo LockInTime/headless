@@ -8,6 +8,7 @@ const routes = new Map([
   ['/designers/dashboard', 'dashboard.html'],
   ['/next', 'next.html'],
   ['/hostile', 'hostile.html'],
+  ['/large-document', 'large-document.html'],
 ]);
 
 const server = createServer(async (request, response) => {

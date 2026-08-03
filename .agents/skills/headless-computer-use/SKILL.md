@@ -29,7 +29,8 @@ as unsupported.
 1. Start the host.
 2. Create a task-specific named session.
 3. Visit only an HTTP(S) URL within the user's task.
-4. Inspect the page with `inspect --context actions --task "..."`.
+4. Start with `inspect --context summary --task "..."`, then use an outline,
+   scoped text, or scoped actions only when the task needs them.
 5. Prefer role/name targeting; otherwise use a ref from the latest inspection.
 6. After navigation or a substantial rerender, wait for the expected URL, text,
    or settled state and inspect again before the next interaction.
@@ -42,7 +43,8 @@ headless start
 headless capabilities
 headless session create agent-qa
 headless --session agent-qa visit http://localhost:3000
-headless --session agent-qa inspect --context actions --task "click Continue"
+headless --session agent-qa inspect --context summary --task "click Continue"
+headless --session agent-qa inspect --context actions --task "click Continue" --limit 10
 headless --session agent-qa click --role button --name Continue
 headless --session agent-qa wait --url /next --settled --timeout 10000
 headless --session agent-qa inspect --context actions --task "verify next page"
@@ -56,10 +58,10 @@ the page changes or a ref stops matching. Never invent a ref or guess coordinate
 
 Use this priority:
 
-1. `inspect --context actions --task "..."` for a ranked map of visible
-   controls and refs. Use `--interactive` as the legacy alias or
-   `--context full --text` when page structure, body text, or media detail is
-   needed.
+1. `inspect --context summary --task "..."` for the smallest useful page map.
+   Use `outline` to obtain `@rN` region refs, `text --within @rN` for bounded
+   excerpts, and `actions --within @rN` for executable controls. Use
+   `--context full --text` only when broad raw detail is required.
 2. Targeted state and diagnostics such as `styles get`, `console list`,
    `network list`, `performance get`, or `animations list`.
 3. `screenshot` when layout, rendering, canvas, imagery, or visual regression

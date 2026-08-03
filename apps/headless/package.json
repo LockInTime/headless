@@ -8,6 +8,10 @@
     "start": "./build.sh && open Headless.app",
     "test": "./test.sh",
     "test:e2e:mac": "./Tests/macos-e2e.sh",
-    "test:e2e:linux": "./Tests/linux-docker.sh"
+    "test:e2e:linux": "./Tests/linux-docker.sh",
+    "test:runtime": "node Tests/agent-runtime.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
   }
 }

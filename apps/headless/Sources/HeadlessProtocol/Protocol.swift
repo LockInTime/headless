@@ -224,13 +224,27 @@ public struct CommandRequest: Codable, Equatable, Sendable {
             try allow(["url"])
             if let value = try string("url", required: true) { _ = try normalizedWebURL(value) }
         case .inspect:
-            try allow(["interactive", "text", "context", "task"])
+            try allow(["interactive", "text", "context", "task", "within", "limit", "budget", "depth"])
             try boolean("interactive"); try boolean("text")
             if let context = try string("context", maximumBytes: 16),
-               !["full", "actions"].contains(context) {
+               !["summary", "outline", "text", "actions", "full"].contains(context) {
                 throw ProtocolValidationError.invalidParameter("Invalid inspect context")
             }
             _ = try string("task", maximumBytes: 512)
+            if let within = try string("within", maximumBytes: 16) {
+                guard within.hasPrefix("@r"), !within.dropFirst(2).isEmpty,
+                      within.dropFirst(2).allSatisfy(\.isNumber) else {
+                    throw ProtocolValidationError.invalidParameter("Invalid inspect region reference")
+                }
+            }
+            for (key, minimum, maximum) in [
+                ("limit", 1.0, 250.0), ("budget", 256.0, 16_000.0), ("depth", 0.0, 8.0),
+            ] {
+                if let value = try number(key, minimum: minimum, maximum: maximum),
+                   value.rounded() != value {
+                    throw ProtocolValidationError.invalidParameter("Invalid integer parameter: \(key)")
+                }
+            }
         case .click:
             try target(allowValue: false)
         case .fill:

@@ -293,6 +293,20 @@ CAPTURE="$("$CLI" --session qa capture-info)"
 echo "$CAPTURE" | grep -q '"engine":"webkit"'
 echo "$CAPTURE" | grep -q '"windowId"'
 echo "$CAPTURE" | grep -q '"trace"'
+STEP="progressive-context-pruning"
+"$CLI" --session qa visit "http://127.0.0.1:$PORT/large-document" | grep -q 'Large Operations Handbook'
+SUMMARY="$("$CLI" --session qa inspect --context summary --task 'Linux service-account authentication' --limit 8 --budget 700)"
+echo "$SUMMARY" | grep -q '"contextMode":"summary"'
+echo "$SUMMARY" | grep -q 'Linux service-account authentication'
+echo "$SUMMARY" | grep -q '"budget":700'
+test "$(printf %s "$SUMMARY" | wc -c)" -lt 3200
+OUTLINE="$("$CLI" --session qa inspect --context outline --task 'Linux service-account authentication' --limit 8 --budget 900)"
+TARGET_REGION="$(printf %s "$OUTLINE" | sed -n 's/.*"name":"Linux service-account authentication"[^}]*"ref":"\(@r[0-9]*\)".*/\1/p')"
+test -n "$TARGET_REGION"
+SCOPED_TEXT="$("$CLI" --session qa inspect --context text --within "$TARGET_REGION" --task 'Ubuntu service account' --limit 4 --budget 700)"
+echo "$SCOPED_TEXT" | grep -q 'short-lived service account'
+SCOPED_ACTIONS="$("$CLI" --session qa inspect --context actions --within "$TARGET_REGION" --task 'copy authentication command' --limit 5 --budget 700)"
+echo "$SCOPED_ACTIONS" | grep -q '"name":"Copy authentication command"'
 "$CLI" --session qa visit "http://127.0.0.1:$PORT/hostile" | grep -q 'Hostile output fixture'
 BOUNDED_SNAPSHOT="$("$CLI" --session qa inspect)"
 echo "$BOUNDED_SNAPSHOT" | grep -q '"truncated":true'
