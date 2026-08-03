@@ -49,7 +49,7 @@ node /workspace/apps/headless/Tests/fixture-server.mjs
 | [MCP stdio invocation](qa/evidence/10-mcp-stdio-invocation.mp4) | [Probe results](qa/evidence/media-probe.json) | Real JSON-RPC requests piped to `headless-mcp`: `initialize`, `tools/list`, and two `tools/call` requests over stdio |
 | [Progressive context pruning](qa/evidence/11-progressive-context-pruning.mp4) | [Context measurements](qa/evidence/context-pruning-results.json) and [probe results](qa/evidence/media-probe.json) | A 120-section document inspected with `full`, task-ranked `summary` and `outline`, then scoped `text` and `actions` through a stable `@rN` reference and explicit budgets |
 
-The eight browser-visible files use `headless --session qa record start --fps 5` and `record stop`. Each recording contains navigation, scrolling, input, tours, or reloads with waits between state changes. The three terminal files use FFmpeg `x11grab` on `DISPLAY=:99` against an xterm running the real commands.
+The eight browser-visible files use `headless --session qa record start --fps 5` and `record stop`. Each recording contains navigation, scrolling, input, tours, or reloads with waits between state changes. The Docker harness records terminal scenarios with FFmpeg `x11grab` on `DISPLAY=:99` against an xterm running the real commands. The committed progressive-pruning proof uses an actual asciicast of `pnpm test:runtime`, rendered to MP4, because the development host does not permit Chromium's namespace sandbox; it does not disable or bypass that sandbox.
 
 ## Command transcript
 
@@ -218,7 +218,7 @@ The recorded run completed successfully on the bundled `/usr/lib/chromium/chromi
 | [Performance and animations](qa/evidence/08-performance-animations.mp4) | 11.400000 |
 | [Recording and artifact lifecycle](qa/evidence/09-recording-artifact-lifecycle.mp4) | 13.200000 |
 | [MCP stdio invocation](qa/evidence/10-mcp-stdio-invocation.mp4) | 18.000000 |
-| [Progressive context pruning](qa/evidence/11-progressive-context-pruning.mp4) | 18.000000 |
+| [Progressive context pruning](qa/evidence/11-progressive-context-pruning.mp4) | 13.040000 |
 
 Static checks for this change:
 

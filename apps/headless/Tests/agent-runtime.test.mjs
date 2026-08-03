@@ -105,6 +105,7 @@ assert.throws(
 );
 
 console.log(JSON.stringify({
+  selectedRegion: targetRegion.ref,
   full: full.contextStats,
   summary: summary.contextStats,
   outline: outline.contextStats,

@@ -1,6 +1,7 @@
 {
   "result": "pass",
   "runtime": "/usr/lib/chromium/chromium",
+  "contextPruningRuntime": "embedded AgentRuntime.js under the deterministic DOM harness",
   "fixture": "apps/headless/Tests/fixture-server.mjs",
-  "recordings": 10
+  "recordings": 11
 }
