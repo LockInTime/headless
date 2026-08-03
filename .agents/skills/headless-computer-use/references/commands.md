@@ -20,7 +20,8 @@ Stop the shared host only when the task started it and no other session needs it
 
 ```sh
 headless --session NAME visit URL
-headless --session NAME inspect --interactive --text
+headless --session NAME inspect --context actions --task "TASK"
+headless --session NAME inspect --context full --text
 headless --session NAME click REF
 headless --session NAME click --role ROLE --name NAME
 headless --session NAME fill REF TEXT
@@ -32,9 +33,11 @@ headless --session NAME wait --settled --url PATTERN --text TEXT --timeout MS
 headless --session NAME tour --full-page --pace PIXELS_PER_SECOND
 ```
 
-Prefer `click --role ... --name ...` for unique accessible controls. Use a ref
-from the latest inspection when role/name is ambiguous. Fill accepts a ref;
-inspect again before filling after a navigation or large rerender.
+Prefer `inspect --context actions --task "..."` for the first observation. It
+returns visible controls first and ranks them for the task. Use `click --role
+... --name ...` for unique accessible controls. Use a ref from the latest
+inspection when role/name is ambiguous. Fill accepts a ref; inspect again before
+filling after a navigation or large rerender.
 
 Use `wait` with the strongest expected condition available:
 
@@ -50,29 +53,54 @@ Never replace a semantic wait with a long blind sleep.
 ```sh
 headless --session NAME screenshot --output viewport.png
 headless --session NAME screenshot --full-page --output full-page.png
+headless --session NAME screenshot --format jpg --output viewport.jpg --clipboard
+headless --session NAME screenshot --format pdf --full-page --output full-page.pdf
 headless --session NAME screenshot REF --output element.png
 headless --session NAME screenshot --role button --name Continue --output button.png
-headless --session NAME record start --fps 10
+headless --session NAME screenshot --every-viewport --format jpg --output page-scroll
+headless --session NAME screenshot --by-section --output page-sections
+headless --session NAME record start --fps 10 --format mp4 --quality balanced
 headless --session NAME record status
 headless --session NAME record stop --output flow.mp4
 headless --session NAME capture-info
 headless artifacts list
 ```
 
-Artifact output names are basenames ending in `.png`, `.mp4`, or `.json`.
-Headless refuses paths and overwrites. Built-in MP4 captures browser pixels only.
+Single artifact output names are basenames ending in `.png`, `.jpg`, `.jpeg`,
+`.pdf`, `.mp4`, `.mov`, `.webm`, `.gif`, or `.json`. Screenshot series output
+uses a safe prefix and creates numbered PNG/JPG artifacts. Headless refuses
+paths and overwrites. Built-in recording captures browser pixels only.
+
+Screenshot format notes:
+
+- PNG is the default.
+- JPG/JPEG is useful for lighter visual evidence.
+- PDF requires `--full-page` and cannot target an element or scroll series.
+- Screenshot series restore the original scroll position. Viewport series are
+  bounded to 80 artifacts, retain the final bottom position, and report
+  `truncated` plus `totalPoints` when bounded.
+- `--clipboard` is macOS image-only; Linux rejects it because VM clipboards are
+  not reliable by default.
+
+Recording format notes:
+
+- Choose MP4, MOV, WebM, or GIF at `record start --format`.
+- The `record stop --output` extension must match the active recording format.
+- `record status` reports FPS, container, codec, quality, frames, dropped
+  frames, and duration.
 
 For human-reviewable evidence:
 
 1. Start recording before the action under test.
 2. Use `tour --full-page --pace 500` when scrolling is part of the evidence.
-3. Capture key-state screenshots.
+3. Capture key-state screenshots, plus `--every-viewport` or `--by-section`
+   screenshots for long scrollable pages.
 4. Stop recording on both success and failure paths.
 5. List the artifact metadata.
 6. Verify the copied file independently when tools are available:
 
 ```sh
-file flow.mp4 full-page.png
+file flow.mp4 full-page.png full-page.pdf
 ffprobe -v error -show_entries stream=codec_name,width,height,nb_frames \
   -show_entries format=duration,size -of json flow.mp4
 ```
@@ -172,7 +200,7 @@ Cover at least these layers for a broad audit:
 2. session isolation and cleanup;
 3. visit/inspect/semantic actions/waits/history;
 4. viewport/full-page/element screenshots;
-5. recording status, meaningful motion, and valid MP4 output;
+5. recording status, meaningful motion, and valid MP4/MOV/WebM/GIF output;
 6. console/network/styles/cookies/storage/QA diagnostics;
 7. performance/animations;
 8. visual comparison;

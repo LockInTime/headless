@@ -908,6 +908,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for url in urls { openWindow(url: url) }
     }
 
+    private func captureScreenshotSeries(
+        controller: BrowserWindowController,
+        parameters: [String: JSONValue]
+    ) throws -> JSONValue {
+        guard let artifacts else { throw ArtifactError.invalidRoot }
+        let mode = parameters["series"]?.stringValue ?? "viewport"
+        let format = try screenshotFormat(
+            explicit: parameters["format"]?.stringValue,
+            output: nil
+        )
+        let rawPlan = try controller.agentScreenshotSeriesPlan(mode: mode)
+        let plan = try parseScreenshotSeriesPlan(rawPlan)
+        let points = plan.points
+        let prefix = try screenshotSeriesPrefix(parameters: parameters, mode: mode)
+        defer { _ = try? controller.agentScrollToCapturePoint(y: plan.initialY) }
+        let reserved = try reserveScreenshotSeriesArtifacts(
+            store: artifacts, points: points, prefix: prefix, mode: mode, format: format
+        )
+        do {
+            let metadata = try points.enumerated().map { index, point -> JSONValue in
+                _ = try controller.agentScrollToCapturePoint(y: point.y)
+                let data = try controller.agentScreenshotData(
+                    parameters: [:], format: format, copyToClipboard: false
+                ).data
+                return try artifacts.writeReserved(data, to: reserved[index])
+            }
+            return screenshotSeriesSummary(
+                mode: mode, points: points, artifacts: metadata,
+                truncated: plan.truncated, totalPoints: plan.totalPoints
+            )
+        } catch {
+            artifacts.discardReserved(reserved)
+            throw error
+        }
+    }
+
     // MARK: Agent protocol
 
     private func handleAgentRequest(_ request: CommandRequest) -> CommandResponse {
@@ -993,7 +1029,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .inspect:
                 result = try controller.agentInspect(
                     interactive: request.parameters["interactive"]?.boolValue ?? false,
-                    includeText: request.parameters["text"]?.boolValue ?? false
+                    includeText: request.parameters["text"]?.boolValue ?? false,
+                    context: request.parameters["context"]?.stringValue ?? "full",
+                    task: request.parameters["task"]?.stringValue
                 )
             case .click:
                 result = try controller.agentClick(parameters: request.parameters)
@@ -1025,22 +1063,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 result = try controller.agentWait(parameters: ["settled": .bool(true)])
             case .screenshot:
                 guard let artifacts else { throw ArtifactError.invalidRoot }
-                let data = try controller.agentScreenshot(parameters: request.parameters)
-                result = try artifacts.write(
-                    data, requestedName: request.parameters["output"]?.stringValue,
-                    extension: "png", prefix: "screenshot-\(session)"
-                )
+                if request.parameters["series"]?.stringValue != nil {
+                    result = try captureScreenshotSeries(controller: controller, parameters: request.parameters)
+                } else {
+                    let format = try screenshotFormat(
+                        explicit: request.parameters["format"]?.stringValue,
+                        output: request.parameters["output"]?.stringValue
+                    )
+                    let artifact = try controller.agentScreenshotData(
+                        parameters: request.parameters,
+                        format: format,
+                        copyToClipboard: request.parameters["clipboard"]?.boolValue ?? false
+                    )
+                    var metadata = try artifacts.write(
+                        artifact.data, requestedName: request.parameters["output"]?.stringValue,
+                        extension: artifactExtension(request.parameters["output"]?.stringValue ?? "") ?? format.fileExtension,
+                        prefix: "screenshot-\(session)"
+                    )
+                    if artifact.clipboardCopied {
+                        metadata = merge(metadata, with: .object(["clipboard": .bool(true)]))
+                    }
+                    result = metadata
+                }
             case .recordStart:
                 guard recording(for: session) == nil else { throw RecordingError.alreadyActive }
                 guard let artifacts else { throw ArtifactError.invalidRoot }
+                let format = try recordingFormat(
+                    explicit: request.parameters["format"]?.stringValue,
+                    output: request.parameters["output"]?.stringValue
+                )
+                let quality = try RecordingQuality.parse(request.parameters["quality"]?.stringValue ?? "balanced")
                 let output = try artifacts.reserve(
                     requestedName: request.parameters["output"]?.stringValue,
-                    extension: "mp4", prefix: "recording-\(session)"
+                    extension: format.fileExtension, prefix: "recording-\(session)"
                 )
                 let fps = request.parameters["fps"]?.numberValue ?? 10
                 var startedRecording: BrowserRecording?
                 do {
-                    let recording = try BrowserRecording(outputURL: output, fps: fps) { [weak controller] in
+                    let recording = try BrowserRecording(
+                        outputURL: output, fps: fps, format: format, quality: quality
+                    ) { [weak controller] in
                         guard let controller else { throw RecordingError.captureFailed("session closed") }
                         return try controller.agentScreenshot(parameters: [:])
                     }
@@ -1056,10 +1118,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .recordStatus:
                 result = recording(for: session)?.status() ?? .object(["active": .bool(false)])
             case .recordStop:
-                guard let recording = takeRecording(for: session) else {
+                guard let activeRecording = recording(for: session) else {
                     throw RecordingError.notActive
                 }
                 guard let artifacts else { throw ArtifactError.invalidRoot }
+                if let output = request.parameters["output"]?.stringValue,
+                   let actual = artifactExtension(output),
+                   actual != activeRecording.format.fileExtension {
+                    throw CaptureFormatError.mismatchedOutputFormat(
+                        expected: activeRecording.format.fileExtension,
+                        actual: actual
+                    )
+                }
+                guard let recording = takeRecording(for: session) else { throw RecordingError.notActive }
                 let status: JSONValue
                 do { status = try recording.stop() }
                 catch {
@@ -1200,6 +1271,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                suggestion: "Executable files, installers, scripts, and disk images are blocked. Use normal web pages or media only.")
             }
             return failure(request, code: "INVALID_URL", message: error.description)
+        } catch let error as CaptureFormatError {
+            return failure(request, code: "INVALID_CAPTURE_FORMAT", message: error.description)
         } catch let error as RecordingError {
             let code: String
             let suggestion: String?

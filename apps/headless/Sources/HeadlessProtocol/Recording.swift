@@ -25,6 +25,8 @@ public final class BrowserRecording: @unchecked Sendable {
 
     public let outputURL: URL
     public let fps: Double
+    public let format: RecordingFormat
+    public let quality: RecordingQuality
     public let provider = "browser-ffmpeg"
     public let startedAt = Date()
 
@@ -39,21 +41,28 @@ public final class BrowserRecording: @unchecked Sendable {
     private var droppedFrames = 0
     private var failure: Error?
 
-    public init(outputURL: URL, fps: Double, captureFrame: @escaping CaptureFrame) throws {
+    public init(
+        outputURL: URL,
+        fps: Double,
+        format: RecordingFormat = .mp4,
+        quality: RecordingQuality = .balanced,
+        captureFrame: @escaping CaptureFrame
+    ) throws {
         guard let executable = Self.ffmpegExecutable() else { throw RecordingError.unavailable }
         self.outputURL = outputURL
         self.fps = fps
+        self.format = format
+        self.quality = quality
         self.captureFrame = captureFrame
         inputPipe = Pipe()
         process = Process()
         process.executableURL = executable
-        process.arguments = [
-            "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "image2pipe", "-framerate", String(format: "%.3f", fps),
-            "-vcodec", "png", "-i", "pipe:0", "-an",
-            "-c:v", "mpeg4", "-q:v", "4", "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart", outputURL.path,
-        ]
+        process.arguments = Self.ffmpegArguments(
+            fps: fps,
+            format: format,
+            quality: quality,
+            outputPath: outputURL.path
+        )
         process.standardInput = inputPipe
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
@@ -89,6 +98,56 @@ public final class BrowserRecording: @unchecked Sendable {
         queue.async { [weak self] in self?.captureLoop() }
     }
 
+    private static func ffmpegArguments(
+        fps: Double,
+        format: RecordingFormat,
+        quality: RecordingQuality,
+        outputPath: String
+    ) -> [String] {
+        let input = [
+            "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "image2pipe", "-framerate", String(format: "%.3f", fps),
+            "-vcodec", "png", "-i", "pipe:0", "-an",
+        ]
+
+        switch format {
+        case .mp4, .mov:
+            let qscale: String
+            switch quality {
+            case .fast: qscale = "6"
+            case .balanced: qscale = "4"
+            case .high: qscale = "2"
+            }
+            return input + [
+                "-c:v", "mpeg4", "-q:v", qscale, "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart", outputPath,
+            ]
+        case .webm:
+            let crf: String
+            switch quality {
+            case .fast: crf = "40"
+            case .balanced: crf = "34"
+            case .high: crf = "28"
+            }
+            return input + [
+                "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", crf,
+                "-deadline", quality == .high ? "good" : "realtime",
+                "-pix_fmt", "yuv420p", outputPath,
+            ]
+        case .gif:
+            let scale: String
+            switch quality {
+            case .fast: scale = "960:-1"
+            case .balanced: scale = "1280:-1"
+            case .high: scale = "-1:-1"
+            }
+            return input + [
+                "-vf", "fps=\(String(format: "%.3f", fps)),scale=\(scale):flags=lanczos",
+                "-loop", "0", outputPath,
+            ]
+        }
+    }
+
     public func status() -> JSONValue {
         lock.lock()
         let active = process.isRunning && !stopRequested && failure == nil
@@ -99,6 +158,10 @@ public final class BrowserRecording: @unchecked Sendable {
         var result: [String: JSONValue] = [
             "active": .bool(active), "provider": .string(provider),
             "path": .string(outputURL.path), "fps": .number(fps),
+            "format": .string(format.rawValue),
+            "container": .string(format.container),
+            "videoCodec": .string(format.videoCodec),
+            "quality": .string(quality.rawValue),
             "frames": .number(Double(frames)), "droppedFrames": .number(Double(dropped)),
             "durationMs": .number(Date().timeIntervalSince(startedAt) * 1_000),
         ]

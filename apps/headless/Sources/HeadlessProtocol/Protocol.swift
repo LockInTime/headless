@@ -224,8 +224,13 @@ public struct CommandRequest: Codable, Equatable, Sendable {
             try allow(["url"])
             if let value = try string("url", required: true) { _ = try normalizedWebURL(value) }
         case .inspect:
-            try allow(["interactive", "text"])
+            try allow(["interactive", "text", "context", "task"])
             try boolean("interactive"); try boolean("text")
+            if let context = try string("context", maximumBytes: 16),
+               !["full", "actions"].contains(context) {
+                throw ProtocolValidationError.invalidParameter("Invalid inspect context")
+            }
+            _ = try string("task", maximumBytes: 512)
         case .click:
             try target(allowValue: false)
         case .fill:
@@ -251,26 +256,67 @@ public struct CommandRequest: Codable, Equatable, Sendable {
             try boolean("fullPage")
             _ = try number("pace", minimum: 100, maximum: 5_000)
         case .screenshot:
-            try allow(["fullPage", "target", "role", "name", "output"])
+            try allow(["fullPage", "target", "role", "name", "output", "series", "outputPrefix", "format", "clipboard"])
             try boolean("fullPage")
+            try boolean("clipboard")
             try target(allowValue: false, required: false, validateAllowedKeys: false)
             let hasTarget = parameters["target"] != nil || parameters["role"] != nil || parameters["name"] != nil
+            let series = try string("series", maximumBytes: 32)
+            if let series, !["viewport", "section"].contains(series) {
+                throw ProtocolValidationError.invalidParameter("Invalid screenshot series")
+            }
+            let format = try screenshotFormat(
+                explicit: string("format", maximumBytes: 16),
+                output: parameters["output"]?.stringValue
+            )
+            if series != nil && format == .pdf {
+                throw ProtocolValidationError.invalidParameter("PDF is only supported for single screenshots")
+            }
+            if series != nil && parameters["clipboard"]?.boolValue == true {
+                throw ProtocolValidationError.invalidParameter("Clipboard output is only supported for single screenshots")
+            }
+            if format == .pdf && parameters["clipboard"]?.boolValue == true {
+                throw ProtocolValidationError.invalidParameter("Clipboard output is only supported for image screenshots")
+            }
+            if format == .pdf && (parameters["fullPage"]?.boolValue != true || hasTarget) {
+                throw ProtocolValidationError.invalidParameter(
+                    "PDF screenshots require fullPage without an element target"
+                )
+            }
+            if series != nil && (parameters["fullPage"]?.boolValue == true || hasTarget || parameters["output"] != nil) {
+                throw ProtocolValidationError.invalidParameter("Use screenshot series without --full-page, output file, or element target")
+            }
             if parameters["fullPage"]?.boolValue == true && hasTarget {
                 throw ProtocolValidationError.invalidParameter("Use either --full-page or an element target")
             }
             if let output = try string("output", maximumBytes: 128) {
-                try validateArtifactName(output, expectedExtension: "png")
+                try validateArtifactName(output, expectedExtensions: format.artifactExtensions)
+            }
+            if let outputPrefix = try string("outputPrefix", maximumBytes: 80) {
+                guard series != nil else {
+                    throw ProtocolValidationError.invalidParameter(
+                        "Screenshot outputPrefix requires a screenshot series"
+                    )
+                }
+                try validateArtifactPrefix(outputPrefix)
             }
         case .recordStart:
-            try allow(["output", "fps"])
+            try allow(["output", "fps", "format", "quality"])
+            let format = try recordingFormat(
+                explicit: string("format", maximumBytes: 16),
+                output: parameters["output"]?.stringValue
+            )
             if let output = try string("output", maximumBytes: 128) {
-                try validateArtifactName(output, expectedExtension: "mp4")
+                try validateArtifactName(output, expectedExtensions: [format.fileExtension])
             }
             _ = try number("fps", minimum: 1, maximum: 30)
+            if let quality = try string("quality", maximumBytes: 16) {
+                _ = try RecordingQuality.parse(quality)
+            }
         case .recordStop:
             try allow(["output"])
             if let output = try string("output", maximumBytes: 128) {
-                try validateArtifactName(output, expectedExtension: "mp4")
+                try validateArtifactName(output, expectedExtensions: RecordingFormat.artifactExtensions)
             }
         case .consoleList:
             try allow(["level", "limit"])
@@ -432,17 +478,35 @@ public func validateIdentifier(_ value: String, field: String) throws {
 }
 
 public func validateArtifactName(_ value: String, expectedExtension: String) throws {
+    try validateArtifactName(value, expectedExtensions: [expectedExtension])
+}
+
+public func validateArtifactName(_ value: String, expectedExtensions: Set<String>) throws {
+    let normalizedExtensions = Set(expectedExtensions.map { $0.lowercased() })
+    let extensionDescription = normalizedExtensions.sorted().map { ".\($0)" }.joined(separator: ", ")
     guard !value.isEmpty, value.utf8.count <= 128,
           value == URL(fileURLWithPath: value).lastPathComponent,
           !value.hasPrefix("."),
-          value.lowercased().hasSuffix("." + expectedExtension.lowercased()) else {
+          normalizedExtensions.contains(URL(fileURLWithPath: value).pathExtension.lowercased()) else {
         throw ProtocolValidationError.invalidParameter(
-            "Artifact output must be a simple .\(expectedExtension) filename"
+            "Artifact output must be a simple \(extensionDescription) filename"
         )
     }
     let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
     guard value.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
         throw ProtocolValidationError.invalidParameter("Artifact output contains unsupported characters")
+    }
+}
+
+public func validateArtifactPrefix(_ value: String) throws {
+    guard !value.isEmpty, value.utf8.count <= 80,
+          value == URL(fileURLWithPath: value).lastPathComponent,
+          !value.hasPrefix(".") else {
+        throw ProtocolValidationError.invalidParameter("Artifact prefix must be a simple filename prefix")
+    }
+    let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+    guard value.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+        throw ProtocolValidationError.invalidParameter("Artifact prefix contains unsupported characters")
     }
 }
 

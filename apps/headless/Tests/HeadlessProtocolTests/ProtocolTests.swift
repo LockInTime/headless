@@ -158,6 +158,104 @@ struct ProtocolTests {
                 parameters: ["fullPage": .bool(true), "target": .string("@e1")]
             ).validate()
         }
+        try CommandRequest(
+            id: "valid-screenshot-series", command: .screenshot,
+            parameters: ["series": .string("viewport"), "outputPrefix": .string("dashboard-scroll")]
+        ).validate()
+        try CommandRequest(
+            id: "valid-jpeg-screenshot", command: .screenshot,
+            parameters: ["format": .string("jpeg"), "output": .string("dashboard.jpeg")]
+        ).validate()
+        try CommandRequest(
+            id: "valid-pdf-screenshot", command: .screenshot,
+            parameters: [
+                "format": .string("pdf"), "fullPage": .bool(true),
+                "output": .string("dashboard.pdf"),
+            ]
+        ).validate()
+        try expectThrows("PDF screenshots should require full-page mode") {
+            try CommandRequest(
+                id: "bad-viewport-pdf", command: .screenshot,
+                parameters: ["format": .string("pdf"), "output": .string("dashboard.pdf")]
+            ).validate()
+        }
+        try expectThrows("PDF screenshots should reject element targets consistently") {
+            try CommandRequest(
+                id: "bad-target-pdf", command: .screenshot,
+                parameters: [
+                    "format": .string("pdf"), "fullPage": .bool(true),
+                    "target": .string("@e1"), "output": .string("element.pdf"),
+                ]
+            ).validate()
+        }
+        try expectThrows("invalid screenshot series should be rejected") {
+            try CommandRequest(
+                id: "bad-screenshot-series", command: .screenshot,
+                parameters: ["series": .string("footer")]
+            ).validate()
+        }
+        try expectThrows("screenshot series should reject path prefixes") {
+            try CommandRequest(
+                id: "bad-screenshot-prefix", command: .screenshot,
+                parameters: ["series": .string("section"), "outputPrefix": .string("../sections")]
+            ).validate()
+        }
+        try expectThrows("output prefixes without a screenshot series should be rejected") {
+            try CommandRequest(
+                id: "unused-screenshot-prefix", command: .screenshot,
+                parameters: ["outputPrefix": .string("ignored")]
+            ).validate()
+        }
+        try expectThrows("screenshot series should not combine with a single output") {
+            try CommandRequest(
+                id: "bad-screenshot-series-output", command: .screenshot,
+                parameters: ["series": .string("viewport"), "output": .string("one.png")]
+            ).validate()
+        }
+        try expectThrows("screenshot series should reject PDF") {
+            try CommandRequest(
+                id: "bad-screenshot-series-pdf", command: .screenshot,
+                parameters: ["series": .string("viewport"), "format": .string("pdf")]
+            ).validate()
+        }
+        try expectThrows("screenshot series should reject clipboard") {
+            try CommandRequest(
+                id: "bad-screenshot-series-clipboard", command: .screenshot,
+                parameters: ["series": .string("section"), "clipboard": .bool(true)]
+            ).validate()
+        }
+        try expectThrows("screenshot output extension should match format") {
+            try CommandRequest(
+                id: "bad-screenshot-format-extension", command: .screenshot,
+                parameters: ["format": .string("pdf"), "output": .string("dashboard.png")]
+            ).validate()
+        }
+        try CommandRequest(
+            id: "valid-webm-recording", command: .recordStart,
+            parameters: ["format": .string("webm"), "quality": .string("high"), "output": .string("flow.webm")]
+        ).validate()
+        try expectThrows("recording output extension should match start format") {
+            try CommandRequest(
+                id: "bad-recording-format-extension", command: .recordStart,
+                parameters: ["format": .string("mov"), "output": .string("flow.mp4")]
+            ).validate()
+        }
+        try CommandRequest(
+            id: "valid-inspect-context", command: .inspect,
+            parameters: ["context": .string("actions"), "task": .string("search open ai")]
+        ).validate()
+        try expectThrows("invalid inspect context should be rejected") {
+            try CommandRequest(
+                id: "bad-inspect-context", command: .inspect,
+                parameters: ["context": .string("debug")]
+            ).validate()
+        }
+        try expectThrows("inspect task should remain bounded") {
+            try CommandRequest(
+                id: "long-inspect-task", command: .inspect,
+                parameters: ["task": .string(String(repeating: "x", count: 513))]
+            ).validate()
+        }
     }
 
     static func cliVisit() throws {
@@ -179,6 +277,20 @@ struct ProtocolTests {
             invocation.request?.parameters == ["role": .string("button"), "name": .string("Continue")],
             "semantic target should parse"
         )
+    }
+
+    static func cliInspectContextAndTask() throws {
+        let invocation = try CLIParser().parse([
+            "inspect", "--context", "actions", "--task", "search open ai", "--text",
+        ])
+        try expect(invocation.request?.command == .inspect, "inspect command should parse")
+        try expect(invocation.request?.parameters["context"] == .string("actions"), "inspect context should parse")
+        try expect(invocation.request?.parameters["interactive"] == .bool(true), "actions context should imply interactive output")
+        try expect(invocation.request?.parameters["task"] == .string("search open ai"), "inspect task should parse")
+        try expect(invocation.request?.parameters["text"] == .bool(true), "inspect text flag should parse")
+        try expectThrows("invalid inspect context should fail in the CLI") {
+            _ = try CLIParser().parse(["inspect", "--context", "debug"])
+        }
     }
 
     static func cliRejectsConflictingClickTarget() throws {
@@ -207,11 +319,57 @@ struct ProtocolTests {
         ])
         try expect(screenshot.request?.command == .screenshot, "screenshot command should parse")
         try expect(screenshot.request?.parameters["output"] == .string("continue.png"), "screenshot output should parse")
-        let record = try CLIParser().parse(["record", "start", "--fps", "8", "--output", "flow.mp4"])
+        let jpegScreenshot = try CLIParser().parse([
+            "screenshot", "--format", "jpeg", "--output", "continue.jpeg", "--clipboard",
+        ])
+        try expect(jpegScreenshot.request?.parameters["format"] == .string("jpeg"), "screenshot format should parse")
+        try expect(jpegScreenshot.request?.parameters["clipboard"] == .bool(true), "screenshot clipboard should parse")
+        let pdfScreenshot = try CLIParser().parse([
+            "screenshot", "--format", "pdf", "--full-page", "--output", "page.pdf",
+        ])
+        try expect(pdfScreenshot.request?.parameters["fullPage"] == .bool(true), "PDF should parse in full-page mode")
+        try expectThrows("viewport PDF should fail in the CLI") {
+            _ = try CLIParser().parse(["screenshot", "--format", "pdf", "--output", "page.pdf"])
+        }
+        try expectThrows("element PDF should fail in the CLI") {
+            _ = try CLIParser().parse(["screenshot", "@e1", "--format", "pdf", "--full-page"])
+        }
+        let viewportSeries = try CLIParser().parse([
+            "screenshot", "--every-viewport", "--format", "jpg", "--output", "dashboard-scroll",
+        ])
+        try expect(viewportSeries.request?.command == .screenshot, "viewport screenshot series should parse")
+        try expect(viewportSeries.request?.parameters["series"] == .string("viewport"), "viewport series should parse")
+        try expect(viewportSeries.request?.parameters["format"] == .string("jpeg"), "viewport series format should parse")
+        try expect(viewportSeries.request?.parameters["outputPrefix"] == .string("dashboard-scroll"), "series prefix should parse")
+        let sectionSeries = try CLIParser().parse([
+            "screenshot", "--by-section", "--output", "dashboard-sections.jpeg",
+        ])
+        try expect(sectionSeries.request?.parameters["series"] == .string("section"), "section series should parse")
+        try expect(sectionSeries.request?.parameters["outputPrefix"] == .string("dashboard-sections"), "series prefix should strip image extension")
+        try expectThrows("series screenshot must reject element targets") {
+            _ = try CLIParser().parse(["screenshot", "--every-viewport", "@e1"])
+        }
+        try expectThrows("series screenshot must reject full-page mode") {
+            _ = try CLIParser().parse(["screenshot", "--by-section", "--full-page"])
+        }
+        try expectThrows("series screenshot must reject PDF") {
+            _ = try CLIParser().parse(["screenshot", "--by-section", "--format", "pdf"])
+        }
+        try expectThrows("series screenshot must reject clipboard") {
+            _ = try CLIParser().parse(["screenshot", "--every-viewport", "--clipboard"])
+        }
+        let record = try CLIParser().parse([
+            "record", "start", "--fps", "8", "--format", "webm", "--quality", "high", "--output", "flow.webm",
+        ])
         try expect(record.request?.command == .recordStart, "record start should parse")
         try expect(record.request?.parameters["fps"] == .number(8), "record FPS should parse")
+        try expect(record.request?.parameters["format"] == .string("webm"), "recording format should parse")
+        try expect(record.request?.parameters["quality"] == .string("high"), "recording quality should parse")
         try expectThrows("unsupported recorder selectors should fail instead of being ignored") {
             _ = try CLIParser().parse(["record", "start", "--provider", "browser"])
+        }
+        try expectThrows("recording output mismatch should fail") {
+            _ = try CLIParser().parse(["record", "start", "--format", "mov", "--output", "flow.mp4"])
         }
         try expectThrows("record requests should reject obsolete provider fields") {
             try CommandRequest(command: .recordStart, parameters: ["provider": .string("browser")]).validate()
@@ -355,6 +513,57 @@ struct ProtocolTests {
         try expectThrows("artifact root symlinks should be rejected") {
             _ = try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": symlinkRoot])
         }
+    }
+
+    static func screenshotSeriesHelpers() throws {
+        let rawPlan = JSONValue.object([
+            "initialY": .number(240),
+            "truncated": .bool(true),
+            "totalPoints": .number(100),
+            "points": .array([
+                .object(["y": .number(0), "label": .string("top"), "kind": .string("viewport")]),
+                .object(["y": .number(900), "label": .string("bottom"), "kind": .string("viewport")]),
+            ]),
+        ])
+        let plan = try parseScreenshotSeriesPlan(rawPlan)
+        try expect(plan.initialY == 240, "series plans should retain the initial scroll position")
+        try expect(plan.points.count == 2, "series plans should parse capture points")
+        try expect(plan.truncated && plan.totalPoints == 100, "series plans should report truncation")
+        try expectThrows("invalid initial scroll positions should fail") {
+            _ = try parseScreenshotSeriesPlan(.object([
+                "initialY": .number(-1),
+                "points": .array([.object(["y": .number(0)])]),
+            ]))
+        }
+
+        let root = "/tmp/headless-series-test-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let store = try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": root])
+        let collisionName = try screenshotSeriesArtifactName(
+            prefix: "capture", mode: "viewport", index: 2, count: plan.points.count,
+            point: plan.points[1], format: .png
+        )
+        _ = try store.write(
+            Data([0x01]), requestedName: collisionName, extension: "png", prefix: "unused"
+        )
+        try expectThrows("a later series collision should fail atomically") {
+            _ = try reserveScreenshotSeriesArtifacts(
+                store: store, points: plan.points, prefix: "capture",
+                mode: "viewport", format: .png
+            )
+        }
+        let firstName = try screenshotSeriesArtifactName(
+            prefix: "capture", mode: "viewport", index: 1, count: plan.points.count,
+            point: plan.points[0], format: .png
+        )
+        try expect(
+            !FileManager.default.fileExists(atPath: root + "/" + firstName),
+            "partial series reservations should be removed after a later collision"
+        )
+        try expect(RecordingFormat.webm.videoCodec == "vp9", "recording metadata should report the codec, not encoder")
+        try expect(!agentRuntimeJavaScript.contains("hints.push('select')"), "inspect must not advertise a missing select command")
+        try expect(!agentRuntimeJavaScript.contains("hints.push('upload')"), "inspect must not advertise a missing upload command")
+        try expect(!agentRuntimeJavaScript.contains("hints.push('slide')"), "inspect must not advertise a missing slide command")
     }
 
     static func diagnosticSummary() throws {
@@ -510,6 +719,7 @@ struct ProtocolTests {
             ("strict request fields", rejectsUnexpectedRequestFields),
             ("CLI visit", cliVisit),
             ("CLI semantic click", cliSemanticClick),
+            ("CLI inspect context and task", cliInspectContextAndTask),
             ("CLI conflicting target", cliRejectsConflictingClickTarget),
             ("CLI settled wait", cliWaitDefaultsToSettled),
             ("CLI timeout bound", cliRejectsUnboundedTimeout),
@@ -517,6 +727,7 @@ struct ProtocolTests {
             ("CLI P2 commands and boundaries", cliP2CommandsAndBoundaries),
             ("Chromium runtime selection", chromiumRuntimeSelection),
             ("artifact store round-trip", artifactStoreRoundTrip),
+            ("screenshot series helpers", screenshotSeriesHelpers),
             ("diagnostic summary", diagnosticSummary),
             ("diagnostic bounds and URL redaction", diagnosticsBoundAndRedacted),
             ("diagnostic services", diagnosticServices),

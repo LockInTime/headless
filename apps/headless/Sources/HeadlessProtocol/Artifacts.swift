@@ -111,6 +111,30 @@ public final class ArtifactStore: @unchecked Sendable {
         }
     }
 
+    public func writeReserved(_ data: Data, to url: URL) throws -> JSONValue {
+        lock.lock(); defer { lock.unlock() }
+        guard url.deletingLastPathComponent().standardizedFileURL == rootURL.standardizedFileURL,
+              FileManager.default.fileExists(atPath: url.path) else {
+            throw ArtifactError.invalidName(url.lastPathComponent)
+        }
+        do {
+            let handle = try FileHandle(forWritingTo: url)
+            defer { try? handle.close() }
+            try handle.truncate(atOffset: 0)
+            try handle.write(contentsOf: data)
+            return try metadata(for: url)
+        } catch {
+            throw ArtifactError.writeFailed(error.localizedDescription)
+        }
+    }
+
+    public func discardReserved(_ urls: [URL]) {
+        lock.lock(); defer { lock.unlock() }
+        for url in urls where url.deletingLastPathComponent().standardizedFileURL == rootURL.standardizedFileURL {
+            _ = unlink(url.path)
+        }
+    }
+
     public func finalize(_ source: URL, renameTo requestedName: String?) throws -> JSONValue {
         lock.lock(); defer { lock.unlock() }
         var finalURL = source
@@ -143,7 +167,7 @@ public final class ArtifactStore: @unchecked Sendable {
         let artifacts = try urls.compactMap { url -> JSONValue? in
             let values = try url.resourceValues(forKeys: Set(keys))
             guard values.isRegularFile == true, values.isSymbolicLink != true,
-                  ["png", "mp4", "json"].contains(url.pathExtension.lowercased()) else { return nil }
+                  Self.listedExtensions.contains(url.pathExtension.lowercased()) else { return nil }
             return try metadata(for: url)
         }.sorted { left, right in
             guard case .object(let lhs) = left, case .object(let rhs) = right else { return false }
@@ -151,6 +175,11 @@ public final class ArtifactStore: @unchecked Sendable {
         }
         return .object(["directory": .string(rootURL.path), "artifacts": .array(artifacts)])
     }
+
+    private static let listedExtensions: Set<String> =
+        ScreenshotFormat.artifactExtensions
+        .union(RecordingFormat.artifactExtensions)
+        .union(["json"])
 
     private func metadata(for url: URL) throws -> JSONValue {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)

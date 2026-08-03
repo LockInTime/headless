@@ -61,6 +61,30 @@ if (!globalThis.__headlessAgent) {
       }
       return tag;
     };
+    const actionHints = element => {
+      const hints = [];
+      const tag = element.tagName.toLowerCase();
+      const elementRole = role(element);
+      if (tag === 'a' && element.hasAttribute('href')) hints.push('click');
+      if (tag === 'button' || elementRole === 'button') hints.push('click');
+      if (tag === 'summary' || elementRole === 'tab' || elementRole === 'menuitem') hints.push('click');
+      // Only advertise verbs implemented by the public Headless protocol.
+      // Unsupported controls can still appear for context, but must not route
+      // an agent toward nonexistent select/upload/slide commands.
+      if (element instanceof HTMLTextAreaElement || element.isContentEditable) hints.push('fill');
+      if (element instanceof HTMLInputElement) {
+        const type = (element.getAttribute('type') || 'text').toLowerCase();
+        if (type === 'file') return hints;
+        else if (['checkbox', 'radio'].includes(type)) hints.push('click');
+        else if (type === 'range') hints.push('fill');
+        else if (['button', 'submit', 'reset', 'image'].includes(type)) hints.push('click');
+        else hints.push('fill');
+      }
+      if (element.tabIndex >= 0 && hints.length === 0) hints.push('click');
+      return Array.from(new Set(hints));
+    };
+    const isInteractive = element => actionHints(element).length > 0
+      || ['link','button','textbox','checkbox','radio','combobox','slider'].includes(role(element));
     const name = element => {
       const labelledBy = element.getAttribute('aria-labelledby');
       if (labelledBy) {
@@ -86,13 +110,60 @@ if (!globalThis.__headlessAgent) {
     const candidates = () => Array.from(document.querySelectorAll(
       'a[href],button,input,textarea,select,summary,[role],[contenteditable="true"],[tabindex],img,video,audio,canvas,svg'
     )).filter(visible);
-    const describe = element => {
+    const taskTerms = task => normalize(task).toLowerCase().split(/[^a-z0-9]+/).filter(term => term.length > 1).slice(0, 24);
+    const rankingText = element => [
+      role(element), name(element), element.getAttribute('placeholder'), element.getAttribute('aria-label'),
+      element.getAttribute('title'), element.getAttribute('type'), element.getAttribute('name'),
+      element.getAttribute('id'), element.href
+    ].map(normalize).join(' ').toLowerCase();
+    const rank = (element, terms, phrase) => {
+      const rect = element.getBoundingClientRect();
+      const text = rankingText(element);
+      const hints = actionHints(element);
+      let score = 0;
+      const reasons = [];
+      if (hints.length > 0) { score += 50; reasons.push('interactive'); }
+      if (rect.top >= 0 && rect.top <= innerHeight && rect.left < innerWidth && rect.right > 0) {
+        score += 12; reasons.push('in viewport');
+      }
+      if (phrase && text.includes(phrase)) { score += 35; reasons.push('task phrase match'); }
+      for (const term of terms) {
+        if (text.includes(term)) score += 14;
+      }
+      const termSet = new Set(terms);
+      const elementRole = role(element);
+      const inputType = element instanceof HTMLInputElement ? (element.getAttribute('type') || 'text').toLowerCase() : '';
+      if (termSet.has('search')) {
+        if (inputType === 'search' || text.includes('search')) { score += 60; reasons.push('search control'); }
+        else if (hints.includes('fill')) score += 20;
+      }
+      if (termSet.has('login') || termSet.has('signin') || termSet.has('sign') || termSet.has('account')) {
+        if (inputType === 'password' || text.includes('password')) { score += 50; reasons.push('credential field'); }
+        if (hints.includes('fill')) score += 20;
+        if (elementRole === 'button' || elementRole === 'link') score += 12;
+      }
+      if (termSet.has('click') && (hints.includes('click') || elementRole === 'button' || elementRole === 'link')) score += 20;
+      score += Math.max(0, 8 - Math.floor(Math.max(0, rect.top) / 300));
+      return {element, score, reasons: Array.from(new Set(reasons)).slice(0, 4)};
+    };
+    const rankedElements = (elements, task) => {
+      const terms = taskTerms(task);
+      if (terms.length === 0) return elements.map(element => ({element, score: 0, reasons: []}));
+      const phrase = normalize(task).toLowerCase().slice(0, 128);
+      return elements.map(element => rank(element, terms, phrase))
+        .sort((left, right) => right.score - left.score);
+    };
+    const describe = (entry, includeRelevance) => {
+      const element = entry.element || entry;
       const rect = element.getBoundingClientRect();
       const item = {
         ref: refFor(element), role: role(element), name: name(element),
+        actions: actionHints(element),
         disabled: Boolean(element.disabled || element.getAttribute('aria-disabled') === 'true'),
         bounds: {x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height)}
       };
+      if (element instanceof HTMLInputElement) item.inputType = (element.getAttribute('type') || 'text').toLowerCase().slice(0, 32);
+      if (includeRelevance) item.relevance = {score: Math.round(entry.score), reasons: entry.reasons};
       if ('value' in element && typeof element.value === 'string' && element.type !== 'password') item.value = element.value.slice(0, 500);
       if (element.tagName === 'A') {
         item.href = clippedURL(element.href);
@@ -124,20 +195,25 @@ if (!globalThis.__headlessAgent) {
       }
       return item;
     };
-    const snapshot = (interactiveOnly, includeText) => {
+    const snapshot = (interactiveOnly, includeText, options = {}) => {
       current = new Map();
       let elements = candidates();
-      if (interactiveOnly) {
-        elements = elements.filter(element => ['link','button','textbox','checkbox','radio','combobox','slider'].includes(role(element)) || element.tabIndex >= 0);
+      const contextMode = options.context === 'actions' || interactiveOnly ? 'actions' : 'full';
+      const task = clipped(options.task, 512);
+      if (contextMode === 'actions') {
+        elements = elements.filter(isInteractive);
       }
-      const limited = elements.slice(0, 250).map(describe);
+      const ranked = rankedElements(elements, task);
+      const limited = ranked.slice(0, 250).map(entry => describe(entry, Boolean(task)));
       const root = document.documentElement;
       const result = {
         url: String(location.href).slice(0, 8192), title: String(document.title).slice(0, 512),
+        contextMode,
         viewport: {width: innerWidth, height: innerHeight, scrollX, scrollY,
           contentWidth: root ? root.scrollWidth : 0, contentHeight: root ? root.scrollHeight : 0},
-        elements: limited, truncated: elements.length > limited.length
+        elements: limited, truncated: ranked.length > limited.length
       };
+      if (task) result.task = task;
       if (includeText) result.text = normalize(document.body?.innerText).slice(0, 30000);
       return result;
     };
@@ -301,6 +377,62 @@ if (!globalThis.__headlessAgent) {
       }
       return {start: 0, end: maximum, durationMs: Math.round(duration * 1000)};
     };
+    const capturePoint = (y, label, kind) => ({
+      y: Math.round(Math.max(0, y)),
+      label: clipped(label || kind || 'viewport', 80),
+      kind: clipped(kind || 'viewport', 32)
+    });
+    const dedupePoints = points => {
+      const maximum = Math.max(0, document.documentElement.scrollHeight - innerHeight);
+      const result = [];
+      let truncated = false;
+      for (const point of points) {
+        const normalizedY = Math.round(Math.min(maximum, Math.max(0, point.y || 0)));
+        if (result.some(existing => Math.abs(existing.y - normalizedY) <= 96)) continue;
+        if (result.length >= 80) { truncated = true; break; }
+        result.push({...point, y: normalizedY});
+      }
+      if (result.length === 0) result.push(capturePoint(0, 'viewport', 'viewport'));
+      return {points: result, truncated, totalPoints: truncated ? points.length : result.length};
+    };
+    const screenshotPlan = args => {
+      const mode = args.mode === 'section' ? 'section' : 'viewport';
+      const root = document.documentElement;
+      const maximum = Math.max(0, root.scrollHeight - innerHeight);
+      const initialY = Math.round(scrollY);
+      if (mode === 'viewport') {
+        const step = Math.max(1, innerHeight);
+        const totalPoints = maximum === 0 ? 1 : Math.ceil(maximum / step) + 1;
+        const truncated = totalPoints > 80;
+        const points = [];
+        const leadingCount = truncated ? 79 : Math.max(0, totalPoints - 1);
+        for (let index = 0; index < leadingCount; index += 1) {
+          points.push(capturePoint(index * step, `viewport ${index + 1}`, 'viewport'));
+        }
+        if (points.length === 0 || points[points.length - 1].y !== maximum) {
+          points.push(capturePoint(maximum, `viewport ${totalPoints}`, 'viewport'));
+        }
+        return {mode, initialY, viewportHeight: innerHeight, contentHeight: root.scrollHeight,
+          points, truncated, totalPoints};
+      }
+      const candidates = Array.from(document.querySelectorAll('main h1,main h2,main h3,h1,h2,h3,section,[role="region"]'));
+      const points = candidates.filter(visible).map(element => {
+        const rect = element.getBoundingClientRect();
+        const label = name(element) || element.getAttribute('id') || element.tagName.toLowerCase();
+        const kind = /^h[1-6]$/i.test(element.tagName) ? element.tagName.toLowerCase() : (role(element) || element.tagName.toLowerCase());
+        return capturePoint(rect.top + scrollY - 16, label, kind);
+      }).sort((left, right) => left.y - right.y);
+      const deduped = dedupePoints(points);
+      return {mode, initialY, viewportHeight: innerHeight, contentHeight: root.scrollHeight,
+        points: deduped.points, truncated: deduped.truncated, totalPoints: deduped.totalPoints};
+    };
+    const scrollToCapturePoint = async args => {
+      const maximum = Math.max(0, document.documentElement.scrollHeight - innerHeight);
+      const requestedY = Math.min(maximum, Math.max(0, Number(args.y || 0)));
+      scrollTo({top: requestedY, behavior: 'instant'});
+      await sleep(180);
+      return {scrollY: Math.round(scrollY), requestedY: Math.round(requestedY)};
+    };
     const performanceSummary = () => {
       const navigation = performance.getEntriesByType('navigation')[0];
       const paint = performance.getEntriesByType('paint');
@@ -347,7 +479,11 @@ if (!globalThis.__headlessAgent) {
       });
       return {count: document.getAnimations().length, animations: all, truncated: document.getAnimations().length > all.length};
     };
-    return {snapshot, click, fill, press, scroll, state, tour, rectangle, styles, storage, performance: performanceSummary, animations};
+    return {
+      snapshot, click, fill, press, scroll, state, tour, screenshotPlan,
+      scrollToCapturePoint, rectangle, styles, storage,
+      performance: performanceSummary, animations
+    };
   })();
 }
 """#

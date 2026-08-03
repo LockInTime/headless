@@ -29,6 +29,39 @@ final class LinuxBrowserHost: @unchecked Sendable {
         browser.stop()
     }
 
+    private func captureScreenshotSeries(
+        session: LinuxBrowserSession,
+        parameters: [String: JSONValue]
+    ) throws -> JSONValue {
+        let mode = parameters["series"]?.stringValue ?? "viewport"
+        let format = try screenshotFormat(
+            explicit: parameters["format"]?.stringValue,
+            output: nil
+        )
+        let rawPlan = try session.screenshotSeriesPlan(mode: mode)
+        let plan = try parseScreenshotSeriesPlan(rawPlan)
+        let points = plan.points
+        let prefix = try screenshotSeriesPrefix(parameters: parameters, mode: mode)
+        defer { _ = try? session.scrollToCapturePoint(y: plan.initialY) }
+        let reserved = try reserveScreenshotSeriesArtifacts(
+            store: artifacts, points: points, prefix: prefix, mode: mode, format: format
+        )
+        do {
+            let metadata = try points.enumerated().map { index, point -> JSONValue in
+                _ = try session.scrollToCapturePoint(y: point.y)
+                let data = try session.screenshot(parameters: [:], format: format)
+                return try artifacts.writeReserved(data, to: reserved[index])
+            }
+            return screenshotSeriesSummary(
+                mode: mode, points: points, artifacts: metadata,
+                truncated: plan.truncated, totalPoints: plan.totalPoints
+            )
+        } catch {
+            artifacts.discardReserved(reserved)
+            throw error
+        }
+    }
+
     func handle(_ request: CommandRequest) -> CommandResponse {
         if request.command == .ping {
             return .success(id: request.id, result: .object([
@@ -82,7 +115,9 @@ final class LinuxBrowserHost: @unchecked Sendable {
                 result = try session.visit(normalizedWebURL(value))
             case .inspect:
                 result = try session.inspect(interactive: request.parameters["interactive"]?.boolValue ?? false,
-                                             includeText: request.parameters["text"]?.boolValue ?? false)
+                                             includeText: request.parameters["text"]?.boolValue ?? false,
+                                             context: request.parameters["context"]?.stringValue ?? "full",
+                                             task: request.parameters["task"]?.stringValue)
             case .click: result = try session.click(parameters: request.parameters)
             case .fill: result = try session.fill(parameters: request.parameters)
             case .press: result = try session.press(parameters: request.parameters)
@@ -103,21 +138,40 @@ final class LinuxBrowserHost: @unchecked Sendable {
                     "recording": recordings[name]?.status() ?? .object(["active": .bool(false)]),
                 ])
             case .screenshot:
-                let data = try session.screenshot(parameters: request.parameters)
-                result = try artifacts.write(
-                    data, requestedName: request.parameters["output"]?.stringValue,
-                    extension: "png", prefix: "screenshot-\(name)"
-                )
+                if request.parameters["series"]?.stringValue != nil {
+                    result = try captureScreenshotSeries(session: session, parameters: request.parameters)
+                } else {
+                    if request.parameters["clipboard"]?.boolValue == true {
+                        throw CDPError.commandFailed("Clipboard screenshots are only supported by the macOS host")
+                    }
+                    let format = try screenshotFormat(
+                        explicit: request.parameters["format"]?.stringValue,
+                        output: request.parameters["output"]?.stringValue
+                    )
+                    let data = try session.screenshot(parameters: request.parameters, format: format)
+                    result = try artifacts.write(
+                        data, requestedName: request.parameters["output"]?.stringValue,
+                        extension: artifactExtension(request.parameters["output"]?.stringValue ?? "") ?? format.fileExtension,
+                        prefix: "screenshot-\(name)"
+                    )
+                }
             case .recordStart:
                 guard recordings[name] == nil else { throw RecordingError.alreadyActive }
+                let format = try recordingFormat(
+                    explicit: request.parameters["format"]?.stringValue,
+                    output: request.parameters["output"]?.stringValue
+                )
+                let quality = try RecordingQuality.parse(request.parameters["quality"]?.stringValue ?? "balanced")
                 let output = try artifacts.reserve(
                     requestedName: request.parameters["output"]?.stringValue,
-                    extension: "mp4", prefix: "recording-\(name)"
+                    extension: format.fileExtension, prefix: "recording-\(name)"
                 )
                 let fps = request.parameters["fps"]?.numberValue ?? 10
                 let recording: BrowserRecording
                 do {
-                    recording = try BrowserRecording(outputURL: output, fps: fps) { [weak session] in
+                    recording = try BrowserRecording(
+                        outputURL: output, fps: fps, format: format, quality: quality
+                    ) { [weak session] in
                         guard let session else { throw RecordingError.captureFailed("session closed") }
                         return try session.recordingFrame()
                     }
@@ -130,6 +184,15 @@ final class LinuxBrowserHost: @unchecked Sendable {
             case .recordStatus:
                 result = recordings[name]?.status() ?? .object(["active": .bool(false)])
             case .recordStop:
+                guard let activeRecording = recordings[name] else { throw RecordingError.notActive }
+                if let output = request.parameters["output"]?.stringValue,
+                   let actual = artifactExtension(output),
+                   actual != activeRecording.format.fileExtension {
+                    throw CaptureFormatError.mismatchedOutputFormat(
+                        expected: activeRecording.format.fileExtension,
+                        actual: actual
+                    )
+                }
                 guard let recording = recordings.removeValue(forKey: name) else { throw RecordingError.notActive }
                 let recordingStatus: JSONValue
                 do { recordingStatus = try recording.stop() }
@@ -271,6 +334,8 @@ final class LinuxBrowserHost: @unchecked Sendable {
                 id: request.id, code: code, message: error.description,
                 suggestion: suggestion
             )
+        } catch let error as CaptureFormatError {
+            return .failure(id: request.id, code: "INVALID_CAPTURE_FORMAT", message: error.description)
         } catch let error as ArtifactError {
             return .failure(id: request.id, code: "ARTIFACT_ERROR", message: error.description)
         } catch {

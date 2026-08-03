@@ -70,6 +70,12 @@ SNAPSHOT="$(headless --session qa inspect --interactive --text)"
 echo "$SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$SNAPSHOT" | grep -q '"name":"Reviewer"'
 ! echo "$SNAPSHOT" | grep -q '"pwned":true'
+ACTION_SNAPSHOT="$(headless --session qa inspect --context actions --task 'click Continue')"
+echo "$ACTION_SNAPSHOT" | grep -q '"contextMode":"actions"'
+echo "$ACTION_SNAPSHOT" | grep -q '"task":"click Continue"'
+echo "$ACTION_SNAPSHOT" | grep -q '"name":"Continue"'
+echo "$ACTION_SNAPSHOT" | grep -q '"actions":\["click"\]'
+echo "$ACTION_SNAPSHOT" | grep -q '"relevance"'
 CONSOLE="$(headless --session qa console list --level error)"
 echo "$CONSOLE" | grep -q 'Next.js runtime error'
 NETWORK="$(headless --session qa network list)"
@@ -126,6 +132,22 @@ headless --session qa wait --url /designers/dashboard --settled --timeout 10000 
 headless --session qa screenshot --output viewport.png | grep -q '"name":"viewport.png"'
 headless --session qa screenshot --full-page --output full-page.png | grep -q '"name":"full-page.png"'
 headless --session qa screenshot --role button --name Continue --output continue.png | grep -q '"name":"continue.png"'
+headless --session qa screenshot --format jpeg --output viewport.jpeg | grep -q '"name":"viewport.jpeg"'
+headless --session qa screenshot --format pdf --full-page --output full-page.pdf | grep -q '"name":"full-page.pdf"'
+if headless --session qa screenshot --format pdf --role button --name Continue --output continue.pdf >/dev/null 2>&1; then
+  echo "element PDF capture was not rejected" >&2
+  exit 1
+fi
+VIEWPORT_SERIES="$(headless --session qa screenshot --every-viewport --format jpg --output scroll-capture)"
+echo "$VIEWPORT_SERIES" | grep -q '"series":"viewport"'
+echo "$VIEWPORT_SERIES" | grep -q '"name":"scroll-capture-001.jpg"'
+test -s "$HEADLESS_ARTIFACT_DIR/scroll-capture-001.jpg"
+SCROLL_CAPTURE_COUNT="$(find "$HEADLESS_ARTIFACT_DIR" -maxdepth 1 -name 'scroll-capture-*.jpg' | wc -l | tr -d ' ')"
+test "$SCROLL_CAPTURE_COUNT" -ge 2
+SECTION_SERIES="$(headless --session qa screenshot --by-section --output section-capture)"
+echo "$SECTION_SERIES" | grep -q '"series":"section"'
+SECTION_CAPTURE_COUNT="$(find "$HEADLESS_ARTIFACT_DIR" -maxdepth 1 -name 'section-capture-*.png' | wc -l | tr -d ' ')"
+test "$SECTION_CAPTURE_COUNT" -ge 3
 headless --session qa visual compare viewport.png viewport.png --output visual-diff.png | grep -q '"name":"visual-diff.png"'
 test -s "$HEADLESS_ARTIFACT_DIR/visual-diff.png"
 headless --session qa performance get | grep -q '"webVitals"'
@@ -150,9 +172,13 @@ headless --session qa visit http://127.0.0.1:41739/designers/dashboard/ | grep -
 test -s "$HEADLESS_ARTIFACT_DIR/viewport.png"
 test -s "$HEADLESS_ARTIFACT_DIR/full-page.png"
 test -s "$HEADLESS_ARTIFACT_DIR/continue.png"
+test -s "$HEADLESS_ARTIFACT_DIR/viewport.jpeg"
+test -s "$HEADLESS_ARTIFACT_DIR/full-page.pdf"
 test "$(od -An -tx1 -N8 "$HEADLESS_ARTIFACT_DIR/viewport.png" | tr -d ' \n')" = "89504e470d0a1a0a"
 test "$(od -An -tx1 -N8 "$HEADLESS_ARTIFACT_DIR/full-page.png" | tr -d ' \n')" = "89504e470d0a1a0a"
 test "$(od -An -tx1 -N8 "$HEADLESS_ARTIFACT_DIR/continue.png" | tr -d ' \n')" = "89504e470d0a1a0a"
+test "$(od -An -tx1 -N3 "$HEADLESS_ARTIFACT_DIR/viewport.jpeg" | tr -d ' \n')" = "ffd8ff"
+head -c 5 "$HEADLESS_ARTIFACT_DIR/full-page.pdf" | grep -q '%PDF-'
 set -- $(od -An -tu1 -j 20 -N 4 "$HEADLESS_ARTIFACT_DIR/viewport.png")
 VIEWPORT_HEIGHT=$(($1 * 16777216 + $2 * 65536 + $3 * 256 + $4))
 set -- $(od -An -tu1 -j 20 -N 4 "$HEADLESS_ARTIFACT_DIR/full-page.png")
@@ -197,7 +223,23 @@ UNIQUE_RECORDING_FRAMES="$(ffmpeg -hide_banner -loglevel error \
   | awk -F ', ' '!/^#/ {print $6}' | sort -u | wc -l)"
 test "$UNIQUE_RECORDING_FRAMES" -ge 8
 test "$(stat -c %a "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4")" = "600"
+headless --session qa record start --fps 3 --format webm --quality fast | grep -q '"format":"webm"'
+headless --session qa scroll top | grep -q '"direction":"top"'
+headless --session qa tour --full-page --pace 500 | grep -q '"durationMs"'
+headless --session qa record stop --output dashboard-flow.webm | grep -q '"name":"dashboard-flow.webm"'
+test -s "$HEADLESS_ARTIFACT_DIR/dashboard-flow.webm"
+ffprobe -v error -select_streams v:0 \
+  -show_entries stream=codec_name,width,height -of csv=p=0 \
+  "$HEADLESS_ARTIFACT_DIR/dashboard-flow.webm" | grep -Eq '^vp[89],[1-9][0-9]*,[1-9][0-9]*$'
+headless --session qa record start --fps 2 --format gif --quality fast | grep -q '"format":"gif"'
+headless --session qa scroll top | grep -q '"direction":"top"'
+headless --session qa tour --full-page --pace 500 | grep -q '"durationMs"'
+headless --session qa record stop --output dashboard-flow.gif | grep -q '"name":"dashboard-flow.gif"'
+test -s "$HEADLESS_ARTIFACT_DIR/dashboard-flow.gif"
+head -c 6 "$HEADLESS_ARTIFACT_DIR/dashboard-flow.gif" | grep -Eq 'GIF8[79]a'
 headless artifacts list | grep -q '"name":"dashboard-flow.mp4"'
+headless artifacts list | grep -q '"name":"dashboard-flow.webm"'
+headless artifacts list | grep -q '"name":"dashboard-flow.gif"'
 headless --session qa back | grep -q 'Designers Dashboard'
 headless --session qa reload | grep -q 'Designers Dashboard'
 headless --session qa capture-info | grep -q '"engine":"chromium"'
@@ -212,11 +254,16 @@ if [ -n "${HEADLESS_EVIDENCE_DIR:-}" ]; then
   umask 077
   mkdir -p "$HEADLESS_EVIDENCE_DIR"
   cp "$HEADLESS_ARTIFACT_DIR"/*.png "$HEADLESS_EVIDENCE_DIR/"
+  cp "$HEADLESS_ARTIFACT_DIR"/*.jpg "$HEADLESS_EVIDENCE_DIR/"
+  cp "$HEADLESS_ARTIFACT_DIR"/*.jpeg "$HEADLESS_EVIDENCE_DIR/"
+  cp "$HEADLESS_ARTIFACT_DIR"/*.pdf "$HEADLESS_EVIDENCE_DIR/"
   cp "$HEADLESS_ARTIFACT_DIR"/*.mp4 "$HEADLESS_EVIDENCE_DIR/"
+  cp "$HEADLESS_ARTIFACT_DIR"/*.webm "$HEADLESS_EVIDENCE_DIR/"
+  cp "$HEADLESS_ARTIFACT_DIR"/*.gif "$HEADLESS_EVIDENCE_DIR/"
   cp "$HEADLESS_ARTIFACT_DIR"/*.json "$HEADLESS_EVIDENCE_DIR/"
   (
     cd "$HEADLESS_EVIDENCE_DIR"
-    sha256sum ./*.png ./*.mp4 ./*.json > SHA256SUMS
+    sha256sum ./*.png ./*.jpg ./*.jpeg ./*.pdf ./*.mp4 ./*.webm ./*.gif ./*.json > SHA256SUMS
   )
 fi
 

@@ -146,6 +146,12 @@ SNAPSHOT="$("$CLI" --session qa inspect --interactive --text)"
 echo "$SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$SNAPSHOT" | grep -q '"name":"Reviewer"'
 ! echo "$SNAPSHOT" | grep -q '"pwned":true'
+ACTION_SNAPSHOT="$("$CLI" --session qa inspect --context actions --task 'click Continue')"
+echo "$ACTION_SNAPSHOT" | grep -q '"contextMode":"actions"'
+echo "$ACTION_SNAPSHOT" | grep -q '"task":"click Continue"'
+echo "$ACTION_SNAPSHOT" | grep -q '"name":"Continue"'
+echo "$ACTION_SNAPSHOT" | grep -q '"actions":\["click"\]'
+echo "$ACTION_SNAPSHOT" | grep -q '"relevance"'
 CONSOLE="$("$CLI" --session qa console list --level error)"
 echo "$CONSOLE" | grep -q 'Next.js runtime error'
 NETWORK="$("$CLI" --session qa network list)"
@@ -205,6 +211,18 @@ STEP="artifacts-visual"
 "$CLI" --session qa screenshot --output viewport.png | grep -q '"name":"viewport.png"'
 "$CLI" --session qa screenshot --full-page --output full-page.png | grep -q '"name":"full-page.png"'
 "$CLI" --session qa screenshot --role button --name Continue --output continue.png | grep -q '"name":"continue.png"'
+"$CLI" --session qa screenshot --format jpg --output viewport.jpg --clipboard | grep -q '"clipboard":true'
+"$CLI" --session qa screenshot --format pdf --full-page --output full-page.pdf | grep -q '"name":"full-page.pdf"'
+VIEWPORT_SERIES="$("$CLI" --session qa screenshot --every-viewport --format jpg --output scroll-capture)"
+echo "$VIEWPORT_SERIES" | grep -q '"series":"viewport"'
+echo "$VIEWPORT_SERIES" | grep -q '"name":"scroll-capture-001.jpg"'
+test -s "$HEADLESS_ARTIFACT_DIR/scroll-capture-001.jpg"
+SCROLL_CAPTURE_COUNT="$(find "$HEADLESS_ARTIFACT_DIR" -maxdepth 1 -name 'scroll-capture-*.jpg' | wc -l | tr -d ' ')"
+test "$SCROLL_CAPTURE_COUNT" -ge 2
+SECTION_SERIES="$("$CLI" --session qa screenshot --by-section --output section-capture)"
+echo "$SECTION_SERIES" | grep -q '"series":"section"'
+SECTION_CAPTURE_COUNT="$(find "$HEADLESS_ARTIFACT_DIR" -maxdepth 1 -name 'section-capture-*.png' | wc -l | tr -d ' ')"
+test "$SECTION_CAPTURE_COUNT" -ge 3
 "$CLI" --session qa visual compare viewport.png viewport.png --output visual-diff.png | grep -q '"name":"visual-diff.png"'
 test -s "$HEADLESS_ARTIFACT_DIR/visual-diff.png"
 "$CLI" --session qa performance get | grep -q '"webVitals"'
@@ -229,6 +247,10 @@ grep -q 'headless-qa-report-v1' "$HEADLESS_ARTIFACT_DIR/pr-report.json"
 test -s "$HEADLESS_ARTIFACT_DIR/viewport.png"
 test -s "$HEADLESS_ARTIFACT_DIR/full-page.png"
 test -s "$HEADLESS_ARTIFACT_DIR/continue.png"
+test -s "$HEADLESS_ARTIFACT_DIR/viewport.jpg"
+test -s "$HEADLESS_ARTIFACT_DIR/full-page.pdf"
+test "$(xxd -p -l 3 "$HEADLESS_ARTIFACT_DIR/viewport.jpg")" = "ffd8ff"
+head -c 5 "$HEADLESS_ARTIFACT_DIR/full-page.pdf" | grep -q '%PDF-'
 VIEWPORT_HEIGHT="$(sips -g pixelHeight "$HEADLESS_ARTIFACT_DIR/viewport.png" | awk '/pixelHeight/ {print $2}')"
 FULL_HEIGHT="$(sips -g pixelHeight "$HEADLESS_ARTIFACT_DIR/full-page.png" | awk '/pixelHeight/ {print $2}')"
 test "$FULL_HEIGHT" -gt "$VIEWPORT_HEIGHT"
@@ -256,7 +278,14 @@ fi
 test -s "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4"
 file "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4" | grep -Eq 'ISO Media|MP4'
 test "$(stat -f %Lp "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mp4")" = "600"
+"$CLI" --session qa record start --fps 3 --format mov --quality fast | grep -q '"format":"mov"'
+"$CLI" --session qa scroll top | grep -q '"direction":"top"'
+"$CLI" --session qa tour --full-page --pace 5000 | grep -q '"durationMs"'
+"$CLI" --session qa record stop --output dashboard-flow.mov | grep -q '"name":"dashboard-flow.mov"'
+test -s "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mov"
+file "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mov" | grep -Eq 'ISO Media|QuickTime'
 "$CLI" artifacts list | grep -q '"name":"dashboard-flow.mp4"'
+"$CLI" artifacts list | grep -q '"name":"dashboard-flow.mov"'
 "$CLI" --session qa back | grep -q 'Designers Dashboard'
 "$CLI" --session qa reload | grep -q 'Designers Dashboard'
 STEP="capture-hostile"
