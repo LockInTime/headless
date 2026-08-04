@@ -8,7 +8,12 @@ Headless began as a fork of
 Sahil Lavingia for the original foundation.
 
 Supported platforms: macOS, Linux (including Ubuntu and the common Linux test
-distros used in CI/Docker). Windows is not supported.
+distros used in CI/Docker). Windows is not supported natively (planned as a
+stretch goal; Docker/WSL2 is the interim path).
+
+Product direction, architectural decisions, and the full improvements backlog
+live in [docs/ROADMAP.md](docs/ROADMAP.md). Contributors (human or agent):
+start with [AGENTS.md](AGENTS.md).
 
 P2 uses the same CLI everywhere Headless runs:
 
