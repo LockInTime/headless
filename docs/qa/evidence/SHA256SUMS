@@ -8,6 +8,7 @@ c9c4e28c3a7b277843c81e16b4ecf945c345bb3656c63eba072dd0a552f20023  ./02-startup-s
 5227279bcd179e180a3f9b3320fc176ddace085ee8920698a7e4d3df1b714a42  ./08-performance-animations.mp4
 b4c456a6b0b91b5a772d48fa394a149f2710653445359380948430348178567e  ./09-recording-artifact-lifecycle.mp4
 c74158acf8120987875778c3ab0d25b81e3d1bcbc0c793bccf3a5e01311ad1b8  ./10-mcp-stdio-invocation.mp4
+74dfd9b1b13488b2f7837f2fae1b77dc357d34661ac34e9c1c111de96f709b28  ./11-progressive-context-pruning.gif
 360165cd996f8de60df838b7cf0e560d13da1927895d497fe869c6ca8381ce9d  ./11-progressive-context-pruning.mp4
 6515ca9ec63934461b13afcff55494bc07b0ffe6dfb1a475be4f5a6dceedd7b8  ./context-pruning-results.json
 dc7e41b0faf7507cdb601940267daa4ecc3986d4e6a73138d6e29b25b822463d  ./dashboard-flow.json

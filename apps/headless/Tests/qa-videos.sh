@@ -438,7 +438,7 @@ validate_evidence() {
 
   set +e
   sensitive_matches="$(grep -R -a -E -l \
-    --include='*.mp4' --include='*.json' --include='*.png' \
+    --include='*.mp4' --include='*.gif' --include='*.json' --include='*.png' \
     'fixture-secret|response-secret|Bearer fixture|qa:secret' /evidence)"
   sensitive_status=$?
   set -e
@@ -459,7 +459,7 @@ validate_evidence() {
   chmod 0600 /evidence/*
   (
     cd /evidence
-    find . -maxdepth 1 -type f \( -name '*.mp4' -o -name '*.json' -o -name '*.png' \) \
+    find . -maxdepth 1 -type f \( -name '*.mp4' -o -name '*.gif' -o -name '*.json' -o -name '*.png' \) \
       -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
     chmod 0600 SHA256SUMS
     sha256sum -c SHA256SUMS
