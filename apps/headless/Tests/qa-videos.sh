@@ -66,6 +66,54 @@ terminal_mcp() {
   sleep 4
 }
 
+terminal_context_pruning() {
+  printf '\033[2J\033[HHeadless QA: progressive context pruning\n'
+  sleep 1
+  printf '\n$ headless --session qa visit %s/large-document\n' "$FIXTURE_URL"
+  headless --session qa visit "$FIXTURE_URL/large-document" >/dev/null
+  printf 'Large Operations Handbook loaded: 120 chapters\n'
+  sleep 2
+
+  printf '\n$ headless --session qa inspect --context full\n'
+  full="$(headless --session qa inspect --context full)"
+  node -e 'const r=JSON.parse(process.argv[1]).result; console.log(`full: ${r.contextStats.encodedBytes} bytes / ~${r.contextStats.estimatedTokens} tokens / ${r.elements.length} elements`)' "$full"
+  sleep 2
+
+  printf '\n$ headless --session qa inspect --context summary --task "Linux service-account authentication" --budget 700\n'
+  summary="$(headless --session qa inspect --context summary --task 'Linux service-account authentication' --limit 8 --budget 700)"
+  node -e 'const r=JSON.parse(process.argv[1]).result; const hit=r.regions.find(x=>x.name.includes("Linux service-account")); console.log(JSON.stringify({mode:r.contextMode,hit:hit?.name,ref:hit?.ref,omitted:r.omitted,stats:r.contextStats},null,2))' "$summary"
+  sleep 3
+
+  outline="$(headless --session qa inspect --context outline --task 'Linux service-account authentication' --limit 8 --budget 900)"
+  region="$(node -e 'const r=JSON.parse(process.argv[1]).result; process.stdout.write(r.regions.find(x=>x.name.includes("Linux service-account")).ref)' "$outline")"
+  printf '\n$ headless --session qa inspect --context text --within %s --task "Ubuntu service account" --limit 4\n' "$region"
+  scoped="$(headless --session qa inspect --context text --within "$region" --task 'Ubuntu service account' --limit 4 --budget 700)"
+  node -e 'const r=JSON.parse(process.argv[1]).result; console.log(JSON.stringify({within:r.within,snippets:r.snippets.map(x=>x.text),stats:r.contextStats},null,2))' "$scoped"
+  grep -q 'short-lived service account' <<<"$scoped" || fail 'scoped text omitted the target content'
+  sleep 3
+
+  actions="$(headless --session qa inspect --context actions --within "$region" --task 'copy authentication command' --limit 5 --budget 700)"
+  grep -q 'Copy authentication command' <<<"$actions" || fail 'scoped actions omitted the target control'
+  node -e '
+    const [full, summary, outline, text, actions] = process.argv.slice(1).map(value => JSON.parse(value).result);
+    if (summary.contextStats.estimatedTokens >= full.contextStats.estimatedTokens) process.exit(1);
+    const reduction = Math.round((1 - summary.contextStats.estimatedTokens / full.contextStats.estimatedTokens) * 1000) / 10;
+    console.log(JSON.stringify({
+      result: "pass",
+      fixtureSections: 120,
+      selectedRegion: outline.regions.find(region => region.name.includes("Linux service-account"))?.ref,
+      estimatedTokenReductionPercent: reduction,
+      full: {items: full.elements.length, ...full.contextStats},
+      summary: {items: summary.regions.length + summary.elements.length, ...summary.contextStats},
+      outline: {items: outline.regions.length, ...outline.contextStats},
+      scopedText: {items: text.snippets.length, ...text.contextStats},
+      scopedActions: {items: actions.elements.length, ...actions.contextStats}
+    }, null, 2));
+  ' "$full" "$summary" "$outline" "$scoped" "$actions" > /evidence/context-pruning-results.json
+  printf '\nScoped action found: Copy authentication command\nContext pruning checks passed.\n'
+  sleep 4
+}
+
 if [[ "${1:-}" == --terminal-runtime ]]; then
   terminal_runtime
   exit 0
@@ -73,6 +121,11 @@ fi
 
 if [[ "${1:-}" == --terminal-mcp ]]; then
   terminal_mcp
+  exit 0
+fi
+
+if [[ "${1:-}" == --terminal-context-pruning ]]; then
+  terminal_context_pruning
   exit 0
 fi
 
@@ -364,7 +417,7 @@ validate_evidence() {
   local first=1 video duration codec sensitive_matches sensitive_status
   shopt -s nullglob
   local videos=(/evidence/*.mp4)
-  test "${#videos[@]}" -eq 10 || fail "expected 10 MP4 files, found ${#videos[@]}"
+  test "${#videos[@]}" -eq 11 || fail "expected 11 MP4 files, found ${#videos[@]}"
 
   printf '{\n  "minimumSeconds": %s,\n  "videos": [\n' "$MINIMUM_VIDEO_SECONDS" > /evidence/media-probe.json
   for video in "${videos[@]}"; do
@@ -385,7 +438,7 @@ validate_evidence() {
 
   set +e
   sensitive_matches="$(grep -R -a -E -l \
-    --include='*.mp4' --include='*.json' --include='*.png' \
+    --include='*.mp4' --include='*.gif' --include='*.json' --include='*.png' \
     'fixture-secret|response-secret|Bearer fixture|qa:secret' /evidence)"
   sensitive_status=$?
   set -e
@@ -400,13 +453,13 @@ validate_evidence() {
     '  "result": "pass",' \
     '  "runtime": "/usr/lib/chromium/chromium",' \
     '  "fixture": "apps/headless/Tests/fixture-server.mjs",' \
-    '  "recordings": 10' \
+    '  "recordings": 11' \
     '}' > /evidence/test-results.json
 
   chmod 0600 /evidence/*
   (
     cd /evidence
-    find . -maxdepth 1 -type f \( -name '*.mp4' -o -name '*.json' -o -name '*.png' \) \
+    find . -maxdepth 1 -type f \( -name '*.mp4' -o -name '*.gif' -o -name '*.json' -o -name '*.png' \) \
       -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
     chmod 0600 SHA256SUMS
     sha256sum -c SHA256SUMS
@@ -465,6 +518,7 @@ run_inside() {
 
   dashboard
   record_terminal 10-mcp-stdio-invocation.mp4 --terminal-mcp 'MCP stdio invocation'
+  record_terminal 11-progressive-context-pruning.mp4 --terminal-context-pruning 'Progressive context pruning'
 
   expect_output '"closed":"qa"' headless session close qa
   expect_output '"stopping":true' headless stop

@@ -53,6 +53,8 @@ Puppeteer **499**. Full method and limits:
 headless start
 headless session create qa
 headless --session qa visit localhost:3000/designers/dashboard
+headless --session qa inspect --context summary --task "finish onboarding"
+headless --session qa inspect --context outline --limit 20
 headless --session qa inspect --context actions --task "click Continue"
 headless --session qa record start --fps 10
 headless --session qa tour --full-page
@@ -71,14 +73,19 @@ headless --session qa styles get --role button --name Continue --property displa
 headless artifacts list
 ```
 
-`inspect --context actions` returns visible controls ranked for the task. Each
-control's `actions` list contains only protocol verbs that can run (`click` or
-`fill`); unsupported controls never advertise nonexistent commands. Add `--task
-"search open ai"` to rank controls by relevance instead of sending page noise
-first. `inspect --context full` keeps the broader media and
-rendering snapshot. `inspect` returns roles, names, media URLs, decoded
-image/video dimensions, load state, safety markers, bounds, and references
-such as `@e1`.
+Inspection is progressively disclosed instead of forcing an entire page into an
+agent prompt. Start with `--context summary`, use `--context outline` to receive
+structural region references such as `@r4`, then inspect only that region with
+`--within @r4`. `--context text` returns bounded semantic snippets and
+`--context actions` returns visible executable controls. `--task`, `--limit`,
+`--budget`, and `--depth` rank and bound every focused response; `omitted` and
+`contextStats` make pruning explicit. `--context full --text` remains the
+explicit broad-page escape hatch.
+
+Each control's `actions` list contains only protocol verbs that can run (`click`
+or `fill`); unsupported controls never advertise nonexistent commands. Full
+inspection retains roles, names, rendered media metadata, safety markers,
+bounds, and element references such as `@e1`.
 `capture-info` returns the browser surface, page state, action trace, and
 recording state for an external recorder or QA harness.
 
@@ -191,6 +198,7 @@ Assets: macOS `Headless.app` zip, Linux amd64/arm64 tarballs. See the Actions
 
 ```sh
 pnpm test                 # shared protocol/security suite
+pnpm test:runtime         # deterministic large-document pruning suite
 pnpm test:e2e:mac         # real WKWebView workflow
 pnpm test:e2e:linux       # disposable Docker + sandboxed Chromium workflow
 ```

@@ -1027,12 +1027,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 result = try controller.agentVisit(normalizedWebURL(value))
             case .inspect:
-                result = try controller.agentInspect(
-                    interactive: request.parameters["interactive"]?.boolValue ?? false,
-                    includeText: request.parameters["text"]?.boolValue ?? false,
-                    context: request.parameters["context"]?.stringValue ?? "full",
-                    task: request.parameters["task"]?.stringValue
-                )
+                result = try controller.agentInspect(parameters: request.parameters)
             case .click:
                 result = try controller.agentClick(parameters: request.parameters)
             case .fill:
@@ -1253,6 +1248,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .elementNotFound:
                 return failure(request, code: "ELEMENT_NOT_FOUND", message: error.description,
                                suggestion: "Run `headless inspect --interactive` to refresh element references.")
+            case .regionNotFound:
+                return failure(request, code: "REGION_NOT_FOUND", message: error.description,
+                               suggestion: "Run `headless inspect --context outline` to refresh region references.")
             case .operationFailed(let message) where message.contains("UNSAFE_NAVIGATION"):
                 return failure(request, code: "UNSAFE_NAVIGATION", message: error.description,
                                suggestion: "Agent-controlled sessions allow web navigation only.")

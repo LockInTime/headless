@@ -7,6 +7,7 @@
     "dev": "pnpm --filter @headless/web dev",
     "start": "pnpm --filter @headless/web start",
     "test": "pnpm --filter @headless/app test",
+    "test:runtime": "pnpm --filter @headless/app test:runtime",
     "test:e2e:mac": "pnpm --filter @headless/app test:e2e:mac",
     "test:e2e:linux": "pnpm --filter @headless/app test:e2e:linux"
   },

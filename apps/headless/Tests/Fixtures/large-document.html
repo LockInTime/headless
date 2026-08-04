@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Large Operations Handbook</title>
+  <style>
+    body { margin: 0; font: 16px system-ui; color: #17201d; background: #f4f7f5; }
+    header { position: sticky; top: 0; z-index: 2; padding: 18px 32px; color: white; background: #173f35; }
+    header h1 { margin: 0; font-size: 22px; }
+    nav { display: flex; gap: 16px; overflow: hidden; padding: 12px 32px; background: white; border-bottom: 1px solid #d9e2de; }
+    nav a { color: #285f50; white-space: nowrap; }
+    main { max-width: 920px; margin: auto; padding: 32px; }
+    section { min-height: 220px; margin: 0 0 20px; padding: 28px; background: white; border: 1px solid #d9e2de; border-radius: 16px; }
+    section:target { outline: 4px solid #e8a431; }
+    h2 { margin-top: 0; }
+    button { margin-right: 8px; padding: 10px 16px; border: 0; border-radius: 999px; color: white; background: #285f50; }
+    .target { border-color: #e8a431; box-shadow: 0 12px 30px rgb(23 63 53 / 12%); }
+    .eyebrow { color: #64766f; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+  </style>
+</head>
+<body>
+  <header><h1>Large Operations Handbook</h1></header>
+  <nav aria-label="Handbook chapters" id="chapters"></nav>
+  <main id="content"></main>
+  <script>
+    const chapters = document.getElementById('chapters');
+    const content = document.getElementById('content');
+    for (let index = 1; index <= 120; index += 1) {
+      const id = `chapter-${index}`;
+      const link = document.createElement('a');
+      link.href = `#${id}`;
+      link.textContent = `Chapter ${index}`;
+      chapters.appendChild(link);
+
+      const section = document.createElement('section');
+      section.id = id;
+      section.setAttribute('aria-labelledby', `${id}-title`);
+      const isTarget = index === 87;
+      if (isTarget) section.className = 'target';
+      const title = isTarget ? 'Linux service-account authentication' : `Operations chapter ${index}`;
+      const detail = isTarget
+        ? 'Configure the Ubuntu runner with a short-lived service account. Validate the audience, rotate credentials, and use the Copy authentication command action below.'
+        : `Reference material for routine operation ${index}. This chapter covers monitoring, ownership, rollback checks, and standard response procedures.`;
+      section.innerHTML = `
+        <div class="eyebrow">Handbook chapter ${index}</div>
+        <h2 id="${id}-title">${title}</h2>
+        <p>${detail}</p>
+        <p>Confirm the documented preconditions before changing a running environment. Record the observed result and the recovery path.</p>
+        <button type="button">Open chapter ${index} checklist</button>
+        ${isTarget ? '<button type="button" aria-label="Copy authentication command">Copy command</button>' : ''}
+      `;
+      content.appendChild(section);
+    }
+  </script>
+</body>
+</html>

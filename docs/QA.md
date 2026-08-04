@@ -47,8 +47,9 @@ node /workspace/apps/headless/Tests/fixture-server.mjs
 | [Performance and animations](qa/evidence/08-performance-animations.mp4) | [Probe results](qa/evidence/media-probe.json) | `performance get`, `animations list`, tours, scrolling, and checks across both fixture pages |
 | [Recording and artifact lifecycle](qa/evidence/09-recording-artifact-lifecycle.mp4) | [Probe results](qa/evidence/media-probe.json), [viewport](qa/evidence/lifecycle-viewport.png), and [full-page](qa/evidence/lifecycle-full-page.png) screenshots | `record start/status/stop`, rejection of a second recording, screenshots, `artifacts list`, and `capture-info` |
 | [MCP stdio invocation](qa/evidence/10-mcp-stdio-invocation.mp4) | [Probe results](qa/evidence/media-probe.json) | Real JSON-RPC requests piped to `headless-mcp`: `initialize`, `tools/list`, and two `tools/call` requests over stdio |
+| [Progressive context pruning](qa/evidence/11-progressive-context-pruning.mp4) | [Inline preview](qa/evidence/11-progressive-context-pruning.gif), [context measurements](qa/evidence/context-pruning-results.json), and [probe results](qa/evidence/media-probe.json) | A 120-section document inspected with `full`, task-ranked `summary` and `outline`, then scoped `text` and `actions` through a stable `@rN` reference and explicit budgets |
 
-The eight browser-visible files use `headless --session qa record start --fps 5` and `record stop`. Each recording contains navigation, scrolling, input, tours, or reloads with waits between state changes. The two terminal files use FFmpeg `x11grab` on `DISPLAY=:99` against an xterm running the real commands.
+The eight browser-visible files use `headless --session qa record start --fps 5` and `record stop`. Each recording contains navigation, scrolling, input, tours, or reloads with waits between state changes. The Docker harness records terminal scenarios with FFmpeg `x11grab` on `DISPLAY=:99` against an xterm running the real commands. The committed progressive-pruning proof uses an actual asciicast of `pnpm test:runtime`, rendered to MP4, because the development host does not permit Chromium's namespace sandbox; it does not disable or bypass that sandbox.
 
 ## Command transcript
 
@@ -164,13 +165,25 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["status"]}}}' \
   '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["--session","qa","inspect","--interactive","--text"]}}}' \
   | headless-mcp
+
+# Progressive context pruning on the 120-section fixture
+headless --session qa visit http://127.0.0.1:41739/large-document
+headless --session qa inspect --context full
+headless --session qa inspect --context summary \
+  --task 'Linux service-account authentication' --limit 8 --budget 700
+headless --session qa inspect --context outline \
+  --task 'Linux service-account authentication' --limit 8 --budget 900
+headless --session qa inspect --context text --within @rN \
+  --task 'Ubuntu service account' --limit 4 --budget 700
+headless --session qa inspect --context actions --within @rN \
+  --task 'copy authentication command' --limit 5 --budget 700
 ```
 
 Before every browser recording, the harness visits `http://127.0.0.1:41739/designers/dashboard` and waits for the page to settle. Scroll, tour, and wait calls used for visible pacing are kept in the script next to each feature command.
 
 ## Artifacts and checks
 
-The ten recordings and all generated artifacts from the successful run are committed in [`docs/qa/evidence/`](qa/evidence/). The set includes screenshot and visual-diff PNGs, the recorded flow, the QA report, [media probe results](qa/evidence/media-probe.json), [test results](qa/evidence/test-results.json), and [SHA-256 checksums](qa/evidence/SHA256SUMS).
+The eleven recordings and all generated artifacts from the successful run are committed in [`docs/qa/evidence/`](qa/evidence/). The set includes screenshot and visual-diff PNGs, the recorded flow, the QA report, [context-pruning measurements](qa/evidence/context-pruning-results.json), [media probe results](qa/evidence/media-probe.json), [test results](qa/evidence/test-results.json), and [SHA-256 checksums](qa/evidence/SHA256SUMS).
 
 For every MP4, the harness runs these checks:
 
@@ -183,7 +196,7 @@ ffprobe -v error -show_entries format=duration \
   -of default=nokey=1:noprint_wrappers=1 "$VIDEO"
 ```
 
-The run fails unless all ten files are non-empty, contain a video stream, and last at least 10 seconds. It also scans video, JSON, and image artifacts for the fixture's sensitive test strings. It then checksums every generated evidence file and verifies `SHA256SUMS` with `sha256sum -c`.
+The run fails unless all eleven files are non-empty, contain a video stream, and last at least 10 seconds. It also scans video, JSON, and image artifacts for the fixture's sensitive test strings. It then checksums every generated evidence file and verifies `SHA256SUMS` with `sha256sum -c`.
 
 ## Test results
 
@@ -205,15 +218,17 @@ The recorded run completed successfully on the bundled `/usr/lib/chromium/chromi
 | [Performance and animations](qa/evidence/08-performance-animations.mp4) | 11.400000 |
 | [Recording and artifact lifecycle](qa/evidence/09-recording-artifact-lifecycle.mp4) | 13.200000 |
 | [MCP stdio invocation](qa/evidence/10-mcp-stdio-invocation.mp4) | 18.000000 |
+| [Progressive context pruning](qa/evidence/11-progressive-context-pruning.mp4) | 13.040000 |
 
 Static checks for this change:
 
 ```sh
 bash -n apps/headless/Tests/qa-videos.sh
+pnpm test:runtime
 git diff --check
 ```
 
-Both static checks pass on the current branch. The harness treats a partial run as a failure and writes passing result files only after all recordings and probes succeed.
+These checks pass on the current branch. The harness treats a partial run as a failure and writes passing result files only after all recordings and probes succeed.
 
 ## Limitations
 

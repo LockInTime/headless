@@ -20,6 +20,9 @@ Stop the shared host only when the task started it and no other session needs it
 
 ```sh
 headless --session NAME visit URL
+headless --session NAME inspect --context summary --task "TASK"
+headless --session NAME inspect --context outline --task "TASK" --limit 20
+headless --session NAME inspect --context text --within @rN --task "TASK" --budget 1200
 headless --session NAME inspect --context actions --task "TASK"
 headless --session NAME inspect --context full --text
 headless --session NAME click REF
@@ -33,11 +36,13 @@ headless --session NAME wait --settled --url PATTERN --text TEXT --timeout MS
 headless --session NAME tour --full-page --pace PIXELS_PER_SECOND
 ```
 
-Prefer `inspect --context actions --task "..."` for the first observation. It
-returns visible controls first and ranks them for the task. Use `click --role
-... --name ...` for unique accessible controls. Use a ref from the latest
-inspection when role/name is ambiguous. Fill accepts a ref; inspect again before
-filling after a navigation or large rerender.
+Prefer `inspect --context summary --task "..."` for the first observation. For
+large pages, request `outline`, select a returned `@rN` region, then use
+`--within @rN` with `text` or `actions`. `--limit`, `--budget`, and `--depth`
+bound the result; check `omitted` before assuming it describes the whole page.
+Use `click --role ... --name ...` for unique accessible controls. Use an `@eN`
+ref from the latest inspection when role/name is ambiguous. Inspect again after
+navigation or a large rerender.
 
 Use `wait` with the strongest expected condition available:
 

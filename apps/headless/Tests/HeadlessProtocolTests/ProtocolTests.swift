@@ -242,7 +242,11 @@ struct ProtocolTests {
         }
         try CommandRequest(
             id: "valid-inspect-context", command: .inspect,
-            parameters: ["context": .string("actions"), "task": .string("search open ai")]
+            parameters: [
+                "context": .string("text"), "task": .string("search open ai"),
+                "within": .string("@r12"), "limit": .number(8),
+                "budget": .number(900), "depth": .number(2),
+            ]
         ).validate()
         try expectThrows("invalid inspect context should be rejected") {
             try CommandRequest(
@@ -254,6 +258,30 @@ struct ProtocolTests {
             try CommandRequest(
                 id: "long-inspect-task", command: .inspect,
                 parameters: ["task": .string(String(repeating: "x", count: 513))]
+            ).validate()
+        }
+        try expectThrows("invalid inspect region refs should be rejected") {
+            try CommandRequest(
+                id: "bad-inspect-region", command: .inspect,
+                parameters: ["within": .string("@e1")]
+            ).validate()
+        }
+        try expectThrows("inspect item limit should remain bounded") {
+            try CommandRequest(
+                id: "large-inspect-limit", command: .inspect,
+                parameters: ["limit": .number(251)]
+            ).validate()
+        }
+        try expectThrows("inspect token budget should retain a useful minimum") {
+            try CommandRequest(
+                id: "small-inspect-budget", command: .inspect,
+                parameters: ["budget": .number(128)]
+            ).validate()
+        }
+        try expectThrows("raw inspect limits should reject fractional values") {
+            try CommandRequest(
+                id: "fractional-inspect-limit", command: .inspect,
+                parameters: ["limit": .number(1.5)]
             ).validate()
         }
     }
@@ -281,15 +309,25 @@ struct ProtocolTests {
 
     static func cliInspectContextAndTask() throws {
         let invocation = try CLIParser().parse([
-            "inspect", "--context", "actions", "--task", "search open ai", "--text",
+            "inspect", "--context", "text", "--task", "search open ai",
+            "--within", "@r4", "--limit", "6", "--budget", "800", "--depth", "2",
         ])
         try expect(invocation.request?.command == .inspect, "inspect command should parse")
-        try expect(invocation.request?.parameters["context"] == .string("actions"), "inspect context should parse")
-        try expect(invocation.request?.parameters["interactive"] == .bool(true), "actions context should imply interactive output")
+        try expect(invocation.request?.parameters["context"] == .string("text"), "inspect context should parse")
+        try expect(invocation.request?.parameters["interactive"] == .bool(false), "text context should not imply interactive output")
         try expect(invocation.request?.parameters["task"] == .string("search open ai"), "inspect task should parse")
-        try expect(invocation.request?.parameters["text"] == .bool(true), "inspect text flag should parse")
+        try expect(invocation.request?.parameters["within"] == .string("@r4"), "inspect region should parse")
+        try expect(invocation.request?.parameters["limit"] == .number(6), "inspect limit should parse")
+        try expect(invocation.request?.parameters["budget"] == .number(800), "inspect budget should parse")
+        try expect(invocation.request?.parameters["depth"] == .number(2), "inspect depth should parse")
         try expectThrows("invalid inspect context should fail in the CLI") {
             _ = try CLIParser().parse(["inspect", "--context", "debug"])
+        }
+        try expectThrows("invalid inspect region should fail in the CLI") {
+            _ = try CLIParser().parse(["inspect", "--within", "@e2"])
+        }
+        try expectThrows("fractional inspect limits should fail in the CLI") {
+            _ = try CLIParser().parse(["inspect", "--limit", "1.5"])
         }
     }
 

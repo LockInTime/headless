@@ -114,10 +114,7 @@ final class LinuxBrowserHost: @unchecked Sendable {
                 guard let value = request.parameters["url"]?.stringValue else { return failure(request, "MISSING_PARAMETER", "URL is required.") }
                 result = try session.visit(normalizedWebURL(value))
             case .inspect:
-                result = try session.inspect(interactive: request.parameters["interactive"]?.boolValue ?? false,
-                                             includeText: request.parameters["text"]?.boolValue ?? false,
-                                             context: request.parameters["context"]?.stringValue ?? "full",
-                                             task: request.parameters["task"]?.stringValue)
+                result = try session.inspect(parameters: request.parameters)
             case .click: result = try session.click(parameters: request.parameters)
             case .fill: result = try session.fill(parameters: request.parameters)
             case .press: result = try session.press(parameters: request.parameters)
@@ -307,6 +304,8 @@ final class LinuxBrowserHost: @unchecked Sendable {
                 code = "TIMEOUT"; suggestion = "Inspect the page or wait for a narrower condition."
             case .commandFailed(let message) where message.contains("ELEMENT_NOT_FOUND"):
                 code = "ELEMENT_NOT_FOUND"; suggestion = "Run `headless inspect --interactive` to refresh references."
+            case .commandFailed(let message) where message.contains("REGION_NOT_FOUND"):
+                code = "REGION_NOT_FOUND"; suggestion = "Run `headless inspect --context outline` to refresh region references."
             case .commandFailed(let message) where message.contains("UNSAFE_NAVIGATION"):
                 code = "UNSAFE_NAVIGATION"; suggestion = "Agent-controlled sessions allow web navigation only."
             case .commandFailed(let message) where message.contains("UNSAFE_RESOURCE_TYPE"):

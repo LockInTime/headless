@@ -1,0 +1,36 @@
+{
+  "result": "pass",
+  "fixtureSections": 120,
+  "selectedRegion": "@r1",
+  "estimatedTokenReductionPercent": 94.5,
+  "full": {
+    "encodedBytes": 48428,
+    "estimatedTokens": 12107,
+    "budget": null,
+    "budgetApplied": false
+  },
+  "summary": {
+    "encodedBytes": 2677,
+    "estimatedTokens": 670,
+    "budget": 700,
+    "budgetApplied": true
+  },
+  "outline": {
+    "encodedBytes": 2066,
+    "estimatedTokens": 517,
+    "budget": 900,
+    "budgetApplied": true
+  },
+  "scopedText": {
+    "encodedBytes": 988,
+    "estimatedTokens": 247,
+    "budget": 700,
+    "budgetApplied": true
+  },
+  "scopedActions": {
+    "encodedBytes": 895,
+    "estimatedTokens": 224,
+    "budget": 700,
+    "budgetApplied": true
+  }
+}

@@ -9,6 +9,7 @@ enum AgentOperationError: Error, CustomStringConvertible {
     case invalidResult
     case missingParameter(String)
     case elementNotFound(String)
+    case regionNotFound(String)
     case operationFailed(String)
 
     var description: String {
@@ -17,6 +18,7 @@ enum AgentOperationError: Error, CustomStringConvertible {
         case .invalidResult: return "Browser returned an invalid agent result"
         case .missingParameter(let value): return "Missing command parameter: \(value)"
         case .elementNotFound(let value): return "Element was not found: \(value)"
+        case .regionNotFound(let value): return "Region was not found: \(value)"
         case .operationFailed(let value): return value
         }
     }
@@ -36,13 +38,21 @@ extension BrowserWindowController {
         return try agentWait(parameters: ["settled": .bool(true), "timeoutMs": .number(timeout * 1_000)])
     }
 
-    func agentInspect(interactive: Bool, includeText: Bool, context: String, task: String?) throws -> JSONValue {
-        try callAgent(
+    func agentInspect(parameters: [String: JSONValue]) throws -> JSONValue {
+        var options: [String: Any] = [
+            "context": parameters["context"]?.stringValue ?? "full",
+            "task": parameters["task"]?.stringValue ?? "",
+        ]
+        if let within = parameters["within"]?.stringValue { options["within"] = within }
+        if let limit = parameters["limit"]?.numberValue { options["limit"] = limit }
+        if let budget = parameters["budget"]?.numberValue { options["budget"] = budget }
+        if let depth = parameters["depth"]?.numberValue { options["depth"] = depth }
+        return try callAgent(
             "return globalThis.__headlessAgent.snapshot(interactive, includeText, options);",
             arguments: [
-                "interactive": interactive,
-                "includeText": includeText,
-                "options": ["context": context, "task": task ?? ""],
+                "interactive": parameters["interactive"]?.boolValue ?? false,
+                "includeText": parameters["text"]?.boolValue ?? false,
+                "options": options,
             ]
         )
     }
@@ -404,6 +414,7 @@ extension BrowserWindowController {
         } catch {
             let message = String(describing: error)
             if message.contains("ELEMENT_NOT_FOUND:") { throw AgentOperationError.elementNotFound(message) }
+            if message.contains("REGION_NOT_FOUND:") { throw AgentOperationError.regionNotFound(message) }
             throw AgentOperationError.operationFailed(message)
         }
     }

@@ -5,10 +5,11 @@ export HEADLESS_ARTIFACT_DIR="/tmp/headless-artifacts-e2e-$$"
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
-mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/api"
+mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/api"
 cp /opt/headless/fixtures/dashboard.html "$FIXTURE_ROOT/designers/dashboard/index.html"
 cp /opt/headless/fixtures/next.html "$FIXTURE_ROOT/next/index.html"
 cp /opt/headless/fixtures/hostile.html "$FIXTURE_ROOT/hostile/index.html"
+cp /opt/headless/fixtures/large-document.html "$FIXTURE_ROOT/large-document/index.html"
 cp /opt/headless/fixtures/api-diagnostic.json "$FIXTURE_ROOT/api/diagnostic"
 busybox httpd -f -p 127.0.0.1:41739 -h "$FIXTURE_ROOT" &
 FIXTURE_PID=$!
@@ -244,6 +245,20 @@ headless --session qa back | grep -q 'Designers Dashboard'
 headless --session qa reload | grep -q 'Designers Dashboard'
 headless --session qa capture-info | grep -q '"engine":"chromium"'
 headless --session qa capture-info | grep -q '"browserExecutable":"/usr/lib/chromium/chromium"'
+headless --session qa visit http://127.0.0.1:41739/large-document/ | grep -q 'Large Operations Handbook'
+SUMMARY="$(headless --session qa inspect --context summary --task 'Linux service-account authentication' --limit 8 --budget 700)"
+echo "$SUMMARY" | grep -q '"contextMode":"summary"'
+echo "$SUMMARY" | grep -q 'Linux service-account authentication'
+echo "$SUMMARY" | grep -q '"budget":700'
+test "$(printf %s "$SUMMARY" | wc -c)" -lt 3200
+OUTLINE="$(headless --session qa inspect --context outline --task 'Linux service-account authentication' --limit 8 --budget 900)"
+TARGET_REGION="$(printf %s "$OUTLINE" | sed -n 's/.*"name":"Linux service-account authentication"[^}]*"ref":"\(@r[0-9]*\)".*/\1/p')"
+test -n "$TARGET_REGION"
+SCOPED_TEXT="$(headless --session qa inspect --context text --within "$TARGET_REGION" --task 'Ubuntu service account' --limit 4 --budget 700)"
+echo "$SCOPED_TEXT" | grep -q 'short-lived service account'
+echo "$SCOPED_TEXT" | grep -q '"within":"'"$TARGET_REGION"'"'
+SCOPED_ACTIONS="$(headless --session qa inspect --context actions --within "$TARGET_REGION" --task 'copy authentication command' --limit 5 --budget 700)"
+echo "$SCOPED_ACTIONS" | grep -q '"name":"Copy authentication command"'
 headless --session qa visit http://127.0.0.1:41739/hostile/ | grep -q 'Hostile output fixture'
 BOUNDED_SNAPSHOT="$(headless --session qa inspect)"
 echo "$BOUNDED_SNAPSHOT" | grep -q '"truncated":true'

@@ -171,13 +171,23 @@ public struct CLIParser {
         let includeText = removeFlag("--text", from: &args)
         let context = try removeOption("--context", from: &args)
         let task = try removeOption("--task", from: &args)
+        let within = try removeOption("--within", from: &args)
+        let limit = try removeOption("--limit", from: &args)
+        let budget = try removeOption("--budget", from: &args)
+        let depth = try removeOption("--depth", from: &args)
         try requireEmpty(args)
 
-        if let context, !["full", "actions"].contains(context) {
+        if let context, !["summary", "outline", "text", "actions", "full"].contains(context) {
             throw CLIParseError.invalidOption(context)
         }
         if let task, task.isEmpty || task.utf8.count > 512 {
             throw CLIParseError.invalidOption("--task")
+        }
+        if let within {
+            guard within.hasPrefix("@r"), !within.dropFirst(2).isEmpty,
+                  within.dropFirst(2).allSatisfy(\.isNumber) else {
+                throw CLIParseError.invalidOption("--within")
+            }
         }
 
         let mode = context ?? (interactive ? "actions" : "full")
@@ -187,7 +197,21 @@ public struct CLIParser {
             "context": .string(mode),
         ]
         if let task { parameters["task"] = .string(task) }
+        if let within { parameters["within"] = .string(within) }
+        if let limit { parameters["limit"] = .number(try inspectNumber(limit, option: "--limit", minimum: 1, maximum: 250)) }
+        if let budget { parameters["budget"] = .number(try inspectNumber(budget, option: "--budget", minimum: 256, maximum: 16_000)) }
+        if let depth { parameters["depth"] = .number(try inspectNumber(depth, option: "--depth", minimum: 0, maximum: 8)) }
         return remote(.inspect, session: session, parameters: parameters, jsonOutput: jsonOutput)
+    }
+
+    private func inspectNumber(
+        _ value: String, option: String, minimum: Double, maximum: Double
+    ) throws -> Double {
+        guard let number = Double(value), number.isFinite, number.rounded() == number,
+              number >= minimum, number <= maximum else {
+            throw CLIParseError.invalidOption(option)
+        }
+        return number
     }
 
     private func parseTargeted(
@@ -575,7 +599,7 @@ Core workflow:
   headless start
   headless session create qa
   headless --session qa visit localhost:3000/designers/dashboard
-  headless --session qa inspect --interactive --json
+  headless --session qa inspect --context summary --task "click Continue" --json
   headless --session qa tour --full-page
   headless --session qa click --role button --name Continue
   headless --session qa wait --settled
@@ -585,7 +609,8 @@ Commands:
   start | status | stop | runtime
   session create [NAME] | session list | session close NAME
   visit URL
-  inspect [--interactive] [--context full|actions] [--task TEXT] [--text]
+  inspect [--context summary|outline|text|actions|full] [--task TEXT]
+          [--within @rN] [--limit N] [--budget TOKENS] [--depth N] [--text]
   click REF | click --role ROLE [--name NAME]
   fill REF TEXT | press KEY
   scroll [up|down|top|bottom] [--amount PX]
@@ -631,7 +656,13 @@ public let capabilitiesDocument: JSONValue = .object([
     "recordingFormats": .array([.string("mp4"), .string("mov"), .string("webm"), .string("gif")]),
     "recordingQuality": .array([.string("fast"), .string("balanced"), .string("high")]),
     "recordingProviders": .array([.string("browser-ffmpeg")]),
-    "inspectContexts": .array([.string("full"), .string("actions")]),
+    "inspectContexts": .array([.string("summary"), .string("outline"), .string("text"), .string("actions"), .string("full")]),
+    "inspectPruning": .object([
+        "regionReferences": .string("@rN"),
+        "maximumItems": .number(250),
+        "budgetRangeEstimatedTokens": .array([.number(256), .number(16_000)]),
+        "maximumOutlineDepth": .number(8),
+    ]),
     "screenshotSeries": .array([.string("viewport"), .string("section")]),
     "security": .object([
         "tcpListener": .bool(false),

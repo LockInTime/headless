@@ -36,7 +36,7 @@ export default function DocsPage() {
             <p className="docs-label">01 / First run</p>
             <h2>Start a session.</h2>
             <p>Start the host, create a session, then visit the app. The session stays isolated until you close it.</p>
-            <CommandBlock>{`headless start\nheadless session create qa\nheadless --session qa visit localhost:3000/designers/dashboard\nheadless --session qa inspect --context actions --task "click Continue"`}</CommandBlock>
+            <CommandBlock>{`headless start\nheadless session create qa\nheadless --session qa visit localhost:3000/designers/dashboard\nheadless --session qa inspect --context summary --task "click Continue"`}</CommandBlock>
           </section>
 
           <section id="workflow">
@@ -56,8 +56,8 @@ export default function DocsPage() {
 
           <section id="context">
             <p className="docs-label">04 / Context pruning</p>
-            <h2>Show the useful controls.</h2>
-            <p>Use <code>{'inspect --context actions --task "search open ai"'}</code> to rank visible controls for the task. Each <code>actions</code> field lists only executable protocol verbs: <code>click</code> or <code>fill</code>. Use <code>inspect --context full</code> when the broader page snapshot is needed.</p>
+            <h2>Reveal only what matters.</h2>
+            <p>Start with <code>{'inspect --context summary --task "..."'}</code>. For large pages, request an <code>outline</code>, choose a structural <code>@rN</code> reference, and inspect only its <code>text</code> or <code>actions</code> with <code>--within</code>. Bound results with <code>--limit</code>, <code>--budget</code>, and <code>--depth</code>; use <code>full --text</code> only as an explicit broad-page escape hatch.</p>
           </section>
 
           <section id="scrollable">

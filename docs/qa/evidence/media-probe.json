@@ -10,7 +10,8 @@
     {"file":"07-flows-reports.mp4","durationSeconds":10.600000,"codec":"mpeg4"},
     {"file":"08-performance-animations.mp4","durationSeconds":11.400000,"codec":"mpeg4"},
     {"file":"09-recording-artifact-lifecycle.mp4","durationSeconds":13.200000,"codec":"mpeg4"},
-    {"file":"10-mcp-stdio-invocation.mp4","durationSeconds":18.000000,"codec":"mpeg4"}
+    {"file":"10-mcp-stdio-invocation.mp4","durationSeconds":18.000000,"codec":"mpeg4"},
+    {"file":"11-progressive-context-pruning.mp4","durationSeconds":13.040000,"codec":"h264"}
   ],
   "result": "pass"
 }

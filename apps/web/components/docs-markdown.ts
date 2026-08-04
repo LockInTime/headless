@@ -10,7 +10,7 @@ Start the host, create a session, then visit the app. The session stays isolated
 headless start
 headless session create qa
 headless --session qa visit localhost:3000/designers/dashboard
-headless --session qa inspect --context actions --task "click Continue"
+headless --session qa inspect --context summary --task "click Continue"
 \`\`\`
 
 ## QA workflow
@@ -34,7 +34,7 @@ headless --session qa report create --output pr-report.json
 
 ## Context pruning
 
-Use \`inspect --context actions --task "search open ai"\` when the agent needs a clean action map. It returns visible controls ranked for the current task, while each \`actions\` field contains only protocol verbs that can actually run (\`click\` or \`fill\`). Use \`inspect --context full\` only when the broader page snapshot is needed.
+Start with \`inspect --context summary --task "..."\`. On a large page, request \`--context outline\`, choose a returned region such as \`@r4\`, then ask only for \`--context text --within @r4\` or \`--context actions --within @r4\`. Use \`--limit\`, \`--budget\`, and \`--depth\` to cap responses. Each result reports omitted content and conservative estimated-token statistics. Use \`inspect --context full --text\` only when the broader raw snapshot is required.
 
 ## Scrollable page evidence
 
