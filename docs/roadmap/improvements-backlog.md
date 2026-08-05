@@ -66,7 +66,9 @@ richer answer and is tracked separately (§G3).
 
 **A4. Accept-loop error spin.** ([#15](https://github.com/LockInTime/headless/issues/15)) All `accept()` errors are swallowed with
 `continue` (`HP/Transport.swift:180-184`); persistent EMFILE becomes a hot
-loop. Add backoff + a fatal threshold.
+loop. ~~Add backoff + a fatal threshold.~~ **Done:** failures back off from
+50 ms to 1 s and the listener stops after 64 consecutive failures rather than
+burning a core while silently refusing every agent.
 
 **A5. `@eN` refs silently invalidated by every snapshot.** ([#16](https://github.com/LockInTime/headless/issues/16)) The `current` ref
 map is reset on each `snapshot()` (`HP/AgentRuntime.swift:376`), so a
@@ -96,8 +98,12 @@ containing `--json`, tabs, double spaces.
 
 **A7. Client never verifies response `id`.** ([#18](https://github.com/LockInTime/headless/issues/18)) Failure paths return
 `id:"unknown"` (`HP/Transport.swift:201,222`); `LocalSocketClient.send`
-doesn't check correlation. Echo the request id everywhere and assert
-client-side.
+doesn't check correlation. ~~Echo the request id everywhere and assert
+client-side.~~ **Done:** the host echoes the id as soon as it can decode one,
+so validation failures are correlated too, and the client rejects any other
+id. `CommandResponse.unknownRequestIdentifier` is the one documented
+exception, for replies where the host could not read the request at all —
+those still have to reach the caller with their reason.
 
 **A8. CDP O(n²) buffering.** ([#19](https://github.com/LockInTime/headless/issues/19)) `receiveText` rescans the whole buffer and
 `removeFirst`s per 8 KiB read (`LinuxHost/CDP.swift:229-256`); a 30 MB

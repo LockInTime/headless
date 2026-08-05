@@ -771,6 +771,39 @@ struct ProtocolTests {
         try expect(response.result == .object(["pong": .bool(true)]), "socket response should decode")
     }
 
+    static func rejectsMismatchedResponseIdentifier() throws {
+        try LocalRuntime.preparePrivateDirectory()
+        let socketPath = LocalRuntime.directoryURL
+            .appendingPathComponent("test-\(UUID().uuidString).sock").path
+        let server = LocalSocketServer(socketPath: socketPath)
+        // A host that answers with someone else's id is answering the wrong
+        // question. One request per connection means the client can say so.
+        try server.start { _ in
+            CommandResponse.success(id: "a-different-request", result: .object(["pong": .bool(true)]))
+        }
+        defer { server.stop() }
+        try expectThrows("a mismatched response identifier should be rejected") {
+            _ = try LocalSocketClient(socketPath: socketPath)
+                .send(CommandRequest(id: "ping-correlated", command: .ping), timeout: 2)
+        }
+        // The unknown-id sentinel stays usable, because a host that could not
+        // read the request still has to be able to explain why.
+        let sentinelPath = LocalRuntime.directoryURL
+            .appendingPathComponent("test-\(UUID().uuidString).sock").path
+        let sentinelServer = LocalSocketServer(socketPath: sentinelPath)
+        try sentinelServer.start { _ in
+            CommandResponse.failure(
+                id: CommandResponse.unknownRequestIdentifier,
+                code: "INVALID_REQUEST", message: "unreadable"
+            )
+        }
+        defer { sentinelServer.stop() }
+        let sentinel = try LocalSocketClient(socketPath: sentinelPath)
+            .send(CommandRequest(id: "ping-sentinel", command: .ping), timeout: 2)
+        try expect(!sentinel.ok, "the sentinel reply should still reach the caller")
+        try expect(sentinel.error?.code == "INVALID_REQUEST", "the sentinel reply should keep its reason")
+    }
+
     static func liveSocketCannotBeReplaced() throws {
         try LocalRuntime.preparePrivateDirectory()
         let socketPath = LocalRuntime.directoryURL
@@ -855,6 +888,7 @@ struct ProtocolTests {
             ("diagnostic services", diagnosticServices),
             ("diagnostic CLI", diagnosticCLI),
             ("local socket round-trip", localSocketRoundTrip),
+            ("response identifier correlation", rejectsMismatchedResponseIdentifier),
             ("live socket replacement protection", liveSocketCannotBeReplaced),
             ("private socket directory", serverRejectsSocketOutsidePrivateDirectory),
             ("shutdown bypasses busy request", shutdownBypassesBusyRequest),

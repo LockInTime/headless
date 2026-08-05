@@ -15,6 +15,7 @@ public enum LocalTransportError: Error, CustomStringConvertible {
     case connectionClosed
     case messageTooLarge
     case alreadyRunning
+    case mismatchedResponse
 
     public var description: String {
         switch self {
@@ -26,6 +27,7 @@ public enum LocalTransportError: Error, CustomStringConvertible {
         case .connectionClosed: return "Headless host closed the connection"
         case .messageTooLarge: return "Headless host message exceeded the size limit"
         case .alreadyRunning: return "Another Headless host is already using the local socket"
+        case .mismatchedResponse: return "Headless host replied to a different request"
         }
     }
 }
@@ -97,7 +99,19 @@ public final class LocalSocketClient {
 
         try writeAll(try ProtocolCodec.encodeLine(request), to: fd)
         let responseData = try readLine(from: fd)
-        return try ProtocolCodec.decodeLine(CommandResponse.self, from: responseData)
+        let response = try ProtocolCodec.decodeLine(CommandResponse.self, from: responseData)
+        // One request, one response, one connection — so a mismatched id means
+        // this reply belongs to something else. Correlating by convention was
+        // enough only while nothing ever got it wrong.
+        //
+        // `unknownRequestIdentifier` is the documented exception: the host uses
+        // it only when it could not read the request at all (peer rejected,
+        // unreadable frame), and those replies still carry the reason the
+        // caller needs to see.
+        guard response.id == request.id || response.id == CommandResponse.unknownRequestIdentifier else {
+            throw LocalTransportError.mismatchedResponse
+        }
+        return response
     }
 }
 
@@ -118,6 +132,8 @@ public final class LocalSocketServer: @unchecked Sendable {
     private let stateLock = NSLock()
     private var listeningDescriptor: Int32 = -1
     private var running = false
+    /// Roughly 30 seconds of backed-off retries before the listener gives up.
+    static let maximumAcceptFailures = 64
 
     public init(socketPath: String = LocalRuntime.socketURL.path) {
         self.socketPath = socketPath
@@ -175,13 +191,27 @@ public final class LocalSocketServer: @unchecked Sendable {
     }
 
     private func acceptLoop(handler: @escaping Handler) {
+        // A persistent accept() failure — a descriptor limit is the realistic
+        // one — used to spin this loop at full speed forever. Back off instead,
+        // and give up rather than pretend to serve a socket we cannot accept
+        // on: a host that exits is recoverable, a host that burns a core while
+        // silently refusing every agent is not.
+        var consecutiveFailures = 0
         while isRunning {
             let client = systemAccept(currentDescriptor)
             if client < 0 {
                 if !isRunning { return }
                 if errno == EINTR { continue }
+                consecutiveFailures += 1
+                if consecutiveFailures >= Self.maximumAcceptFailures {
+                    stop()
+                    return
+                }
+                let backoff = min(0.05 * Double(consecutiveFailures), 1.0)
+                Thread.sleep(forTimeInterval: backoff)
                 continue
             }
+            consecutiveFailures = 0
             clientQueue.async { [weak self] in
                 guard let self else { systemClose(client); return }
                 #if canImport(Darwin)
@@ -195,16 +225,23 @@ public final class LocalSocketServer: @unchecked Sendable {
     }
 
     private func handleClient(_ fd: Int32, handler: Handler) {
+        // Echo the request id as soon as it is known so a failure reply is
+        // still correlated. Only a request the host could not read at all
+        // falls back to the unknown-id sentinel.
+        var identifier = CommandResponse.unknownRequestIdentifier
         do {
             try configureNoSigPipe(fd: fd)
             guard try peerUserID(fd: fd) == currentUserID() else {
-                let response = CommandResponse.failure(id: "unknown", code: "PEER_DENIED", message: "Socket peer user is not authorized.")
+                let response = CommandResponse.failure(
+                    id: identifier, code: "PEER_DENIED", message: "Socket peer user is not authorized."
+                )
                 try writeAll(try ProtocolCodec.encodeLine(response), to: fd)
                 return
             }
             try configureTimeout(fd: fd, seconds: 5)
             let data = try readLine(from: fd)
             let request = try ProtocolCodec.decodeLine(CommandRequest.self, from: data)
+            identifier = request.id
             try request.validate()
             try configureTimeout(fd: fd, seconds: 125)
             // `shutdown` only signals the host's main loop and does not mutate
@@ -233,7 +270,7 @@ public final class LocalSocketServer: @unchecked Sendable {
             try writeAll(payload, to: fd)
         } catch {
             let response = CommandResponse.failure(
-                id: "unknown",
+                id: identifier,
                 code: "INVALID_REQUEST",
                 message: String(describing: error)
             )
