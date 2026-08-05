@@ -1,17 +1,22 @@
 version: 2
 
 updates:
-  # The Swift package has zero third-party dependencies by design, so there is
-  # nothing to update there — see docs/roadmap/what-is-excellent.md §11.
+  # One npm entry for the whole pnpm workspace. It must point at the root:
+  # apps/web and apps/headless share a single pnpm-lock.yaml there, and an
+  # entry aimed at a workspace member updates only that member's
+  # package.json, leaving the root lockfile stale and every CI job failing
+  # on --frozen-lockfile.
+  #
+  # The Swift package has zero third-party dependencies by design, so there
+  # is nothing to update for it — see docs/roadmap/what-is-excellent.md §11.
   - package-ecosystem: npm
-    directory: /apps/web
+    directory: /
     schedule:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
     labels:
       - "type:chore"
-      - "area:web"
     groups:
       react:
         patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
@@ -21,14 +26,8 @@ updates:
         patterns: ["tailwindcss", "@tailwindcss/*"]
       types:
         patterns: ["@types/*"]
-
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: monthly
-    open-pull-requests-limit: 3
-    labels:
-      - "type:chore"
+      eslint:
+        patterns: ["eslint", "@eslint/*"]
 
   - package-ecosystem: github-actions
     directory: /
