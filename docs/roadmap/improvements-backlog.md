@@ -10,11 +10,17 @@ Conventions: paths are relative to repo root; `HP/` =
 `apps/headless/Sources/HeadlessProtocol/`. Check items off here in the same PR
 that fixes them, and add the named missing test.
 
+**Every open item below is also a GitHub issue**, linked inline and labelled
+[`backlog`](https://github.com/LockInTime/headless/labels/backlog). Issues carry
+type/area/priority labels and sit in the milestone for their roadmap phase, so
+you can pick work up from either the tracker or this file. Keep both in sync:
+when you fix an item, check it off here and close the issue in the same PR.
+
 ---
 
 ## §A — Correctness & robustness (Phase 1: fix first)
 
-**A1. Shutdown data race on the Linux host.** `LinuxBrowserHost` is
+**A1. Shutdown data race on the Linux host.** ([#12](https://github.com/LockInTime/headless/issues/12)) `LinuxBrowserHost` is
 `@unchecked Sendable` with unlocked `sessions`/`trace`/`recordings`/
 `activeFlows` (`apps/headless/LinuxHost/main.swift:9-12`). Normal commands are
 serialized by the transport's `requestQueue`, but `shutdown` deliberately
@@ -27,14 +33,14 @@ bypass-the-queue property for shutdown. Test: none exists — add a
 concurrent-shutdown stress test beside the existing semaphore-based transport
 test (`ProtocolTests.swift:676-746`).
 
-**A2. Force-unwraps in a long-lived host.** `visual compare` handlers do
+**A2. Force-unwraps in a long-lived host.** ([#13](https://github.com/LockInTime/headless/issues/13)) `visual compare` handlers do
 `request.parameters["before"]!.stringValue!` on both hosts
 (`LinuxHost/main.swift:239-240`, `main.swift:1175-1176`). Safe only while
 `validate()` runs first; any future path that skips validation crashes the
 host and kills every session. Replace with guarded extraction returning
 `MISSING_PARAMETER`.
 
-**A3. Oversized responses break the 1 MiB frame.** `qa report` can hold 500
+**A3. Oversized responses break the 1 MiB frame.** ([#14](https://github.com/LockInTime/headless/issues/14)) `qa report` can hold 500
 events × ~4 KiB ≈ 2 MB; `artifact.list` is unbounded. `encodeLine` throws
 inside `handleClient` and the client receives a misleading
 `INVALID_REQUEST` (`HP/Transport.swift:219-227`). Fix: response-side bounding —
@@ -42,11 +48,11 @@ pagination (`--limit/--cursor`) or truncation with `truncated: true` — per
 architecture decision §4. Test: generate >1 MiB of events, assert a bounded,
 well-formed response.
 
-**A4. Accept-loop error spin.** All `accept()` errors are swallowed with
+**A4. Accept-loop error spin.** ([#15](https://github.com/LockInTime/headless/issues/15)) All `accept()` errors are swallowed with
 `continue` (`HP/Transport.swift:180-184`); persistent EMFILE becomes a hot
 loop. Add backoff + a fatal threshold.
 
-**A5. `@eN` refs silently invalidated by every snapshot.** The `current` ref
+**A5. `@eN` refs silently invalidated by every snapshot.** ([#16](https://github.com/LockInTime/headless/issues/16)) The `current` ref
 map is reset on each `snapshot()` (`HP/AgentRuntime.swift:376`), so a
 `--context summary` (max 8 elements) invalidates all refs from a prior
 `full`; the agent later gets a bare `ELEMENT_NOT_FOUND`. Meanwhile
@@ -56,7 +62,7 @@ teaching), then (a) make the error say *why* ("ref expired; re-inspect"),
 (b) reset regions consistently on navigation, (c) document in P1.md. Test:
 inspect-full → inspect-summary → click stale `@eN` asserts the new error.
 
-**A6. `--json`/`--session` stripped from anywhere in argv.** Global-option
+**A6. `--json`/`--session` stripped from anywhere in argv.** ([#17](https://github.com/LockInTime/headless/issues/17)) Global-option
 stripping (`HP/CLI.swift:46-49`) happens before subcommand parsing, so
 `headless fill @e1 pass --json to API` silently drops `--json` from typed
 text; `fill` also joins args with single spaces destroying whitespace
@@ -64,17 +70,17 @@ text; `fill` also joins args with single spaces destroying whitespace
 before it, and pass the fill value as one argument. Test: fill value
 containing `--json`, tabs, double spaces.
 
-**A7. Client never verifies response `id`.** Failure paths return
+**A7. Client never verifies response `id`.** ([#18](https://github.com/LockInTime/headless/issues/18)) Failure paths return
 `id:"unknown"` (`HP/Transport.swift:201,222`); `LocalSocketClient.send`
 doesn't check correlation. Echo the request id everywhere and assert
 client-side.
 
-**A8. CDP O(n²) buffering.** `receiveText` rescans the whole buffer and
+**A8. CDP O(n²) buffering.** ([#19](https://github.com/LockInTime/headless/issues/19)) `receiveText` rescans the whole buffer and
 `removeFirst`s per 8 KiB read (`LinuxHost/CDP.swift:229-256`); a 30 MB
 base64 screenshot triggers thousands of full scans under a 128 MiB cap.
 Track a scan offset / use a ring buffer.
 
-**A9. Misc hardening (smaller, same phase).**
+**A9. Misc hardening (smaller, same phase).** ([#20](https://github.com/LockInTime/headless/issues/20))
 - `ChromiumChildProcess.stop()` can busy-wait forever post-SIGKILL
   (`LinuxHost/BrowserProcess.swift:38`); bound it.
 - `SO_PEERCRED` hard-coded as `17` + hand-rolled `ucred`
@@ -99,7 +105,7 @@ Track a scan offset / use a ring buffer.
 
 ## §B — Structure & contract (Phase 2)
 
-**B1. HostCore extraction** — the headline refactor; full spec in
+**B1. HostCore extraction** ([#21](https://github.com/LockInTime/headless/issues/21)) — the headline refactor; full spec in
 [architecture-decisions §3](architecture-decisions.md). Duplicated pairs to
 collapse (verified line ranges): dispatch switches (`main.swift:949-1291` /
 `LinuxHost/main.swift:65-343`), screenshot-series loops (`main.swift:911-945`
@@ -111,11 +117,11 @@ collapse (verified line ranges): dispatch switches (`main.swift:949-1291` /
 gate, target validation (3 copies + JS), screenshot bounds, syscall shims
 (`Transport.swift:387-407` / `CDP.swift:278-288`).
 
-**B2. Typed errors end-to-end.** Replace `message.contains("ELEMENT_NOT_FOUND")`
+**B2. Typed errors end-to-end.** ([#22](https://github.com/LockInTime/headless/issues/22)) Replace `message.contains("ELEMENT_NOT_FOUND")`
 string matching (both hosts; `Host/AgentBridge.swift:416-418`) with an error
 enum carrying the protocol code.
 
-**B3. Single-source constants + drift tests.** Blocked/caution extensions
+**B3. Single-source constants + drift tests.** ([#23](https://github.com/LockInTime/headless/issues/23)) Blocked/caution extensions
 exist in Swift (`HP/Protocol.swift:576-591`) and JS
 (`HP/AgentRuntime.swift:17-21`) with no cross-check; artifact charset written
 4×; local-address list 3×; CLI vs validator bounds disagree (scroll amount
@@ -123,7 +129,7 @@ exist in Swift (`HP/Protocol.swift:576-591`) and JS
 unbounded in CLI, `CLI.swift:449` / `Protocol.swift:396-398`). One definition
 each + a test asserting the JS copy contains the Swift set.
 
-**B4. Dead code removal.** `screenshotSeriesPoints(from:)`
+**B4. Dead code removal.** ([#24](https://github.com/LockInTime/headless/issues/24)) `screenshotSeriesPoints(from:)`
 (`HP/ScreenshotSeries.swift:74-76`), `JSONValue.foundationObject`
 (`HP/Protocol.swift:670-679`), discarded `timeout` param
 (`LinuxHost/BrowserProcess.swift:777-778`) — either honor it (tour expects
@@ -133,13 +139,13 @@ each + a test asserting the JS copy contains the Swift set.
 the flag from help, `jsonValue(from:)` duplicate
 (`AgentBridge.swift:428-441`).
 
-**B5. `pruneToBudget` quality.** Hand-rolled 2-pass fixed point
+**B5. `pruneToBudget` quality.** ([#25](https://github.com/LockInTime/headless/issues/25)) Hand-rolled 2-pass fixed point
 (`HP/AgentRuntime.swift:348-352`), O(n²) re-encoding per trim, pop-largest-
 *last*-element heuristic misses large mid-array items
 (`AgentRuntime.swift:367-369`), text-chop fallback untested. Rework with a
 size-estimating single pass; add unit tests in the jsdom suite.
 
-**B6. Declared capability matrix.** Silent per-platform divergences to either
+**B6. Declared capability matrix.** ([#26](https://github.com/LockInTime/headless/issues/26)) Silent per-platform divergences to either
 fix or promote to declared differences asserted in tests: PDF raster (macOS,
 `Host/AgentBridge.swift:236-250`) vs vector (`Page.printToPDF`,
 `BrowserProcess.swift:471-496`); element-screenshot coordinate space viewport
@@ -156,13 +162,13 @@ through it; `press` length enforced in bridge only on macOS
 (`BrowserProcess.swift:521`). Generate `capabilities` from code
 (`CLI.swift:648-682` is a hand-written literal today) and assert it.
 
-**B7. Runtime injection cost** — cache the isolated world / install runtime
+**B7. Runtime injection cost** ([#27](https://github.com/LockInTime/headless/issues/27)) — cache the isolated world / install runtime
 per-navigation instead of per-call on both engines; extract the JS to a
 compiled resource. Spec in [architecture-decisions §10](architecture-decisions.md).
 (`BrowserProcess.swift:777-834`, `AgentBridge.swift:382-420`,
 `Tests/agent-runtime.test.mjs` regex extraction.)
 
-**B8. QA diagnostics bridge isolation (macOS).** Page-world injection is
+**B8. QA diagnostics bridge isolation (macOS).** ([#28](https://github.com/LockInTime/headless/issues/28)) Page-world injection is
 detectable/forgeable/spammable by a hostile page
 (`Host/QADiagnosticsBridge.swift:5-93`, `main.swift:233-236`) while P0 claims
 isolated-world helpers. Move what's possible; mark the rest untrusted. See
@@ -170,35 +176,35 @@ architecture decision §7.
 
 ## §C — MCP & agent surface (Phases 1/4)
 
-**C1. Timeout parity.** MCP uses flat 30 s except tour/series
+**C1. Timeout parity.** ([#29](https://github.com/LockInTime/headless/issues/29)) MCP uses flat 30 s except tour/series
 (`apps/headless/MCP/main.swift:70-72`); CLI derives from `--timeout`
 (`HeadlessCLI/main.swift:104-114`). `wait --timeout 90000` works in CLI, dies
 via MCP. Derive identically.
 
-**C2. Destructive verbs over MCP.** `stop` (shutdown) and `session close` are
+**C2. Destructive verbs over MCP.** ([#30](https://github.com/LockInTime/headless/issues/30)) `stop` (shutdown) and `session close` are
 callable though the tool description says "safe"; decide policy (deny, or
 annotate) and test it.
 
-**C3. Zero MCP tests** — the only coverage is inside `qa-videos.sh`. Add a
+**C3. Zero MCP tests** ([#31](https://github.com/LockInTime/headless/issues/31)) — the only coverage is inside `qa-videos.sh`. Add a
 stdio harness test: initialize / tools/list / tools/call / malformed line /
 oversized line / local-command rejection (`MCP/main.swift:64-66`).
 
-**C4. Machine-accurate `capabilities`** — generate from `CommandName.allCases`
+**C4. Machine-accurate `capabilities`** ([#32](https://github.com/LockInTime/headless/issues/32)) — generate from `CommandName.allCases`
 + engine matrix (see B6) so agents can trust it.
 
-**C5. Harness onboarding [exists: skill content].** Root `AGENTS.md` +
+**C5. Harness onboarding [exists: skill content].** ([#33](https://github.com/LockInTime/headless/issues/33)) Root `AGENTS.md` +
 `CLAUDE.md` (added with this doc set); mirror the skill into `.claude/skills/`
 or symlink so Claude Code auto-discovers; ship `.mcp.json` example + per-
 client snippets (Claude Code, Cursor, Codex TOML — replacing the site's
 hardcoded `ssh hermes-vm` config, `apps/web/components/docs-markdown.ts:57-64`);
 flesh out `agents/openai.yaml` beyond its 4-line stub or remove it.
 
-**C6. Input fidelity (Phase 4).** Real CDP input on Linux
+**C6. Input fidelity (Phase 4).** ([#34](https://github.com/LockInTime/headless/issues/34)) Real CDP input on Linux
 (`Input.dispatchKeyEvent`/`dispatchMouseEvent`) behind the same verbs; today
 both engines dispatch synthetic DOM events and `press` special-cases only
 Enter/Space (`HP/AgentRuntime.swift:492-537`). Declared divergence per B6.
 
-**C7. Considered-and-worth-designing (not committed):** hover/drag verbs;
+**C7. Considered-and-worth-designing (not committed):** ([#35](https://github.com/LockInTime/headless/issues/35)) hover/drag verbs;
 `select` for dropdowns; scoped `evaluate` never (see what-is-excellent §3);
 per-session isolated profiles (`session create --isolated`, architecture §11);
 response-body inspection stays denied (P1.md:134) unless a gated design lands.
@@ -220,7 +226,7 @@ Follow-ups: mark the jobs required in branch protection (repo setting, not
 code); consider arm64 Linux E2E on PRs (release covers it on tags); revisit
 whether the macOS E2E can become a per-PR gate once runtime is measured.
 
-**D2. Known test gaps (from code audit).** No tests for: peer-UID rejection
+**D2. Known test gaps (from code audit).** ([#36](https://github.com/LockInTime/headless/issues/36)) No tests for: peer-UID rejection
 (A9), MCP (C3), `Recording.swift` (ffmpeg args per format/quality, discovery
 rejection, drop-frame abort at `consecutiveFailures`, stop timeout),
 `VisualComparison`, `Flows.swift` — including the security property that
@@ -239,10 +245,10 @@ which currently passes for the wrong reason.
 **Done** — the `web` job in `ci.yml` runs `pnpm --filter @headless/web lint`
 and `build`.
 
-**D4. Cross-engine conformance runner** (architecture §14) replacing drifted
+**D4. Cross-engine conformance runner** ([#37](https://github.com/LockInTime/headless/issues/37)) (architecture §14) replacing drifted
 hand-mirrored E2E assertions (e.g. `macos-e2e.sh:231` vs `linux-e2e.sh:157`).
 
-**D5. Benchmark refresh discipline [exists: benchmark.sh].** Emit JSON
+**D5. Benchmark refresh discipline [exists: benchmark.sh].** ([#38](https://github.com/LockInTime/headless/issues/38)) Emit JSON
 results artifact; re-run with the task-aware flow (BENCHMARK.md:29-31 says
 current numbers predate `--task`); repeat-count medians instead of single
 samples.
@@ -251,50 +257,55 @@ samples.
 
 Owner-decided scope: package managers, no hosted service.
 
-- **E1.** macOS Developer ID signing + notarization + stapling (today ad-hoc,
+- **E1.** ([#39](https://github.com/LockInTime/headless/issues/39)) macOS Developer ID signing + notarization + stapling (today ad-hoc,
   `build.sh:96-114`); universal binary (today `uname -m` on an arm64 runner);
   Homebrew tap/cask. Resolve the `com.headless.app` provisioning question for
   the passkey entitlement (`.hermes` plan flagged it; `build.sh:97-109`).
-- **E2.** Linux `curl | sh` installer wrapping the existing tarball +
+- **E2.** ([#40](https://github.com/LockInTime/headless/issues/40)) Linux `curl | sh` installer wrapping the existing tarball +
   preflight (`install-linux.sh` already does runtime checks — reuse);
   align its ffmpeg policy with the runtime's allow-list (installer accepts any
   PATH ffmpeg, `install-linux.sh:118`, runtime doesn't,
   `HP/Recording.swift:225-227`); single-source the Snap-detection logic
   currently duplicated in shell (`install-linux.sh:40-67` vs
   `HP/ChromiumRuntime.swift:167-184`).
-- **E3.** Publish the Docker `production` image to GHCR on tag (release notes
+- **E3.** ([#41](https://github.com/LockInTime/headless/issues/41)) Publish the Docker `production` image to GHCR on tag (release notes
   currently say "not published"); this is also the interim Windows story.
-- **E4.** `SHA256SUMS` (+ consider cosign) for all release assets — the QA
+- **E4.** ([#42](https://github.com/LockInTime/headless/issues/42)) `SHA256SUMS` (+ consider cosign) for all release assets — the QA
   evidence bundle already ships sums; releases don't.
-- **E5.** npm wrapper package (binary download shim) for `npx` reach.
-- **E6.** Version unification + `headless --version` + CHANGELOG + release
+- **E5.** ([#43](https://github.com/LockInTime/headless/issues/43)) npm wrapper package (binary download shim) for `npx` reach.
+- **E6.** ([#44](https://github.com/LockInTime/headless/issues/44)) Version unification + `headless --version` + CHANGELOG + release
   automation (architecture §12). `package.json` says 0.0.0, tags say 1.0.x,
   default `HEADLESS_VERSION` is 1.0.0.
-- **E7.** Cut a release: everything since v1.0.2 (capture formats, context
+- **E7.** ([#45](https://github.com/LockInTime/headless/issues/45)) Cut a release: everything since v1.0.2 (capture formats, context
   pruning) is unreleased.
-- **E8.** `NSAllowsArbitraryLoads` is blanket-true (`build.sh:86-90`); scope
+- **E8.** ([#46](https://github.com/LockInTime/headless/issues/46)) `NSAllowsArbitraryLoads` is blanket-true (`build.sh:86-90`); scope
   it (localhost exception) if WKWebView allows.
 
 ## §F — Website & docs (Phase 5)
 
-- **F1. Deploy pipeline** — none exists (no vercel/netlify/Dockerfile/export
-  config; only good headers/CSP in `next.config.ts` — keep those, consider a
-  nonce to drop `unsafe-inline`).
-- **F2. Content provenance** — benchmark numbers hand-copied in
+- **F1. Deploy pipeline is invisible to the repo** ([#47](https://github.com/LockInTime/headless/issues/47)) — the site *is* live at
+  `https://headless-web-pi.vercel.app` (set as the repo homepage) via Vercel's
+  GitHub integration, but nothing in the tree records that: no `vercel.json`,
+  no deploy docs, no preview-URL comment on PRs, and the temporary
+  `*-pi.vercel.app` hostname suggests no custom domain. Make the deployment
+  reproducible and reviewable — check in the project config, document the
+  hosting in `AGENTS.md`, and decide on a domain. Keep the existing headers/CSP
+  in `next.config.ts`; consider a nonce so `unsafe-inline` can be dropped.
+- **F2. Content provenance** ([#48](https://github.com/LockInTime/headless/issues/48)) — benchmark numbers hand-copied in
   `app/page.tsx:26-38`, `components/efficiency-chart.tsx:26-31`,
   `components/benchmark-chart.tsx:21-26` (+ date in two places); docs prose
   triplicated across `app/docs/page.tsx`, `components/docs-markdown.ts`, and
   `README.md`, already diverging. Import from generated artifacts (D5, B6).
-- **F3. Missing pages:** install (README's build/install section is absent
+- **F3. Missing pages:** ([#49](https://github.com/LockInTime/headless/issues/49)) install (README's build/install section is absent
   from the site entirely), security model, MCP setup, full command reference
   (~30 commands; site lists 4 groups), changelog/version indicator, platform
   matrix, the README's comparison table (strongest positioning content, not
   on site). Plus `robots.txt`, `sitemap`, OG metadata, per-page `metadata`,
   404 page.
-- **F4. Stale-benchmark honesty:** site quotes pre-`--task` numbers while
+- **F4. Stale-benchmark honesty:** ([#50](https://github.com/LockInTime/headless/issues/50)) site quotes pre-`--task` numbers while
   marketing `--task`, and drops BENCHMARK.md's re-run warning; headline says
   "Measured, not claimed." Fix by refresh (D5) or by carrying the caveat.
-- **F5. Dead weight:** `components/ui/side-rays.tsx` + `ogl` dep (unused),
+- **F5. Dead weight:** ([#51](https://github.com/LockInTime/headless/issues/51)) `components/ui/side-rays.tsx` + `ogl` dep (unused),
   `public/scan-dashboard.png` (unreferenced), leftover shadcn `.dark` block in
   `globals.css`, 8 unused button variants; two WebGL stacks (~700 KB) for
   decoration — `PixelBlast` still creates GL contexts under
@@ -302,14 +313,14 @@ Owner-decided scope: package managers, no hosted service.
   reduced-motion rule; Recharts (~150 KB) for 4 static bars. Also
   `scan-frame.tsx` hardcodes pixel bounds tied to a committed github.com
   screenshot (drift + trademark question).
-- **F6. Fix the Cursor config snippet** — hardcodes `ssh hermes-vm`
+- **F6. Fix the Cursor config snippet** ([#52](https://github.com/LockInTime/headless/issues/52)) — hardcodes `ssh hermes-vm`
   (`components/docs-markdown.ts:57-64`), unusable by anyone else.
-- **F7. Docs debt in-repo:** README states P1/P2 features but there is no
+- **F7. Docs debt in-repo:** ([#53](https://github.com/LockInTime/headless/issues/53)) README states P1/P2 features but there is no
   single command reference doc; P1.md should document the `@eN` invalidation
   contract (A5) and the shared-profile session model (architecture §11);
   `.gitignore:18-23` still references `apps/chromeless/`.
 
-## §G — Feature ideas (informed dump; schedule via roadmap phases)
+## §G — Feature ideas (informed dump; schedule via roadmap phases) ([#54](https://github.com/LockInTime/headless/issues/54))
 
 Gathered from the audit and product thinking; none are committed until they
 get an architecture-decision entry:

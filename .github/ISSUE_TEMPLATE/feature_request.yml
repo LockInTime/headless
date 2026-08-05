@@ -1,0 +1,56 @@
+name: Feature or command proposal
+description: Propose a new capability, command, or parameter
+labels: ["type:feature", "status:needs-design"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Headless has deliberate non-goals. These will be closed:
+        an arbitrary-JavaScript verb, a TCP listener or remote control without
+        authentication, page-download support, and desktop/OS automation.
+        See [what is excellent](https://github.com/LockInTime/headless/blob/main/docs/roadmap/what-is-excellent.md).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What can an agent not do today
+      description: Describe the task that fails or requires glue code, not the solution you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed surface
+      description: The command or parameter as an agent would type it, and the response shape you expect.
+      render: shell
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engines
+    attributes:
+      label: Which engines can support this
+      options:
+        - Both engines
+        - Chromium only (macOS returns UNSUPPORTED_CAPABILITY)
+        - WKWebView only (Linux returns UNSUPPORTED_CAPABILITY)
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: contracts
+    attributes:
+      label: Effect on the contracts
+      description: |
+        How does this interact with the host-enforced rules — bounded output,
+        untrusted content marking, fail-closed validation, no arbitrary
+        execution? If it needs an architecture-decision entry, say so.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/LockInTime/headless/security/advisories/new
+    about: Report privately. Never open a public issue for a boundary bypass.
+  - name: Roadmap and backlog
+    url: https://github.com/LockInTime/headless/blob/main/docs/ROADMAP.md
+    about: Planned work, phases, and the definition of done. Most known gaps are already filed as `backlog` issues.
+  - name: Using Headless as an agent tool
+    url: https://github.com/LockInTime/headless/blob/main/.agents/skills/headless-computer-use/SKILL.md
+    about: The skill that teaches an agent how to drive Headless safely.

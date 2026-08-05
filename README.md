@@ -1,5 +1,11 @@
 # headless
 
+[![CI](https://github.com/LockInTime/headless/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/LockInTime/headless/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/LockInTime/headless?sort=semver)](https://github.com/LockInTime/headless/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Protocol](https://img.shields.io/badge/protocol-0.4-informational)](apps/headless/Sources/HeadlessProtocol/Protocol.swift)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey)](#build-and-install)
+
 Persistent browser control for agents, without Playwright scripts or screen
 coordinates.
 
@@ -12,8 +18,16 @@ distros used in CI/Docker). Windows is not supported natively (planned as a
 stretch goal; Docker/WSL2 is the interim path).
 
 Product direction, architectural decisions, and the full improvements backlog
-live in [docs/ROADMAP.md](docs/ROADMAP.md). Contributors (human or agent):
-start with [AGENTS.md](AGENTS.md).
+live in [docs/ROADMAP.md](docs/ROADMAP.md). Every known gap is also filed as a
+[`backlog` issue](https://github.com/LockInTime/headless/labels/backlog),
+grouped into [milestones](https://github.com/LockInTime/headless/milestones)
+by roadmap phase.
+
+Contributing: [AGENTS.md](AGENTS.md) for agents and the short version for
+humans, [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide,
+[SECURITY.md](SECURITY.md) to report a boundary bypass privately, and
+[CHANGELOG.md](CHANGELOG.md) for what shipped when. New here? Start with a
+[good first issue](https://github.com/LockInTime/headless/labels/good%20first%20issue).
 
 P2 uses the same CLI everywhere Headless runs:
 
