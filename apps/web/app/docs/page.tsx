@@ -16,7 +16,7 @@ export default function DocsPage() {
     <main className="docs-shell">
       <nav className="docs-nav docs-container" aria-label="Documentation navigation">
         <Link className="brand" href="/" aria-label="Headless home"><HeadlessMark className="brand-mark" /><span>headless</span></Link>
-        <div><Link href="/">Overview</Link><Link className="active" href="/docs">Docs</Link><a className="nav-external" href="https://github.com/SarthakWade/headless">GitHub <LinkGlyph kind="external" /></a><ThemeToggle /></div>
+        <div><Link href="/">Overview</Link><Link className="active" href="/docs">Docs</Link><a className="nav-external" href="https://github.com/LockInTime/headless">GitHub <LinkGlyph kind="external" /></a><ThemeToggle /></div>
       </nav>
 
       <div className="docs-container docs-layout">

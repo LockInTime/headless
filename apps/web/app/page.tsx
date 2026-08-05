@@ -70,7 +70,7 @@ export default function Home() {
             <a href="#workflow">Workflow</a>
             <a href="#capabilities">Capabilities</a>
             <a href="/docs">Docs</a>
-            <a href="https://github.com/SarthakWade/headless" className="nav-external">
+            <a href="https://github.com/LockInTime/headless" className="nav-external">
               GitHub <LinkGlyph kind="external" />
             </a>
             <ThemeToggle />
@@ -142,7 +142,7 @@ export default function Home() {
             <tbody>{benchmarks.map(([name, variant, tokens, wallTime, cpuTime, memory]) => <tr className={name === "Headless" && variant === "warm" ? "benchmark-highlight" : ""} key={`${name}-${variant}`}><td><b>{name}</b>{variant && <span>{variant}</span>}</td><td>{tokens}</td><td>{wallTime}</td><td>{cpuTime}</td><td>{memory}</td></tr>)}</tbody>
           </table>
         </div>
-        <div className="container benchmark-footnote"><p><span className="benchmark-definition"><b>Warm</b> starts with the Headless host and session ready. <b>Cold</b> includes starting both.</span><span>Estimated tokens measure workflow source size, not billed LLM tokens. Point-in-time snapshot; repeat before comparing a change.</span></p><a className="text-link" href="https://github.com/SarthakWade/headless/blob/main/apps/headless/docs/BENCHMARK.md">Read the method <LinkGlyph kind="external" /></a></div>
+        <div className="container benchmark-footnote"><p><span className="benchmark-definition"><b>Warm</b> starts with the Headless host and session ready. <b>Cold</b> includes starting both.</span><span>Estimated tokens measure workflow source size, not billed LLM tokens. Point-in-time snapshot; repeat before comparing a change.</span></p><a className="text-link" href="https://github.com/LockInTime/headless/blob/main/apps/headless/docs/BENCHMARK.md">Read the method <LinkGlyph kind="external" /></a></div>
       </section>
 
       <section id="workflow" className="section container workflow">
@@ -223,7 +223,7 @@ export default function Home() {
                 One CLI protocol. The same commands over MCP. Purpose-built for the last mile of software QA.
               </p>
               <a
-                href="https://github.com/SarthakWade/headless/releases"
+                href="https://github.com/LockInTime/headless/releases"
                 className={cn(
                   buttonVariants({ variant: "default", size: "cta" }),
                   "mt-6 hover:-translate-y-0.5",
