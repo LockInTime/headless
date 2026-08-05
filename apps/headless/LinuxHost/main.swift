@@ -309,8 +309,12 @@ final class LinuxBrowserHost: @unchecked Sendable {
             case .networkMockSet: result = try session.setNetworkMock(parameters: request.parameters)
             case .networkMockClear: result = try session.clearNetworkMocks()
             case .visualCompare:
-                let before = request.parameters["before"]!.stringValue!
-                let after = request.parameters["after"]!.stringValue!
+                guard let before = request.parameters["before"]?.stringValue else {
+                    return failure(request, "MISSING_PARAMETER", "Before artifact name is required.")
+                }
+                guard let after = request.parameters["after"]?.stringValue else {
+                    return failure(request, "MISSING_PARAMETER", "After artifact name is required.")
+                }
                 _ = try artifacts.read(name: before, expectedExtension: "png", maximumBytes: 100 * 1_024 * 1_024)
                 _ = try artifacts.read(name: after, expectedExtension: "png", maximumBytes: 100 * 1_024 * 1_024)
                 let difference = try artifacts.reserve(requestedName: request.parameters["output"]?.stringValue,

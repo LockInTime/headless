@@ -1172,8 +1172,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .animationList:
                 result = try controller.agentAnimations()
             case .visualCompare:
-                let before = request.parameters["before"]!.stringValue!
-                let after = request.parameters["after"]!.stringValue!
+                guard let before = request.parameters["before"]?.stringValue else {
+                    return failure(request, code: "MISSING_PARAMETER", message: "Before artifact name is required.")
+                }
+                guard let after = request.parameters["after"]?.stringValue else {
+                    return failure(request, code: "MISSING_PARAMETER", message: "After artifact name is required.")
+                }
                 guard let artifacts else { throw ArtifactError.invalidRoot }
                 _ = try artifacts.read(name: before, expectedExtension: "png", maximumBytes: 100 * 1_024 * 1_024)
                 _ = try artifacts.read(name: after, expectedExtension: "png", maximumBytes: 100 * 1_024 * 1_024)

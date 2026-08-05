@@ -420,6 +420,23 @@ struct ProtocolTests {
     static func cliP2CommandsAndBoundaries() throws {
         let visual = try CLIParser().parse(["visual", "compare", "before.png", "after.png", "--output", "diff.png"])
         try expect(visual.request?.command == .visualCompare, "visual compare should parse")
+        // Both hosts read these two names to locate the artifacts to diff. They
+        // guard the lookup and answer MISSING_PARAMETER, but the validator is
+        // what keeps a malformed request from reaching that path at all — if it
+        // ever stopped requiring them, the guards would be the only thing
+        // standing between a crafted request and a broken comparison.
+        for missing in ["before", "after"] {
+            try expectThrows("visual compare should require \(missing)") {
+                var parameters: [String: JSONValue] = [
+                    "before": .string("one.png"), "after": .string("two.png"),
+                ]
+                parameters.removeValue(forKey: missing)
+                try CommandRequest(
+                    id: "visual-compare-missing-\(missing)", command: .visualCompare,
+                    parameters: parameters
+                ).validate()
+            }
+        }
         try expect(visual.request?.parameters["before"] == .string("before.png"), "visual input should remain an artifact name")
         let flow = try CLIParser().parse(["flow", "run", "happy-path.json"])
         try expect(flow.request?.command == .flowRun, "flow run should parse")
