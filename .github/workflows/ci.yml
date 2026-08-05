@@ -1,0 +1,148 @@
+name: CI
+
+# Backlog §D1: gate every pull request. Jobs reuse the same scripts a
+# developer runs locally, exactly like release.yml does, so CI never becomes a
+# separate build path that can drift from the documented workflow.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Nightly slot for the macOS E2E suite, which needs a GUI session and
+    # mutates com.headless.app user defaults.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install zsh
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zsh
+      - name: Shell syntax
+        run: |
+          set -eu
+          status=0
+          for script in $(git ls-files '*.sh'); do
+            case "$(head -n 1 "$script")" in
+              *zsh*) checker="zsh -n" ;;
+              *bash*) checker="bash -n" ;;
+              *) checker="sh -n" ;;
+            esac
+            if ! $checker "$script"; then
+              echo "syntax error: $script" >&2
+              status=1
+            fi
+          done
+          exit "$status"
+      - name: QA evidence checksums
+        # docs/qa/evidence is the only binary media allowed in git; prove the
+        # committed bundle still matches its manifest.
+        run: cd docs/qa/evidence && sha256sum -c SHA256SUMS
+      - name: Whitespace
+        if: github.event_name == 'pull_request'
+        run: git diff --check "origin/${{ github.base_ref }}...HEAD"
+
+  runtime:
+    name: Agent runtime suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @headless/app
+      - name: Context pruning suite
+        run: pnpm test:runtime
+
+  protocol:
+    name: Protocol suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: swift:6.1-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SwiftPM exclude paths
+        # Package.swift excludes build/ and Headless.app from the host target;
+        # Dockerfile.linux creates them for the same reason.
+        run: mkdir -p apps/headless/build apps/headless/Headless.app
+      - name: Protocol and security tests
+        run: ./apps/headless/test.sh
+
+  web:
+    name: Web app
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @headless/web
+      - run: pnpm --filter @headless/web lint
+      - run: pnpm --filter @headless/web build
+
+  linux-e2e:
+    name: Linux E2E (Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sandboxed Chromium E2E
+        run: ./apps/headless/Tests/linux-docker.sh
+      - name: Upload QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-e2e-evidence
+          path: apps/headless/build/qa-evidence
+          if-no-files-found: ignore
+          retention-days: 7
+
+  macos:
+    name: macOS build and protocol suite
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build app
+        run: ./apps/headless/build.sh
+      - name: Protocol and security tests
+        run: ./apps/headless/test.sh
+
+  macos-e2e:
+    name: macOS E2E (WKWebView)
+    # Opens real windows and mutates com.headless.app user defaults, so it runs
+    # nightly, on demand, or on a pull request labelled macos-e2e.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'macos-e2e')
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: brew install ffmpeg
+      - name: Build app
+        run: ./apps/headless/build.sh
+      - name: E2E
+        run: zsh ./apps/headless/Tests/macos-e2e.sh

@@ -53,8 +53,14 @@ pnpm build:linux       # Linux binaries via Docker (no local Swift needed)
 
 Minimum bar for a PR touching `apps/headless`: `pnpm test` and
 `pnpm test:runtime` pass; run the Linux E2E if you changed host, transport,
-runtime JS, or artifact code. There is currently no PR CI (backlog §D1) — do
-not rely on the machine to catch you.
+runtime JS, or artifact code.
+
+`.github/workflows/ci.yml` gates every PR with the same scripts: static checks
+(shell syntax, QA evidence checksums), the agent-runtime suite, the protocol
+suite on Linux (Swift container) and macOS, the web lint/build, and the Linux
+Docker E2E. The macOS WKWebView E2E is heavier — it runs nightly, on
+`workflow_dispatch`, or when a PR carries the `macos-e2e` label. Run it that
+way before merging changes to `main.swift`, `Host/`, or capture code.
 
 ## Hard rules (host-enforced contracts — never weaken)
 
