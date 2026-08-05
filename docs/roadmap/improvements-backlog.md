@@ -29,10 +29,16 @@ bypasses that queue (`HP/Transport.swift:213-218`) and `host.stop()`
 (`LinuxHost/main.swift:24-30`) mutates that state concurrently with an
 in-flight command. macOS guards the same state (`onAgentMain` +
 `recordingsLock`, `apps/headless/main.swift:807-808,1307-1328`); Linux does
-not. Fix: a host-state lock (or actor) used by both paths; keep the
-bypass-the-queue property for shutdown. Test: none exists — add a
-concurrent-shutdown stress test beside the existing semaphore-based transport
-test (`ProtocolTests.swift:676-746`).
+not. ~~Fix: a host-state lock (or actor) used by both paths; keep the
+bypass-the-queue property for shutdown.~~ **Done:** all four containers are
+behind `stateLock`, taken only around collection access and never across
+browser I/O, so teardown still cannot be delayed by a stalled command. `stop()`
+is idempotent, snapshots and clears under the lock, then tears down outside it.
+Session and recording registration re-check `stopping` under the lock, so a
+recording started mid-teardown can no longer outlive the host as an orphaned
+FFmpeg process. Regression test in `Tests/linux-e2e.sh`: an active recording
+plus a tour in flight while `stop` runs, asserting a clean host exit and a
+clean restart.
 
 **A2. Force-unwraps in a long-lived host.** ([#13](https://github.com/LockInTime/headless/issues/13)) `visual compare` handlers do
 `request.parameters["before"]!.stringValue!` on both hosts
