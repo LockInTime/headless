@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "brand": "node scripts/render-brand.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

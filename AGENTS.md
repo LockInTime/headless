@@ -114,6 +114,7 @@ If a change brushes against any of these, stop and record a decision in
   touch the string delimiters, fix the extractor.
 - Media policy: never commit images/videos except regenerated evidence under
   `docs/qa/evidence/`; local artifacts go to `build/qa-evidence/` (gitignored).
+  Brand images are generated from code, never committed — see `docs/brand.md`.
 - Docs: feature docs live in the phase contracts (P0/P1/P2 style — contract,
   deferrals, known limitations). Keep README claims backed by tests or
   evidence.
