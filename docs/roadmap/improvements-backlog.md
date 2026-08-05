@@ -72,11 +72,19 @@ loop. Add backoff + a fatal threshold.
 map is reset on each `snapshot()` (`HP/AgentRuntime.swift:376`), so a
 `--context summary` (max 8 elements) invalidates all refs from a prior
 `full`; the agent later gets a bare `ELEMENT_NOT_FOUND`. Meanwhile
-`currentRegions` is *never* reset and grows for the page lifetime. Decide the
+`currentRegions` is *never* reset and grows for the page lifetime. ~~Decide the
 contract (likely: refs from the latest inspection only — already the skill's
 teaching), then (a) make the error say *why* ("ref expired; re-inspect"),
 (b) reset regions consistently on navigation, (c) document in P1.md. Test:
-inspect-full → inspect-summary → click stale `@eN` asserts the new error.
+inspect-full → inspect-summary → click stale `@eN` asserts the new error.~~
+**Done.** The contract is now explicit and asymmetric on purpose: `@eN` is
+latest-inspection-only, `@rN` stays resolvable so the outline-then-scope
+workflow survives across calls. Failures name the cause — `expired`, `unknown`,
+or `detached` — instead of an anonymous `ELEMENT_NOT_FOUND`. Region tracking is
+bounded at 256 oldest-first rather than growing for the page lifetime, which
+also releases the strong references it was holding to detached nodes.
+Documented in P1 under "Reference lifetime"; covered in
+`Tests/agent-runtime.test.mjs`.
 
 **A6. `--json`/`--session` stripped from anywhere in argv.** ([#17](https://github.com/LockInTime/headless/issues/17)) Global-option
 stripping (`HP/CLI.swift:46-49`) happens before subcommand parsing, so
