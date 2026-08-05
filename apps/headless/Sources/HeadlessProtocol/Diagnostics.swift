@@ -5,6 +5,17 @@ public final class QADiagnosticStore: @unchecked Sendable {
     private var events: [JSONValue] = []
     private var didTruncate = false
     private let maximumEvents = 500
+    /// A full report of 500 events, each carrying up to a 4 KiB message and an
+    /// 8 KiB URL, can exceed the 1 MiB protocol frame. Encoding would then
+    /// throw on the way out and the agent would receive a misleading
+    /// INVALID_REQUEST for a request that was perfectly valid, so the arrays
+    /// are bounded here and the response says what it dropped.
+    private let maximumReportEventBytes = 384 * 1_024
+    /// Issues are derived from the same events and carry the same message and
+    /// URL, so a count cap alone is not a size cap: 100 issues built from 4 KiB
+    /// messages and 8 KiB URLs is over a megabyte on its own.
+    private let maximumReportIssueBytes = 192 * 1_024
+    private let maximumReportIssues = 100
 
     public init() {}
 
@@ -72,6 +83,14 @@ public final class QADiagnosticStore: @unchecked Sendable {
             return object["severity"] == .string("error")
         }.count
         let warnings = issues.count - errors
+        // Counts come from the whole snapshot; only the arrays are bounded, so
+        // the summary stays accurate even when the payload is trimmed.
+        let boundedIssues = valuesWithinBudget(
+            Array(issues.suffix(maximumReportIssues)), bytes: maximumReportIssueBytes
+        )
+        let boundedEvents = valuesWithinBudget(snapshot, bytes: maximumReportEventBytes)
+        let omittedIssues = issues.count - boundedIssues.count
+        let omittedEvents = snapshot.count - boundedEvents.count
         return .object([
             "summary": .object([
                 "events": .number(Double(snapshot.count)),
@@ -83,10 +102,30 @@ public final class QADiagnosticStore: @unchecked Sendable {
                 "errors": .number(Double(errors)),
                 "warnings": .number(Double(warnings)),
             ]),
-            "issues": .array(issues),
-            "events": .array(snapshot),
-            "truncated": .bool(wasTruncated),
+            "issues": .array(boundedIssues),
+            "events": .array(boundedEvents),
+            "omitted": .object([
+                "issues": .number(Double(omittedIssues)),
+                "events": .number(Double(omittedEvents)),
+            ]),
+            "truncated": .bool(wasTruncated || omittedIssues > 0 || omittedEvents > 0),
         ])
+    }
+
+    /// Drops the oldest entries until the array fits its budget. Newest entries
+    /// are the ones an agent is diagnosing, so they are the ones kept.
+    private func valuesWithinBudget(_ values: [JSONValue], bytes: Int) -> [JSONValue] {
+        var kept = values
+        while kept.count > 1, encodedByteCount(kept) > bytes {
+            kept.removeFirst(max(1, kept.count / 8))
+        }
+        if kept.count == 1, encodedByteCount(kept) > bytes { return [] }
+        return kept
+    }
+
+    private func encodedByteCount(_ values: [JSONValue]) -> Int {
+        guard let data = try? ProtocolCodec.encoder.encode(JSONValue.array(values)) else { return 0 }
+        return data.count
     }
 
     public func console(level: String, limit: Int) -> JSONValue {

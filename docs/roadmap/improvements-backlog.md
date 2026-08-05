@@ -53,10 +53,16 @@ requirement so the guards can never become the only thing holding the path up.
 **A3. Oversized responses break the 1 MiB frame.** ([#14](https://github.com/LockInTime/headless/issues/14)) `qa report` can hold 500
 events × ~4 KiB ≈ 2 MB; `artifact.list` is unbounded. `encodeLine` throws
 inside `handleClient` and the client receives a misleading
-`INVALID_REQUEST` (`HP/Transport.swift:219-227`). Fix: response-side bounding —
+`INVALID_REQUEST` (`HP/Transport.swift:219-227`). ~~Fix: response-side bounding —
 pagination (`--limit/--cursor`) or truncation with `truncated: true` — per
 architecture decision §4. Test: generate >1 MiB of events, assert a bounded,
-well-formed response.
+well-formed response.~~ **Done** by truncation: `qa report` bounds its issue and
+event arrays by byte budget while keeping `summary` counts accurate over the
+whole buffer, `artifacts list` returns the newest 250 with `total`/`omitted`,
+and both report `truncated`. A response that still cannot be framed now fails
+`RESPONSE_TOO_LARGE` instead of `INVALID_REQUEST`. Tests assert both responses
+encode within `headlessMaximumMessageBytes`. Cursor pagination remains the
+richer answer and is tracked separately (§G3).
 
 **A4. Accept-loop error spin.** ([#15](https://github.com/LockInTime/headless/issues/15)) All `accept()` errors are swallowed with
 `continue` (`HP/Transport.swift:180-184`); persistent EMFILE becomes a hot
