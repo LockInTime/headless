@@ -674,7 +674,8 @@ struct ProtocolTests {
         try expect(object["truncated"] == .bool(true), "a bounded report should report truncation")
         guard case .object(let summary)? = object["summary"],
               case .object(let omitted)? = object["omitted"],
-              case .array(let events)? = object["events"] else {
+              case .array(let events)? = object["events"],
+              case .array(let issues)? = object["issues"] else {
             throw TestFailure(description: "report bounds")
         }
         try expect(summary["events"] == .number(500), "summary counts should describe every event")
@@ -682,6 +683,14 @@ struct ProtocolTests {
         try expect(
             events.count + Int(omitted["events"]?.numberValue ?? 0) == 500,
             "kept plus omitted events should account for the whole buffer"
+        )
+        // Issues carry the same message and URL as the events they describe, so
+        // a count cap is not a size cap — bounding them by bytes is what keeps
+        // the report inside the frame.
+        try expect(
+            issues.count + Int(omitted["issues"]?.numberValue ?? 0)
+                == Int(summary["issues"]?.numberValue ?? 0),
+            "kept plus omitted issues should account for every issue"
         )
     }
 
