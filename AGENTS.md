@@ -67,8 +67,9 @@ way before merging changes to `main.swift`, `Host/`, or capture code.
 ## Picking up work
 
 Every open backlog item is a GitHub issue labelled `backlog`, cross-linked
-from the backlog file in both directions, carrying type/area/priority labels
-and sitting in the milestone for its roadmap phase. Work from either surface —
+from the backlog file in both directions, carrying type/area/priority labels,
+sitting in the milestone for its roadmap phase, and tracked on the
+[Headless Roadmap board](https://github.com/orgs/LockInTime/projects/1). Work from either surface —
 but when you fix something, close the issue **and** check the item off in
 `docs/roadmap/improvements-backlog.md` in the same PR, so the two never drift.
 
