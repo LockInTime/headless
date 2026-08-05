@@ -216,7 +216,21 @@ public final class LocalSocketServer: @unchecked Sendable {
             } else {
                 response = requestQueue.sync { handler(request) }
             }
-            try writeAll(try ProtocolCodec.encodeLine(response), to: fd)
+            // A response that cannot be framed is a response problem, not a bad
+            // request. Encoding it inside the catch below would report
+            // INVALID_REQUEST for a request the host accepted and executed.
+            let payload: Data
+            do {
+                payload = try ProtocolCodec.encodeLine(response)
+            } catch let codecError as CodecError {
+                payload = try ProtocolCodec.encodeLine(CommandResponse.failure(
+                    id: request.id,
+                    code: "RESPONSE_TOO_LARGE",
+                    message: String(describing: codecError),
+                    suggestion: "Narrow the request with --limit, or run `headless qa clear` to drop collected diagnostics."
+                ))
+            }
+            try writeAll(payload, to: fd)
         } catch {
             let response = CommandResponse.failure(
                 id: "unknown",

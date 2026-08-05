@@ -173,8 +173,20 @@ public final class ArtifactStore: @unchecked Sendable {
             guard case .object(let lhs) = left, case .object(let rhs) = right else { return false }
             return (lhs["createdAt"]?.numberValue ?? 0) > (rhs["createdAt"]?.numberValue ?? 0)
         }
-        return .object(["directory": .string(rootURL.path), "artifacts": .array(artifacts)])
+        // The store grows without bound across a long session, and the listing
+        // has to survive the 1 MiB protocol frame. Newest first, bounded, and
+        // explicit about what was left out.
+        let listed = Array(artifacts.prefix(Self.maximumListedArtifacts))
+        return .object([
+            "directory": .string(rootURL.path),
+            "artifacts": .array(listed),
+            "total": .number(Double(artifacts.count)),
+            "omitted": .number(Double(artifacts.count - listed.count)),
+            "truncated": .bool(listed.count < artifacts.count),
+        ])
     }
+
+    private static let maximumListedArtifacts = 250
 
     private static let listedExtensions: Set<String> =
         ScreenshotFormat.artifactExtensions

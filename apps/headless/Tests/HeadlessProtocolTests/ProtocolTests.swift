@@ -653,6 +653,62 @@ struct ProtocolTests {
         try expect(!serialized.contains("secret@"), "diagnostics must redact URL credentials")
     }
 
+    static func responsesFitTheProtocolFrame() throws {
+        // 500 events each carrying a 4 KiB message is roughly 2 MB — twice the
+        // frame. Before the response bound this encoded past the limit and the
+        // agent saw INVALID_REQUEST for a valid `qa report`.
+        let store = QADiagnosticStore()
+        let wide = String(repeating: "d", count: 4_096)
+        for _ in 0..<500 {
+            store.append(kind: "console", level: "error", message: wide, url: "https://example.com/\(wide)")
+        }
+        let report = store.report()
+        let encoded = try ProtocolCodec.encodeLine(
+            CommandResponse.success(id: "report", result: report)
+        )
+        try expect(
+            encoded.count <= headlessMaximumMessageBytes,
+            "a full diagnostic report must fit the protocol frame"
+        )
+        guard case .object(let object) = report else { throw TestFailure(description: "report shape") }
+        try expect(object["truncated"] == .bool(true), "a bounded report should report truncation")
+        guard case .object(let summary)? = object["summary"],
+              case .object(let omitted)? = object["omitted"],
+              case .array(let events)? = object["events"] else {
+            throw TestFailure(description: "report bounds")
+        }
+        try expect(summary["events"] == .number(500), "summary counts should describe every event")
+        try expect((omitted["events"]?.numberValue ?? 0) > 0, "omitted events should be counted")
+        try expect(
+            events.count + Int(omitted["events"]?.numberValue ?? 0) == 500,
+            "kept plus omitted events should account for the whole buffer"
+        )
+    }
+
+    static func artifactListingStaysBounded() throws {
+        let root = "/tmp/headless-artifact-bound-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let store = try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": root])
+        for index in 0..<260 {
+            _ = try store.write(Data("x".utf8), requestedName: "bound-\(index).json", extension: "json", prefix: "bound")
+        }
+        guard case .object(let listing) = try store.list(),
+              case .array(let artifacts)? = listing["artifacts"] else {
+            throw TestFailure(description: "artifact listing")
+        }
+        try expect(artifacts.count == 250, "artifact listing should stay bounded")
+        try expect(listing["total"] == .number(260), "artifact listing should report the true total")
+        try expect(listing["omitted"] == .number(10), "artifact listing should report what it left out")
+        try expect(listing["truncated"] == .bool(true), "a bounded artifact listing is truncated")
+        let encoded = try ProtocolCodec.encodeLine(
+            CommandResponse.success(id: "artifacts", result: try store.list())
+        )
+        try expect(
+            encoded.count <= headlessMaximumMessageBytes,
+            "an artifact listing must fit the protocol frame"
+        )
+    }
+
     static func diagnosticServices() throws {
         let store = QADiagnosticStore()
         store.append(kind: "console", level: "warn", message: "first")
@@ -785,6 +841,8 @@ struct ProtocolTests {
             ("screenshot series helpers", screenshotSeriesHelpers),
             ("diagnostic summary", diagnosticSummary),
             ("diagnostic bounds and URL redaction", diagnosticsBoundAndRedacted),
+            ("responses fit the protocol frame", responsesFitTheProtocolFrame),
+            ("artifact listing stays bounded", artifactListingStaysBounded),
             ("diagnostic services", diagnosticServices),
             ("diagnostic CLI", diagnosticCLI),
             ("local socket round-trip", localSocketRoundTrip),
