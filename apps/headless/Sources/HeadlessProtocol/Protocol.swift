@@ -445,6 +445,11 @@ public struct CommandResponse: Codable, Equatable, Sendable {
     public let result: JSONValue?
     public let error: CommandError?
 
+    /// Used only when the host could not read the request well enough to know
+    /// its id. Clients treat it as "this reply is about your request even
+    /// though it is not correlated", so nothing else may use it.
+    public static let unknownRequestIdentifier = "unknown"
+
     public static func success(id: String, result: JSONValue = .object([:])) -> CommandResponse {
         CommandResponse(id: id, version: headlessProtocolVersion, ok: true, result: result, error: nil)
     }
