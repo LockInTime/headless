@@ -1,0 +1,21 @@
+# Code owners are requested for review automatically.
+# Order matters: the last matching pattern wins.
+
+*                                   @SarthakWade
+
+# Security-critical surfaces — the host-enforced contracts live here.
+/apps/headless/Sources/HeadlessProtocol/Protocol.swift      @SarthakWade
+/apps/headless/Sources/HeadlessProtocol/Transport.swift     @SarthakWade
+/apps/headless/Sources/HeadlessProtocol/Artifacts.swift     @SarthakWade
+/apps/headless/Sources/HeadlessProtocol/AgentRuntime.swift  @SarthakWade
+/apps/headless/LinuxHost/                                   @SarthakWade
+/apps/headless/Host/                                        @SarthakWade
+
+# Product direction. Changes here are decisions, not refactors.
+/docs/ROADMAP.md                    @SarthakWade
+/docs/roadmap/                      @SarthakWade
+/SECURITY.md                        @SarthakWade
+/AGENTS.md                          @SarthakWade
+
+# Release and CI plumbing.
+/.github/workflows/                 @SarthakWade

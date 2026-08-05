@@ -21,6 +21,8 @@ Read before making non-trivial changes:
   stays Swift; don't propose rewrites).
 - `docs/roadmap/improvements-backlog.md` — known defects with file/line refs;
   check items off when you fix them and add the named test.
+- `CONTRIBUTING.md` — the same rules for humans, plus setup detail.
+- `SECURITY.md` — the boundaries a bug report is measured against.
 - To *use* Headless as a browser tool (rather than develop it), follow the
   skill: `.agents/skills/headless-computer-use/SKILL.md`.
 
@@ -61,6 +63,21 @@ suite on Linux (Swift container) and macOS, the web lint/build, and the Linux
 Docker E2E. The macOS WKWebView E2E is heavier — it runs nightly, on
 `workflow_dispatch`, or when a PR carries the `macos-e2e` label. Run it that
 way before merging changes to `main.swift`, `Host/`, or capture code.
+
+## Picking up work
+
+Every open backlog item is a GitHub issue labelled `backlog`, cross-linked
+from the backlog file in both directions, carrying type/area/priority labels
+and sitting in the milestone for its roadmap phase. Work from either surface —
+but when you fix something, close the issue **and** check the item off in
+`docs/roadmap/improvements-backlog.md` in the same PR, so the two never drift.
+
+Phase 1 (`Trust the build`) is the current milestone; `priority:critical` and
+`priority:high` items there come first. `good first issue` marks the
+self-contained ones.
+
+Anything that changes the agent-facing contract needs an entry in
+`docs/roadmap/architecture-decisions.md` before the code lands.
 
 ## Hard rules (host-enforced contracts — never weaken)
 

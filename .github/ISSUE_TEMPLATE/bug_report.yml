@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in Headless behaves incorrectly
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is a **security** issue — a way past navigation rules, the
+        artifact store, the socket boundary, or redaction — do not file it
+        here. Use [private vulnerability reporting](https://github.com/LockInTime/headless/security/advisories/new).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what did you get instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Commands to reproduce
+      description: The exact `headless` commands, in order. Include the page or fixture if it matters.
+      render: shell
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      options:
+        - macOS (WKWebView)
+        - Linux (Chromium)
+        - Linux via Docker image
+        - Both / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `headless capabilities` (protocol version) plus the release tag or commit you built from.
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output and diagnostics
+      description: |
+        The failing JSON response, and anything relevant from `headless qa report`,
+        `console list`, or `network list`. Redact page content you cannot share.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I checked the [improvements backlog](https://github.com/LockInTime/headless/blob/main/docs/roadmap/improvements-backlog.md) and open `backlog` issues for an existing entry
+          required: true
+        - label: This is not a documented limitation in the [phase contracts](https://github.com/LockInTime/headless/tree/main/apps/headless/docs) (P0/P1/P2)
+          required: true
