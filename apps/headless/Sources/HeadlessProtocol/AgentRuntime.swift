@@ -7,6 +7,11 @@ if (!globalThis.__headlessAgent) {
     const regionRefs = new WeakMap();
     let current = new Map();
     let currentRegions = new Map();
+    // Every reference ever handed out, so a failed lookup can say whether the
+    // reference expired or was never issued at all.
+    const issuedRefs = new Set();
+    const issuedRegionRefs = new Set();
+    const maximumTrackedRegions = 256;
     let lastMutation = performance.now();
     new MutationObserver(() => { lastMutation = performance.now(); })
       .observe(document, {subtree: true, childList: true, attributes: true, characterData: true});
@@ -107,6 +112,7 @@ if (!globalThis.__headlessAgent) {
     const refFor = element => {
       let ref = refs.get(element);
       if (!ref) { ref = `@e${nextRef++}`; refs.set(element, ref); }
+      issuedRefs.add(ref);
       current.set(ref, element);
       return ref;
     };
@@ -211,15 +217,30 @@ if (!globalThis.__headlessAgent) {
     const regionRefFor = element => {
       let ref = regionRefs.get(element);
       if (!ref) { ref = `@r${nextRegionRef++}`; regionRefs.set(element, ref); }
+      issuedRegionRefs.add(ref);
       currentRegions.set(ref, element);
+      // Region references stay resolvable across inspections so a scoped
+      // `--within @rN` workflow keeps working, but this map holds elements
+      // strongly. Drop the oldest so a long-lived page cannot grow it without
+      // bound, and never drop the reference just issued.
+      while (currentRegions.size > maximumTrackedRegions) {
+        const oldest = currentRegions.keys().next().value;
+        if (oldest === undefined || oldest === ref) break;
+        currentRegions.delete(oldest);
+      }
       return ref;
     };
     const resolveRegion = reference => {
       if (!reference) return document;
       const element = currentRegions.get(reference);
-      if (!element || !element.isConnected || !visible(element)) {
+      if (!element) {
+        throw new Error(issuedRegionRefs.has(reference)
+          ? `REGION_NOT_FOUND:${reference} (expired: inspect again to refresh region references)`
+          : `REGION_NOT_FOUND:${reference} (unknown: no inspection has issued this reference)`);
+      }
+      if (!element.isConnected || !visible(element)) {
         currentRegions.delete(reference);
-        throw new Error(`REGION_NOT_FOUND:${reference}`);
+        throw new Error(`REGION_NOT_FOUND:${reference} (detached: the region is no longer visible on this page)`);
       }
       return element;
     };
@@ -423,7 +444,18 @@ if (!globalThis.__headlessAgent) {
     };
     const resolve = target => {
       const element = current.get(target);
-      if (!element || !element.isConnected) throw new Error(`ELEMENT_NOT_FOUND:${target}`);
+      // Element references describe the most recent inspection only. Saying so
+      // is the difference between an agent re-inspecting and an agent retrying
+      // the same dead reference.
+      if (!element) {
+        throw new Error(issuedRefs.has(target)
+          ? `ELEMENT_NOT_FOUND:${target} (expired: element references come from the most recent inspection — inspect again to refresh)`
+          : `ELEMENT_NOT_FOUND:${target} (unknown: no inspection has issued this reference)`);
+      }
+      if (!element.isConnected) {
+        current.delete(target);
+        throw new Error(`ELEMENT_NOT_FOUND:${target} (detached: the element is no longer in the page)`);
+      }
       return element;
     };
     const find = (wantedRole, wantedName) => {

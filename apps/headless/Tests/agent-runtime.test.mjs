@@ -104,6 +104,31 @@ assert.throws(
   /REGION_NOT_FOUND/,
 );
 
+// A region reference issued by an earlier inspection stays usable, which is
+// what makes the outline-then-scope workflow possible across calls.
+assert.equal(
+  agent.snapshot(false, false, {context: 'text', within: targetRegion.ref, limit: 2}).within,
+  targetRegion.ref,
+);
+assert.throws(
+  () => agent.snapshot(false, false, {context: 'text', within: '@r999999'}),
+  /REGION_NOT_FOUND.*unknown/,
+);
+
+// Element references describe the most recent inspection only. A stale one has
+// to say it expired, otherwise an agent cannot tell "re-inspect" from
+// "this element never existed" and retries the dead reference.
+const staleRef = full.elements[full.elements.length - 1].ref;
+assert.match(staleRef, /^@e\d+$/);
+agent.snapshot(false, false, {context: 'summary', limit: 8, budget: 700});
+assert.throws(() => agent.click({target: staleRef}), /ELEMENT_NOT_FOUND.*expired/);
+assert.throws(() => agent.click({target: '@e999999'}), /ELEMENT_NOT_FOUND.*unknown/);
+
+// A reference from the latest inspection still resolves.
+const fresh = agent.snapshot(false, false, {context: 'actions', limit: 5});
+assert(fresh.elements.length > 0, 'actions context should return executable controls');
+assert.equal(agent.click({target: fresh.elements[0].ref}).clicked, fresh.elements[0].ref);
+
 console.log(JSON.stringify({
   selectedRegion: targetRegion.ref,
   full: full.contextStats,
