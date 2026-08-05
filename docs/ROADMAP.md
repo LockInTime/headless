@@ -103,8 +103,9 @@ Honest snapshot, so newcomers know what is real:
   command reference, and a Docker sandbox wrapper.
 
 **Not yet real**
-- No CI on pull requests or `main` — only tag pushes. Merged PRs #4–#8 had no
-  automated gate.
+- ~~No CI on pull requests or `main`~~ — PR CI landed (`.github/workflows/ci.yml`,
+  backlog §D1/§D3). Correctness fixes in §A are still outstanding, and the
+  macOS E2E is nightly/label-gated rather than a per-PR gate.
 - No signing/notarization, no Homebrew/apt/npm, no published Docker image, no
   checksums on release assets. "Install" means "download from GitHub
   Releases and click through a Gatekeeper warning".
@@ -186,8 +187,8 @@ root.
 The project cannot absorb contributors or agents while merges are ungated and
 known races exist.
 
-- PR/`main` CI: protocol tests, `agent-runtime.test.mjs`, Linux Docker E2E on
-  every PR; macOS E2E on a schedule or label (backlog §D).
+- ~~PR/`main` CI: protocol tests, `agent-runtime.test.mjs`, Linux Docker E2E on
+  every PR; macOS E2E on a schedule or label (backlog §D1, §D3).~~ **Done.**
 - Fix the correctness bugs that can crash or corrupt a running host: the
   shutdown data race on `LinuxBrowserHost`, force-unwraps in `visual compare`,
   the oversized `qa report`/`artifact.list` responses vs the 1 MiB frame,

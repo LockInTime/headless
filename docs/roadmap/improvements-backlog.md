@@ -205,13 +205,20 @@ response-body inspection stays denied (P1.md:134) unless a gated design lands.
 
 ## §D — CI & testing (Phase 1)
 
-**D1. PR/`main` CI is absent** — only tag-triggered release exists
-(`.github/workflows/release.yml`; PRs #4–#8 merged ungated). Add a `ci.yml`:
-protocol suite + `pnpm test:runtime` + `linux-docker.sh` on every PR (Linux
-runners); macOS build + `test.sh` on PR, full `macos-e2e.sh` nightly/label
-(it mutates user defaults and needs a GUI session — see
-`Tests/macos-e2e.sh:26-40`). Reuse the same scripts as release (keep that
-property).
+**D1. PR/`main` CI** — ~~absent; only tag-triggered release existed
+(`.github/workflows/release.yml`; PRs #4–#8 merged ungated).~~ **Done:**
+`.github/workflows/ci.yml` runs on every PR and `main` push — static checks
+(shell syntax across sh/bash/zsh, `docs/qa/evidence` checksum verification,
+whitespace), `pnpm test:runtime`, the protocol suite on Linux
+(`swift:6.1-bookworm` container) and macOS, and `linux-docker.sh` with the QA
+evidence uploaded as an artifact. `macos-e2e.sh` is gated to nightly cron,
+`workflow_dispatch`, or the `macos-e2e` PR label because it needs a GUI
+session and mutates user defaults (`Tests/macos-e2e.sh:26-40`). All jobs
+invoke the same scripts a developer runs locally, matching release.yml.
+
+Follow-ups: mark the jobs required in branch protection (repo setting, not
+code); consider arm64 Linux E2E on PRs (release covers it on tags); revisit
+whether the macOS E2E can become a per-PR gate once runtime is measured.
 
 **D2. Known test gaps (from code audit).** No tests for: peer-UID rejection
 (A9), MCP (C3), `Recording.swift` (ffmpeg args per format/quality, discovery
@@ -228,7 +235,9 @@ flow start-stop/network emulate/mock clear/session ops/status/stop/start/help).
 Also tighten `rejectsUnexpectedRequestFields` (`ProtocolTests.swift:109-114`)
 which currently passes for the wrong reason.
 
-**D3. Web CI:** `next build` + eslint on PR (site can break invisibly today).
+**D3. Web CI:** ~~`next build` + eslint on PR (site can break invisibly today).~~
+**Done** — the `web` job in `ci.yml` runs `pnpm --filter @headless/web lint`
+and `build`.
 
 **D4. Cross-engine conformance runner** (architecture §14) replacing drifted
 hand-mirrored E2E assertions (e.g. `macos-e2e.sh:231` vs `linux-e2e.sh:157`).
