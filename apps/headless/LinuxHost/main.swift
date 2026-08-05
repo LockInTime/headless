@@ -12,6 +12,8 @@ final class LinuxBrowserHost: @unchecked Sendable {
     private var recordings: [String: BrowserRecording] = [:]
     private let traceStartedAt = ProcessInfo.processInfo.systemUptime
     private let artifacts: ArtifactStore
+    private let stateLock = NSLock()
+    private var stopping = false
     var onShutdown: (() -> Void)?
 
     init() throws {
@@ -21,11 +23,46 @@ final class LinuxBrowserHost: @unchecked Sendable {
         trace["default"] = []
     }
 
+    /// Every mutation of `sessions`, `trace`, `activeFlows`, and `recordings`
+    /// goes through here. `shutdown` deliberately bypasses the transport's
+    /// request queue so an operator can always stop a stalled browser action,
+    /// which means `stop()` runs while a normal command may still be in
+    /// flight — without this lock both threads mutate the same dictionaries.
+    /// Hold it only around collection access, never across browser I/O, so a
+    /// stalled command cannot delay teardown.
+    private func withState<T>(_ body: () -> T) -> T {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return body()
+    }
+
+    private func lookupSession(_ name: String) -> LinuxBrowserSession? {
+        withState { sessions[name] }
+    }
+
+    private func lookupRecording(_ name: String) -> BrowserRecording? {
+        withState { recordings[name] }
+    }
+
+    private func traceEvents(for name: String) -> [JSONValue] {
+        withState { trace[name] ?? [] }
+    }
+
     func stop() {
-        for recording in recordings.values { _ = try? recording.stop(timeout: 5) }
-        recordings.removeAll()
-        for session in sessions.values { browser.closeSession(session) }
-        sessions.removeAll()
+        let (activeRecordings, openSessions) = withState {
+            () -> ([BrowserRecording], [LinuxBrowserSession]) in
+            if stopping { return ([], []) }
+            stopping = true
+            let capturedRecordings = Array(recordings.values)
+            let capturedSessions = Array(sessions.values)
+            recordings.removeAll()
+            sessions.removeAll()
+            trace.removeAll()
+            activeFlows.removeAll()
+            return (capturedRecordings, capturedSessions)
+        }
+        for recording in activeRecordings { _ = try? recording.stop(timeout: 5) }
+        for session in openSessions { browser.closeSession(session) }
         browser.stop()
     }
 
@@ -87,27 +124,51 @@ final class LinuxBrowserHost: @unchecked Sendable {
             case .sessionCreate:
                 guard let name = request.parameters["name"]?.stringValue else { return failure(request, "MISSING_PARAMETER", "Session name is required.") }
                 try validateIdentifier(name, field: "session")
-                guard sessions[name] == nil else { return failure(request, "SESSION_EXISTS", "Session already exists: \(name)") }
-                sessions[name] = try browser.createSession()
-                trace[name] = []
+                guard withState({ sessions[name] == nil }) else { return failure(request, "SESSION_EXISTS", "Session already exists: \(name)") }
+                let created = try browser.createSession()
+                // Re-check under the lock: teardown may have started while the
+                // browser was creating the target.
+                let rejection = withState { () -> String? in
+                    if stopping { return "HOST_UNAVAILABLE" }
+                    if sessions[name] != nil { return "SESSION_EXISTS" }
+                    sessions[name] = created
+                    trace[name] = []
+                    return nil
+                }
+                if let rejection {
+                    browser.closeSession(created)
+                    return failure(
+                        request, rejection,
+                        rejection == "SESSION_EXISTS"
+                            ? "Session already exists: \(name)"
+                            : "Host is shutting down."
+                    )
+                }
                 record(.sessionCreate, session: name)
                 return .success(id: request.id, result: .object(["session": .string(name)]))
             case .sessionList:
-                return .success(id: request.id, result: .object(["sessions": .array(sessions.keys.sorted().map(JSONValue.string))]))
+                let names = withState { sessions.keys.sorted() }
+                return .success(id: request.id, result: .object(["sessions": .array(names.map(JSONValue.string))]))
             case .sessionClose:
                 let name = request.session ?? "default"
-                guard let session = sessions.removeValue(forKey: name) else { return missingSession(request, name) }
-                if let recording = recordings.removeValue(forKey: name) { _ = try? recording.stop(timeout: 5) }
+                let closing = withState { () -> (LinuxBrowserSession?, BrowserRecording?) in
+                    let session = sessions.removeValue(forKey: name)
+                    guard session != nil else { return (nil, nil) }
+                    let recording = recordings.removeValue(forKey: name)
+                    trace.removeValue(forKey: name)
+                    activeFlows.removeValue(forKey: name)
+                    return (session, recording)
+                }
+                guard let session = closing.0 else { return missingSession(request, name) }
+                if let recording = closing.1 { _ = try? recording.stop(timeout: 5) }
                 browser.closeSession(session)
-                trace.removeValue(forKey: name)
-                activeFlows.removeValue(forKey: name)
                 return .success(id: request.id, result: .object(["closed": .string(name)]))
             default:
                 break
             }
 
             let name = request.session ?? "default"
-            guard let session = sessions[name] else { return missingSession(request, name) }
+            guard let session = lookupSession(name) else { return missingSession(request, name) }
             let result: JSONValue
             switch request.command {
             case .visit:
@@ -131,8 +192,8 @@ final class LinuxBrowserHost: @unchecked Sendable {
                     "browserRuntimeSource": .string(browser.runtime.source.rawValue),
                     "browserTransport": .string("inherited-devtools-pipe"),
                     "targetId": .string(session.targetID), "page": try session.state(),
-                    "trace": .array(trace[name] ?? []),
-                    "recording": recordings[name]?.status() ?? .object(["active": .bool(false)]),
+                    "trace": .array(traceEvents(for: name)),
+                    "recording": lookupRecording(name)?.status() ?? .object(["active": .bool(false)]),
                 ])
             case .screenshot:
                 if request.parameters["series"]?.stringValue != nil {
@@ -153,7 +214,7 @@ final class LinuxBrowserHost: @unchecked Sendable {
                     )
                 }
             case .recordStart:
-                guard recordings[name] == nil else { throw RecordingError.alreadyActive }
+                guard lookupRecording(name) == nil else { throw RecordingError.alreadyActive }
                 let format = try recordingFormat(
                     explicit: request.parameters["format"]?.stringValue,
                     output: request.parameters["output"]?.stringValue
@@ -176,12 +237,24 @@ final class LinuxBrowserHost: @unchecked Sendable {
                     try? FileManager.default.removeItem(at: output)
                     throw error
                 }
-                recordings[name] = recording
+                // Registering under the lock keeps a recording started during
+                // teardown from outliving the host as an orphaned FFmpeg
+                // process that nothing will ever stop.
+                let registered = withState { () -> Bool in
+                    guard !stopping, recordings[name] == nil else { return false }
+                    recordings[name] = recording
+                    return true
+                }
+                guard registered else {
+                    _ = try? recording.stop(timeout: 5)
+                    try? FileManager.default.removeItem(at: output)
+                    throw CDPError.commandFailed("Host is shutting down")
+                }
                 result = recording.status()
             case .recordStatus:
-                result = recordings[name]?.status() ?? .object(["active": .bool(false)])
+                result = lookupRecording(name)?.status() ?? .object(["active": .bool(false)])
             case .recordStop:
-                guard let activeRecording = recordings[name] else { throw RecordingError.notActive }
+                guard let activeRecording = lookupRecording(name) else { throw RecordingError.notActive }
                 if let output = request.parameters["output"]?.stringValue,
                    let actual = artifactExtension(output),
                    actual != activeRecording.format.fileExtension {
@@ -190,7 +263,7 @@ final class LinuxBrowserHost: @unchecked Sendable {
                         actual: actual
                     )
                 }
-                guard let recording = recordings.removeValue(forKey: name) else { throw RecordingError.notActive }
+                guard let recording = withState({ recordings.removeValue(forKey: name) }) else { throw RecordingError.notActive }
                 let recordingStatus: JSONValue
                 do { recordingStatus = try recording.stop() }
                 catch {
@@ -252,7 +325,7 @@ final class LinuxBrowserHost: @unchecked Sendable {
                     "format": .string("headless-qa-report-v1"),
                     "createdAt": .number(Date().timeIntervalSince1970), "session": .string(name),
                     "page": .object(["engine": .string("chromium"), "state": try session.state()]),
-                    "qa": try session.qaReport(), "trace": .array(trace[name] ?? []),
+                    "qa": try session.qaReport(), "trace": .array(traceEvents(for: name)),
                     "artifacts": try artifacts.list(),
                     "security": .object(["sensitiveValuesIncluded": .bool(false), "transport": .string("local-unix-socket")]),
                 ])
@@ -260,10 +333,10 @@ final class LinuxBrowserHost: @unchecked Sendable {
                                              requestedName: request.parameters["output"]?.stringValue,
                                              extension: "json", prefix: "qa-report-\(name)")
             case .flowStart:
-                activeFlows[name] = []
+                withState { activeFlows[name] = [] }
                 result = .object(["recording": .bool(true), "note": .string("Only safe navigation actions are recorded; typed values and credentials are never stored.")])
             case .flowStop:
-                let steps = activeFlows.removeValue(forKey: name) ?? []
+                let steps = withState { activeFlows.removeValue(forKey: name) } ?? []
                 result = try artifacts.write(ProtocolCodec.encoder.encode(RecordedFlow(commands: steps)),
                                              requestedName: request.parameters["output"]?.stringValue,
                                              extension: "json", prefix: "flow-\(name)")
@@ -286,8 +359,11 @@ final class LinuxBrowserHost: @unchecked Sendable {
                 return failure(request, "INVALID_COMMAND", "Command is not valid in this context.")
             }
             record(request.command, session: name, result: result)
-            if let step = flowStepIfSafe(command: request.command, parameters: request.parameters), activeFlows[name] != nil {
-                if (activeFlows[name]?.count ?? 0) < 200 { activeFlows[name]?.append(step) }
+            if let step = flowStepIfSafe(command: request.command, parameters: request.parameters) {
+                withState { () -> Void in
+                    guard let steps = activeFlows[name], steps.count < 200 else { return }
+                    activeFlows[name] = steps + [step]
+                }
             }
             return .success(id: request.id, result: result)
         } catch let error as ProtocolValidationError {
@@ -350,10 +426,12 @@ final class LinuxBrowserHost: @unchecked Sendable {
         if case .object(let object) = result, let url = object["url"]?.stringValue {
             event["url"] = .string(String(decoding: url.utf8.prefix(2_048), as: UTF8.self))
         }
-        var entries = trace[session] ?? []
-        entries.append(.object(event))
-        if entries.count > 256 { entries.removeFirst(entries.count - 256) }
-        trace[session] = entries
+        withState { () -> Void in
+            var entries = trace[session] ?? []
+            entries.append(.object(event))
+            if entries.count > 256 { entries.removeFirst(entries.count - 256) }
+            trace[session] = entries
+        }
     }
 
     private func missingSession(_ request: CommandRequest, _ name: String) -> CommandResponse {

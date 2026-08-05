@@ -265,6 +265,35 @@ echo "$BOUNDED_SNAPSHOT" | grep -q '"truncated":true'
 test "$(printf %s "$BOUNDED_SNAPSHOT" | wc -c)" -lt 1048576
 headless session close qa | grep -q '"closed":"qa"'
 
+# Shutdown deliberately bypasses the transport's request queue so an operator
+# can stop a stalled browser action. Teardown therefore runs while a command is
+# still in flight, and before the host state lock both threads mutated the same
+# session and recording dictionaries. Reproduce that with an active recording
+# and a long tour in flight, then require a clean exit and a clean restart.
+headless session create race | grep -q '"session":"race"'
+headless --session race visit http://127.0.0.1:41739/designers/dashboard/ >/dev/null
+headless --session race record start --fps 5 --output race-shutdown.mp4 >/dev/null
+RACE_HOST_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+test -n "$RACE_HOST_PID"
+headless --session race tour --full-page --pace 1000 >/dev/null 2>&1 &
+RACE_TOUR_PID=$!
+sleep 1
+headless stop | grep -q '"stopping":true'
+wait "$RACE_TOUR_PID" 2>/dev/null || true
+RACE_WAITED=0
+while [ "$RACE_WAITED" -lt 30 ]; do
+  kill -0 "$RACE_HOST_PID" 2>/dev/null || break
+  RACE_WAITED=$((RACE_WAITED + 1))
+  sleep 1
+done
+if kill -0 "$RACE_HOST_PID" 2>/dev/null; then
+  echo "host did not exit after shutdown during an in-flight command" >&2
+  exit 1
+fi
+headless start >/dev/null
+headless status | grep -q '"ready":true'
+headless session list | grep -q '"sessions":\["default"\]'
+
 if [ -n "${HEADLESS_EVIDENCE_DIR:-}" ]; then
   umask 077
   mkdir -p "$HEADLESS_EVIDENCE_DIR"
