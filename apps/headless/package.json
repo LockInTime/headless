@@ -12,6 +12,6 @@
     "test:runtime": "node Tests/agent-runtime.test.mjs"
   },
   "devDependencies": {
-    "jsdom": "26.1.0"
+    "jsdom": "30.0.1"
   }
 }
