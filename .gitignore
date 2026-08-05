@@ -10,6 +10,7 @@ apps/headless/Headless.icns
 apps/headless/build/
 apps/headless/.build/
 apps/web/.next/
+apps/web/build/
 *.tsbuildinfo
 
 # Local QA evidence is generated on demand; reviewed evidence lives in docs/qa.
