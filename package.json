@@ -12,7 +12,7 @@
     "test:e2e:linux": "pnpm --filter @headless/app test:e2e:linux"
   },
   "engines": {
-    "node": ">=20",
+    "node": ">=22",
     "pnpm": ">=9"
   },
   "packageManager": "pnpm@9.15.0"

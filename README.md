@@ -21,7 +21,8 @@ Product direction, architectural decisions, and the full improvements backlog
 live in [docs/ROADMAP.md](docs/ROADMAP.md). Every known gap is also filed as a
 [`backlog` issue](https://github.com/LockInTime/headless/labels/backlog),
 grouped into [milestones](https://github.com/LockInTime/headless/milestones)
-by roadmap phase.
+by roadmap phase and tracked on the
+[Headless Roadmap board](https://github.com/orgs/LockInTime/projects/1).
 
 Contributing: [AGENTS.md](AGENTS.md) for agents and the short version for
 humans, [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide,
