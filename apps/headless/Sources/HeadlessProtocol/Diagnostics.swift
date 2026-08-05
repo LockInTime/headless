@@ -152,7 +152,7 @@ public final class QADiagnosticStore: @unchecked Sendable {
             issue["suggestion"] = .string(suggestion)
             if let url { issue["url"] = .string(url) }
             if let status { issue["status"] = .number(status) }
-            if object["method"] != nil { issue["method"] = object["method"]! }
+            if let method = object["method"] { issue["method"] = method }
             if url != nil { issue["local"] = .bool(local) }
             return .object(issue)
         }

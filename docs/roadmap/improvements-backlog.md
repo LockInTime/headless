@@ -44,8 +44,11 @@ clean restart.
 `request.parameters["before"]!.stringValue!` on both hosts
 (`LinuxHost/main.swift:239-240`, `main.swift:1175-1176`). Safe only while
 `validate()` runs first; any future path that skips validation crashes the
-host and kills every session. Replace with guarded extraction returning
-`MISSING_PARAMETER`.
+host and kills every session. ~~Replace with guarded extraction returning
+`MISSING_PARAMETER`.~~ **Done** on both hosts, plus the nil-check-then-force-
+unwrap in `HP/Diagnostics.swift:155`. The validator makes these parameters
+required, so the guards are defence in depth; `ProtocolTests` now asserts that
+requirement so the guards can never become the only thing holding the path up.
 
 **A3. Oversized responses break the 1 MiB frame.** ([#14](https://github.com/LockInTime/headless/issues/14)) `qa report` can hold 500
 events × ~4 KiB ≈ 2 MB; `artifact.list` is unbounded. `encodeLine` throws
