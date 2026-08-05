@@ -12,8 +12,9 @@ that fixes them, and add the named missing test.
 
 **Every open item below is also a GitHub issue**, linked inline and labelled
 [`backlog`](https://github.com/LockInTime/headless/labels/backlog). Issues carry
-type/area/priority labels and sit in the milestone for their roadmap phase, so
-you can pick work up from either the tracker or this file. Keep both in sync:
+type/area/priority labels, sit in the milestone for their roadmap phase, and
+appear on the [Headless Roadmap board](https://github.com/orgs/LockInTime/projects/1),
+so you can pick work up from either the tracker or this file. Keep both in sync:
 when you fix an item, check it off here and close the issue in the same PR.
 
 ---
