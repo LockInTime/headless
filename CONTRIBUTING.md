@@ -29,7 +29,7 @@ architecture-decision entry **before** the implementation lands.
 ## Development setup
 
 ```sh
-pnpm install                 # workspace tooling (Node 20+, pnpm 9)
+pnpm install                 # workspace tooling (Node 22+, pnpm 9)
 pnpm test                    # protocol/security suite — needs a Swift toolchain
 pnpm test:runtime            # jsdom context-pruning suite — Node only
 pnpm test:e2e:linux          # Docker + sandboxed Chromium E2E
