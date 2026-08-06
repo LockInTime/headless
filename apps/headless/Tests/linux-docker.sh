@@ -8,9 +8,19 @@ EVIDENCE_ROOT="${HEADLESS_EVIDENCE_ROOT:-$PWD/build/qa-evidence}"
 mkdir -p "$EVIDENCE_ROOT"
 EVIDENCE_DIR="$(mktemp -d "$EVIDENCE_ROOT/linux.XXXXXX")"
 chmod 0777 "$EVIDENCE_DIR"
+# The container writes evidence as its own non-root user, which lands on the
+# host as an id this user cannot read. Which id to hand it back to depends on
+# how the daemon maps them: rootful Docker maps uid to uid, so the invoking
+# user's id is correct, while rootless maps container root to the invoking user
+# and every other container id to an unreadable subuid.
+if docker info --format '{{join .SecurityOptions ","}}' 2>/dev/null | grep -q rootless; then
+  EVIDENCE_OWNER="0:0"
+else
+  EVIDENCE_OWNER="$(id -u):$(id -g)"
+fi
 restore_evidence_owner() {
   docker run --rm --user root -v "$EVIDENCE_DIR:/evidence" \
-    headless-p1-test chown -R "$(id -u):$(id -g)" /evidence >/dev/null 2>&1 || true
+    headless-p1-test chown -R "$EVIDENCE_OWNER" /evidence >/dev/null 2>&1 || true
   chmod 0700 "$EVIDENCE_DIR" >/dev/null 2>&1 || true
 }
 file_mode() {
