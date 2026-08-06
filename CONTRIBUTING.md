@@ -43,6 +43,10 @@ Platform notes:
 - **Linux** builds need only Docker: `pnpm build:linux` compiles inside
   `swift:6.1-bookworm` and emits a tarball. Chromium must be non-Snap —
   the runtime rejects Snap launchers before starting, by design.
+- **Rootless Docker works**, including the E2E: Chromium's nested namespace
+  sandbox runs fine, and the harness detects the daemon mode so exported QA
+  evidence comes back owned by you. Nothing binds a host port, so the suites
+  cannot collide with other services on a shared machine.
 - `pnpm test:e2e:mac` opens real windows and mutates `com.headless.app` user
   defaults. Don't run it in a background session or on a machine where that
   matters.
