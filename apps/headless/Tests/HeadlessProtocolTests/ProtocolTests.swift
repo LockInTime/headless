@@ -350,6 +350,27 @@ struct ProtocolTests {
         }
     }
 
+    static func clientTimeoutsMatchCommandBounds() throws {
+        let longWait = try CLIParser().parse(["wait", "--timeout", "90000"])
+        try expect(
+            longWait.request.map { requestTimeout(for: $0) } == 95,
+            "wait timeout should include the five-second transport allowance"
+        )
+        let maximumWait = try CLIParser().parse(["wait", "--timeout", "120000"])
+        try expect(maximumWait.request.map { requestTimeout(for: $0) } == 125, "wait timeout should remain capped")
+        let shortWait = try CLIParser().parse(["wait", "--timeout", "100"])
+        try expect(shortWait.request.map { requestTimeout(for: $0) } == 10, "wait timeout should retain the transport minimum")
+
+        try expect(requestTimeout(for: CommandRequest(command: .tour)) == 125, "tour should use the long timeout")
+        try expect(
+            requestTimeout(for: CommandRequest(command: .screenshot, parameters: ["series": .string("viewport")])) == 125,
+            "screenshot series should use the long timeout"
+        )
+        try expect(requestTimeout(for: CommandRequest(command: .screenshot)) == 30, "single screenshots should get 30 seconds")
+        try expect(requestTimeout(for: CommandRequest(command: .recordStop)) == 30, "record stop should get 30 seconds")
+        try expect(requestTimeout(for: CommandRequest(command: .ping)) == 15, "ordinary commands should use the shared default")
+    }
+
     static func cliP1Artifacts() throws {
         let screenshot = try CLIParser().parse([
             "--session", "qa", "screenshot", "--role", "button", "--name", "Continue",
@@ -876,6 +897,7 @@ struct ProtocolTests {
             ("CLI conflicting target", cliRejectsConflictingClickTarget),
             ("CLI settled wait", cliWaitDefaultsToSettled),
             ("CLI timeout bound", cliRejectsUnboundedTimeout),
+            ("client timeout parity", clientTimeoutsMatchCommandBounds),
             ("CLI P1 artifacts", cliP1Artifacts),
             ("CLI P2 commands and boundaries", cliP2CommandsAndBoundaries),
             ("Chromium runtime selection", chromiumRuntimeSelection),

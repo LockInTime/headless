@@ -101,18 +101,6 @@ private enum HostLaunchError: Error, CustomStringConvertible {
     }
 }
 
-private func requestTimeout(_ request: CommandRequest) -> TimeInterval {
-    if let milliseconds = request.parameters["timeoutMs"]?.numberValue {
-        return min(125, max(10, milliseconds / 1_000 + 5))
-    }
-    if request.command == .tour { return 125 }
-    if request.command == .recordStop { return 30 }
-    if request.command == .screenshot {
-        return request.parameters["series"]?.stringValue == nil ? 30 : 125
-    }
-    return 15
-}
-
 do {
     let invocation = try CLIParser().parse(Array(CommandLine.arguments.dropFirst()))
     if let local = invocation.local {
@@ -137,10 +125,10 @@ do {
         let launcher = HostLauncher()
         let response: CommandResponse
         do {
-            response = try launcher.client.send(request, timeout: requestTimeout(request))
+            response = try launcher.client.send(request, timeout: requestTimeout(for: request))
         } catch LocalTransportError.connectionFailed where request.command != .ping && request.command != .shutdown {
             _ = try launcher.start()
-            response = try launcher.client.send(request, timeout: requestTimeout(request))
+            response = try launcher.client.send(request, timeout: requestTimeout(for: request))
         }
         try printResponse(response)
         if !response.ok { exit(1) }

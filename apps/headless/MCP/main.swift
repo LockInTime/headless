@@ -65,10 +65,8 @@ while let line = readLine() {
                 toolResult(id: id, text: "MCP accepts browser commands only; run `headless start` on the VM first.", isError: true)
                 continue
             }
-            let isLongScreenshot = command.command == .screenshot
-                && command.parameters["series"]?.stringValue != nil
             let response = try LocalSocketClient().send(
-                command, timeout: command.command == .tour || isLongScreenshot ? 125 : 30
+                command, timeout: requestTimeout(for: command)
             )
             let encoded = try ProtocolCodec.encoder.encode(response)
             toolResult(id: id, text: String(decoding: encoded, as: UTF8.self), isError: !response.ok)
