@@ -217,11 +217,14 @@ through it; `press` length enforced in bridge only on macOS
 (`BrowserProcess.swift:521`). Generate `capabilities` from code
 (`CLI.swift:648-682` is a hand-written literal today) and assert it.
 
-**B7. Runtime injection cost** ([#27](https://github.com/LockInTime/headless/issues/27)) — cache the isolated world / install runtime
+**B7. Runtime injection cost** ([#27](https://github.com/LockInTime/headless/issues/27)) — ~~cache the isolated world / install runtime
 per-navigation instead of per-call on both engines; extract the JS to a
 compiled resource. Spec in [architecture-decisions §10](architecture-decisions.md).
 (`BrowserProcess.swift:777-834`, `AgentBridge.swift:382-420`,
-`Tests/agent-runtime.test.mjs` regex extraction.)
+`Tests/agent-runtime.test.mjs` regex extraction.)~~ **Done:** both engines
+install the compiled JavaScript resource at document start, Linux caches and
+invalidates its isolated context with one stale-context retry, and release /
+installer paths carry the SwiftPM resource bundle.
 
 **B8. QA diagnostics bridge isolation (macOS).** ([#28](https://github.com/LockInTime/headless/issues/28)) Page-world injection is
 detectable/forgeable/spammable by a hostile page

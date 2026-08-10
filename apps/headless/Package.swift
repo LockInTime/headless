@@ -15,7 +15,10 @@ let package = Package(
         .library(name: "HeadlessProtocol", targets: ["HeadlessProtocol"]),
     ],
     targets: [
-        .target(name: "HeadlessProtocol"),
+        .target(
+            name: "HeadlessProtocol",
+            resources: [.process("Resources")]
+        ),
         .executableTarget(
             name: "HeadlessCLI",
             dependencies: ["HeadlessProtocol"]

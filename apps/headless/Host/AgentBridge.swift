@@ -4,7 +4,7 @@ import CoreFoundation
 import Foundation
 import WebKit
 
-private let agentWorld = WKContentWorld.world(name: "HeadlessAgent")
+let agentWorld = WKContentWorld.world(name: "HeadlessAgent")
 
 struct ScreenshotArtifactData {
     let data: Data
@@ -378,37 +378,57 @@ extension BrowserWindowController {
         arguments: [String: Any] = [:],
         timeout: TimeInterval = 10
     ) throws -> JSONValue {
-        let semaphore = DispatchSemaphore(value: 0)
-        let lock = NSLock()
-        var capturedResult: Result<Any, Error>?
-        DispatchQueue.main.async {
-            self.webView.callAsyncJavaScript(
-                agentRuntimeJavaScript + "\n" + agentEvaluationBody(body),
-                arguments: arguments,
-                in: nil,
-                in: agentWorld
-            ) { result in
-                lock.lock()
-                capturedResult = result.map { $0 as Any }
-                lock.unlock()
-                semaphore.signal()
+        func evaluate(_ source: String) throws -> JSONValue {
+            let semaphore = DispatchSemaphore(value: 0)
+            let lock = NSLock()
+            var capturedResult: Result<Any, Error>?
+            DispatchQueue.main.async {
+                self.webView.callAsyncJavaScript(
+                    source,
+                    arguments: arguments,
+                    in: nil,
+                    in: agentWorld
+                ) { result in
+                    lock.lock()
+                    capturedResult = result.map { $0 as Any }
+                    lock.unlock()
+                    semaphore.signal()
+                }
+            }
+            guard semaphore.wait(timeout: .now() + timeout) == .success else {
+                throw HostError(code: .timedOut, message: "Timed out while waiting for browser operation")
+            }
+            lock.lock()
+            let result = capturedResult
+            lock.unlock()
+            guard let result else {
+                throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
+            }
+            do {
+                return try unwrapAgentEvaluationResult(JSONValue.foundationValue(result.get()))
+            } catch let error as HostError {
+                throw error
+            } catch {
+                throw HostError(code: .operationFailed, message: String(describing: error))
             }
         }
-        guard semaphore.wait(timeout: .now() + timeout) == .success else {
-            throw HostError(code: .timedOut, message: "Timed out while waiting for browser operation")
+
+        let runtimeUnavailable = "Headless agent runtime is not installed in this document"
+        let guardedBody = """
+        if (!globalThis.__headlessAgent) {
+          const error = new Error('\(runtimeUnavailable)');
+          error.headlessCode = 'OPERATION_FAILED';
+          throw error;
         }
-        lock.lock()
-        let result = capturedResult
-        lock.unlock()
-        guard let result else {
-            throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
-        }
+        \(body)
+        """
         do {
-            return try unwrapAgentEvaluationResult(JSONValue.foundationValue(result.get()))
-        } catch let error as HostError {
-            throw error
-        } catch {
-            throw HostError(code: .operationFailed, message: String(describing: error))
+            return try evaluate(agentEvaluationBody(guardedBody))
+        } catch let error as HostError where error.code == .operationFailed && error.message == runtimeUnavailable {
+            // WKWebView can expose its initial about:blank document before
+            // document-start scripts run. Install once in that document, then
+            // subsequent calls use the cached isolated-world runtime.
+            return try evaluate(agentRuntimeJavaScript + "\n" + agentEvaluationBody(body))
         }
     }
 }

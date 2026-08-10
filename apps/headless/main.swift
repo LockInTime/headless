@@ -234,6 +234,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
         conf.userContentController.addUserScript(WKUserScript(
             source: webKitQAScript, injectionTime: .atDocumentStart, forMainFrameOnly: false
         ))
+        conf.userContentController.addUserScript(WKUserScript(
+            source: agentRuntimeJavaScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false,
+            in: agentWorld
+        ))
         if !hasPasskeyEntitlement {
             let hideWebAuthn = WKUserScript(
                 source: """
