@@ -11,6 +11,7 @@ apps/headless/build/
 apps/headless/.build/
 apps/web/.next/
 apps/web/build/
+apps/web/next-env.d.ts
 *.tsbuildinfo
 
 # Local QA evidence is generated on demand; reviewed evidence lives in docs/qa.

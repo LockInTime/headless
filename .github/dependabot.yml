@@ -28,6 +28,12 @@ updates:
         patterns: ["@types/*"]
       eslint:
         patterns: ["eslint", "@eslint/*"]
+    # eslint-config-next 16's bundled React/import/a11y plugins still declare
+    # ESLint 9 peer ranges and fail at runtime on ESLint 10. Remove this when
+    # the follow-up compatibility issue is closed.
+    ignore:
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
