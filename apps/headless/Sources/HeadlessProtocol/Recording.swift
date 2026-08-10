@@ -219,12 +219,14 @@ public final class BrowserRecording: @unchecked Sendable {
     /// Resolve only an absolute regular executable. Recording and visual
     /// comparison are local tools, but neither should be redirected by a
     /// page-controlled or inherited PATH entry.
-    public static func ffmpegExecutable() -> URL? {
-        let environment = ProcessInfo.processInfo.environment
-        let candidates = [
-            environment["HEADLESS_FFMPEG_EXECUTABLE"],
+    public static func ffmpegExecutable(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        systemCandidates: [String] = [
             "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg",
-        ].compactMap { $0 }
+        ]
+    ) -> URL? {
+        let candidates = [environment["HEADLESS_FFMPEG_EXECUTABLE"]].compactMap { $0 }
+            + systemCandidates
         let manager = FileManager.default
         for candidate in candidates where candidate.hasPrefix("/") {
             let executable = URL(fileURLWithPath: candidate).resolvingSymlinksInPath().standardizedFileURL

@@ -284,7 +284,10 @@ Artifact read boundaries, non-regular-file rejection, flow replay safety, and
 visual-comparison invocation are now covered as well. Runtime coverage now
 locks click/fill/press/scroll/state/tour behavior, unsafe-link rejection,
 screenshot-plan caps and 96 px deduplication, budget text fallback, and stale
-element-reference errors. Recording, transport, and host-specific gaps remain.
+element-reference errors. Recording coverage now locks every format/quality
+argument mapping, strict executable discovery, consecutive-failure aborts, and
+bounded stop timeouts; capabilities and oversized socket requests are covered.
+Peer-credential and host navigation/download classification gaps remain.
 
 **D3. Web CI:** ~~`next build` + eslint on PR (site can break invisibly today).~~
 **Done** — the `web` job in `ci.yml` runs `pnpm --filter @headless/web lint`

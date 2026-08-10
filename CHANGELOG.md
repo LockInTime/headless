@@ -33,6 +33,9 @@ Cutting that release is tracked in
 - Agent-runtime regression coverage for interaction commands, page state,
   tours, screenshot-plan bounds and deduplication, budget fallback, unsafe
   links, and stale element references.
+- Recording and transport regression coverage for every ffmpeg format/quality
+  mapping, executable discovery, capture-failure and stop bounds, capabilities
+  accuracy, and oversized Unix-socket requests.
 - Progressive context pruning: `inspect --context summary|outline|text|actions|full`
   with `--task` ranking, `--within @rN` scoping, and `--limit` / `--budget` /
   `--depth` bounds. Every focused response reports `contextStats` and `omitted`.
