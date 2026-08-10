@@ -992,17 +992,20 @@ struct ProtocolTests {
         }
 
         enum SyntheticInitialCaptureFailure: Error { case unavailable }
-        let initialFailureBegan = Date()
+        var initialCaptureAttempts = 0
         do {
             _ = try BrowserRecording(
                 outputURL: URL(fileURLWithPath: root + "/initial-failure.mp4"), fps: 8,
-                captureFrame: { throw SyntheticInitialCaptureFailure.unavailable }
+                captureFrame: {
+                    initialCaptureAttempts += 1
+                    throw SyntheticInitialCaptureFailure.unavailable
+                }
             )
             throw TestFailure(description: "an unavailable initial frame should fail recording startup")
         } catch RecordingError.captureFailed {
             try expect(
-                Date().timeIntervalSince(initialFailureBegan) < 2,
-                "recording startup should use short bounded backoff instead of busy-polling for three seconds"
+                initialCaptureAttempts == 6,
+                "recording startup should use six bounded attempts instead of polling for three seconds"
             )
         }
 
