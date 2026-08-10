@@ -110,7 +110,7 @@ jobs:
         run: ./apps/headless/Tests/linux-docker.sh
       - name: Upload QA evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-e2e-evidence
           path: apps/headless/build/qa-evidence
