@@ -159,9 +159,13 @@ collapse (verified line ranges): dispatch switches (`main.swift:949-1291` /
 gate, target validation (3 copies + JS), screenshot bounds, syscall shims
 (`Transport.swift:387-407` / `CDP.swift:278-288`).
 
-**B2. Typed errors end-to-end.** ([#22](https://github.com/LockInTime/headless/issues/22)) Replace `message.contains("ELEMENT_NOT_FOUND")`
+**B2. Typed errors end-to-end.** ([#22](https://github.com/LockInTime/headless/issues/22)) ~~Replace `message.contains("ELEMENT_NOT_FOUND")`
 string matching (both hosts; `Host/AgentBridge.swift:416-418`) with an error
-enum carrying the protocol code.
+enum carrying the protocol code.~~ **Done:** the isolated runtime assigns an
+allowlisted error code, WebKit and CDP return the same bounded JSON envelope,
+and both hosts propagate a shared `HostError` whose typed code owns the
+protocol response and recovery suggestion. Unknown page codes fail closed as
+`OPERATION_FAILED`; no host classifies human-readable error text.
 
 **B3. Single-source constants + drift tests.** ([#23](https://github.com/LockInTime/headless/issues/23)) Blocked/caution extensions
 exist in Swift (`HP/Protocol.swift:576-591`) and JS

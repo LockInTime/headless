@@ -1539,6 +1539,42 @@ struct ProtocolTests {
         try expect(buffer.popFirst() == Array("two".utf8), "second buffered CDP message changed")
     }
 
+    static func typedHostErrorsRoundTrip() throws {
+        let success = try unwrapAgentEvaluationResult(.object([
+            "__headlessAgentResult": .bool(true), "ok": .bool(true),
+            "value": .object(["clicked": .string("@e1")]),
+        ]))
+        try expect(
+            success == .object(["clicked": .string("@e1")]),
+            "agent result envelope should preserve successful values"
+        )
+
+        do {
+            _ = try unwrapAgentEvaluationResult(.object([
+                "__headlessAgentResult": .bool(true), "ok": .bool(false),
+                "error": .object([
+                    "code": .string("ELEMENT_NOT_FOUND"),
+                    "message": .string("reference expired"),
+                ]),
+            ]))
+            throw TestFailure(description: "typed agent error should throw")
+        } catch let error as HostError {
+            try expect(error.code == .elementNotFound, "agent error code should survive the engine boundary")
+            try expect(error.message == "reference expired", "agent error message should survive the engine boundary")
+            try expect(error.suggestion?.contains("inspect --interactive") == true, "typed error should own its suggestion")
+        }
+
+        do {
+            _ = try unwrapAgentEvaluationResult(.object([
+                "__headlessAgentResult": .bool(true), "ok": .bool(false),
+                "error": .object(["code": .string("PAGE_DEFINED_CODE"), "message": .string("failed")]),
+            ]))
+            throw TestFailure(description: "unknown agent error should throw")
+        } catch let error as HostError {
+            try expect(error.code == .operationFailed, "unknown error codes must fail closed")
+        }
+    }
+
     static func main() {
         if CommandLine.arguments.count == 3,
            CommandLine.arguments[1] == "--peer-denied-client" {
@@ -1600,6 +1636,7 @@ struct ProtocolTests {
             ("oversized socket request", oversizedSocketRequestIsRejected),
             ("different peer uid", differentPeerUserIsRejected),
             ("incremental NUL message buffering", nullTerminatedBufferScansIncrementally),
+            ("typed host errors", typedHostErrorsRoundTrip),
         ]
 
         var failures = 0
