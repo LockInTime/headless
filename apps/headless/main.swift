@@ -818,15 +818,10 @@ private func onAgentMain<T>(_ body: @escaping () -> T) -> T {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var controllers: [BrowserWindowController] = []
     private let agentServer = LocalSocketServer()
-    private var agentSessions: [String: BrowserWindowController] = [:]
-    private var agentTrace: [String: [JSONValue]] = [:]
-    private var activeFlows: [String: [RecordedFlowStep]] = [:]
-    private var recordings: [String: BrowserRecording] = [:]
-    private let recordingsLock = NSLock()
-    private var artifacts: ArtifactStore?
-    private let traceStartedAt = ProcessInfo.processInfo.systemUptime
+    private var hostCore: HostCore<WebKitBrowserEngine>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let artifacts: ArtifactStore
         do { artifacts = try ArtifactStore() }
         catch {
             fputs("headless: artifact directory failed: \(error)\n", stderr)
@@ -842,17 +837,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return URL(string: value)
         }()
         let url = isAgentHost ? nil : launchOptions.url ?? restoredStartupURL
-        openWindow(
+        let primaryController = openWindow(
             url: url,
             restoredStartupURL: restoredStartupURL,
             size: launchOptions.size,
             snap: launchOptions.snap,
-            isPrimary: true,
-            sessionName: "default"
+            isPrimary: true
         )
+        let engine = WebKitBrowserEngine(
+            create: { [weak self] in
+                guard let self else {
+                    throw HostError(code: .operationFailed, message: "Headless host is stopping.")
+                }
+                return onAgentMain { self.openWindow(url: nil) }
+            },
+            close: { controller in onAgentMain { controller.close() } }
+        )
+        let core = HostCore(
+            engine: engine,
+            artifacts: artifacts,
+            defaultSession: primaryController,
+            shutdownHandler: { DispatchQueue.main.async { NSApp.terminate(nil) } }
+        )
+        hostCore = core
         do {
             try agentServer.start { [weak self] request in
-                self?.handleAgentRequest(request) ?? CommandResponse.failure(
+                self?.hostCore?.handle(request) ?? CommandResponse.failure(
                     id: request.id, code: "HOST_STOPPING", message: "Headless host is stopping."
                 )
             }
@@ -875,8 +885,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         restoredStartupURL: URL? = nil,
         size: NSSize? = nil,
         snap: SnapJob? = nil,
-        isPrimary: Bool = false,
-        sessionName: String? = nil
+        isPrimary: Bool = false
     ) -> BrowserWindowController {
         let controller = BrowserWindowController(
             url: url,
@@ -888,22 +897,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onClose = { [weak self, weak controller] in
             guard let self, let controller else { return }
             self.controllers.removeAll { $0 === controller }
-            let closedSessions = self.agentSessions.compactMap { $0.value === controller ? $0.key : nil }
-            for session in closedSessions {
-                self.agentSessions.removeValue(forKey: session)
-                self.agentTrace.removeValue(forKey: session)
-                self.activeFlows.removeValue(forKey: session)
-            }
-            let stoppedRecordings = closedSessions.compactMap { self.takeRecording(for: $0) }
-            DispatchQueue.global(qos: .utility).async {
-                for recording in stoppedRecordings { _ = try? recording.stop(timeout: 5) }
-            }
+            self.hostCore?.sessionDidClose(controller)
         }
         controllers.append(controller)
-        if let sessionName {
-            agentSessions[sessionName] = controller
-            agentTrace[sessionName] = []
-        }
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
         return controller
@@ -917,437 +913,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
     func applicationWillTerminate(_ notification: Notification) {
-        for recording in takeAllRecordings() { _ = try? recording.stop(timeout: 5) }
+        hostCore?.stop()
         agentServer.stop()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls { openWindow(url: url) }
-    }
-
-    private func captureScreenshotSeries(
-        controller: BrowserWindowController,
-        parameters: [String: JSONValue]
-    ) throws -> JSONValue {
-        guard let artifacts else { throw ArtifactError.invalidRoot }
-        let mode = parameters["series"]?.stringValue ?? "viewport"
-        let format = try screenshotFormat(
-            explicit: parameters["format"]?.stringValue,
-            output: nil
-        )
-        let rawPlan = try controller.agentScreenshotSeriesPlan(mode: mode)
-        let plan = try parseScreenshotSeriesPlan(rawPlan)
-        let points = plan.points
-        let prefix = try screenshotSeriesPrefix(parameters: parameters, mode: mode)
-        defer { _ = try? controller.agentScrollToCapturePoint(y: plan.initialY) }
-        let reserved = try reserveScreenshotSeriesArtifacts(
-            store: artifacts, points: points, prefix: prefix, mode: mode, format: format
-        )
-        do {
-            let metadata = try points.enumerated().map { index, point -> JSONValue in
-                _ = try controller.agentScrollToCapturePoint(y: point.y)
-                let data = try controller.agentScreenshotData(
-                    parameters: [:], format: format, copyToClipboard: false
-                ).data
-                return try artifacts.writeReserved(data, to: reserved[index])
-            }
-            return screenshotSeriesSummary(
-                mode: mode, points: points, artifacts: metadata,
-                truncated: plan.truncated, totalPoints: plan.totalPoints
-            )
-        } catch {
-            artifacts.discardReserved(reserved)
-            throw error
-        }
-    }
-
-    // MARK: Agent protocol
-
-    private func handleAgentRequest(_ request: CommandRequest) -> CommandResponse {
-        if request.command == .ping {
-            return .success(id: request.id, result: .object([
-                "ready": .bool(true),
-                "pid": .number(Double(ProcessInfo.processInfo.processIdentifier)),
-                "engine": .string("webkit"),
-                "platform": .string("macos"),
-                "protocolVersion": .string(headlessProtocolVersion),
-                "recordingAvailable": .bool(BrowserRecording.isAvailable()),
-                "artifactDirectory": .string(artifacts?.rootURL.path ?? ""),
-            ]))
-        }
-        if request.command == .shutdown {
-            DispatchQueue.main.async { NSApp.terminate(nil) }
-            return .success(id: request.id, result: .object(["stopping": .bool(true)]))
-        }
-
-        switch request.command {
-        case .artifactList:
-            do {
-                guard let artifacts else { throw ArtifactError.invalidRoot }
-                return .success(id: request.id, result: try artifacts.list())
-            } catch {
-                return failure(request, code: "ARTIFACT_ERROR", message: String(describing: error))
-            }
-        case .sessionCreate:
-            guard let name = request.parameters["name"]?.stringValue else {
-                return failure(request, code: "MISSING_PARAMETER", message: "Session name is required.")
-            }
-            do {
-                try validateIdentifier(name, field: "session")
-            } catch {
-                return failure(request, code: "INVALID_SESSION", message: String(describing: error))
-            }
-            return onAgentMain {
-                if self.agentSessions[name] != nil {
-                    return self.failure(request, code: "SESSION_EXISTS", message: "Session already exists: \(name)")
-                }
-                let controller = self.openWindow(url: nil, sessionName: name)
-                controller.enableAgentControl()
-                self.recordTrace(command: request.command, session: name)
-                return .success(id: request.id, result: .object(["session": .string(name)]))
-            }
-        case .sessionList:
-            return onAgentMain {
-                let sessions = self.agentSessions.keys.sorted().map { JSONValue.string($0) }
-                return .success(id: request.id, result: .object(["sessions": .array(sessions)]))
-            }
-        case .sessionClose:
-            let name = request.session ?? "default"
-            guard let controller = onAgentMain({ self.agentSessions[name] }) else {
-                return missingSession(request, name)
-            }
-            let recording = takeRecording(for: name)
-            onAgentMain {
-                self.agentSessions.removeValue(forKey: name)
-                self.agentTrace.removeValue(forKey: name)
-                self.activeFlows.removeValue(forKey: name)
-                controller.close()
-            }
-            if let recording { _ = try? recording.stop(timeout: 5) }
-            return .success(id: request.id, result: .object(["closed": .string(name)]))
-        default:
-            break
-        }
-
-        let session = request.session ?? "default"
-        guard let controller = onAgentMain({ self.agentSessions[session] }) else {
-            return missingSession(request, session)
-        }
-        onAgentMain { controller.enableAgentControl() }
-
-        do {
-            let result: JSONValue
-            switch request.command {
-            case .visit:
-                guard let value = request.parameters["url"]?.stringValue else {
-                    return failure(request, code: "MISSING_PARAMETER", message: "URL is required.")
-                }
-                result = try controller.agentVisit(normalizedWebURL(value))
-            case .inspect:
-                result = try controller.agentInspect(parameters: request.parameters)
-            case .click:
-                result = try controller.agentClick(parameters: request.parameters)
-            case .fill:
-                result = try controller.agentFill(parameters: request.parameters)
-            case .press:
-                result = try controller.agentPress(parameters: request.parameters)
-            case .scroll:
-                result = try controller.agentScroll(parameters: request.parameters)
-            case .wait:
-                result = try controller.agentWait(parameters: request.parameters)
-            case .tour:
-                result = try controller.agentTour(parameters: request.parameters)
-            case .captureInfo:
-                let info = try controller.agentCaptureInfo()
-                let trace = onAgentMain { self.agentTrace[session] ?? [] }
-                if case .object(var object) = info {
-                    object["trace"] = .array(trace)
-                    object["recording"] = recording(for: session)?.status() ?? .object(["active": .bool(false)])
-                    result = .object(object)
-                } else {
-                    result = info
-                }
-            case .back:
-                onAgentMain { _ = controller.webView.goBack() }
-                result = try controller.agentWait(parameters: ["settled": .bool(true)])
-            case .reload:
-                _ = onAgentMain { controller.webView.reload() }
-                result = try controller.agentWait(parameters: ["settled": .bool(true)])
-            case .screenshot:
-                guard let artifacts else { throw ArtifactError.invalidRoot }
-                if request.parameters["series"]?.stringValue != nil {
-                    result = try captureScreenshotSeries(controller: controller, parameters: request.parameters)
-                } else {
-                    let format = try screenshotFormat(
-                        explicit: request.parameters["format"]?.stringValue,
-                        output: request.parameters["output"]?.stringValue
-                    )
-                    let artifact = try controller.agentScreenshotData(
-                        parameters: request.parameters,
-                        format: format,
-                        copyToClipboard: request.parameters["clipboard"]?.boolValue ?? false
-                    )
-                    var metadata = try artifacts.write(
-                        artifact.data, requestedName: request.parameters["output"]?.stringValue,
-                        extension: artifactExtension(request.parameters["output"]?.stringValue ?? "") ?? format.fileExtension,
-                        prefix: "screenshot-\(session)"
-                    )
-                    if artifact.clipboardCopied {
-                        metadata = merge(metadata, with: .object(["clipboard": .bool(true)]))
-                    }
-                    result = metadata
-                }
-            case .recordStart:
-                guard recording(for: session) == nil else { throw RecordingError.alreadyActive }
-                guard let artifacts else { throw ArtifactError.invalidRoot }
-                let format = try recordingFormat(
-                    explicit: request.parameters["format"]?.stringValue,
-                    output: request.parameters["output"]?.stringValue
-                )
-                let quality = try RecordingQuality.parse(request.parameters["quality"]?.stringValue ?? "balanced")
-                let output = try artifacts.reserve(
-                    requestedName: request.parameters["output"]?.stringValue,
-                    extension: format.fileExtension, prefix: "recording-\(session)"
-                )
-                let fps = request.parameters["fps"]?.numberValue ?? 10
-                var startedRecording: BrowserRecording?
-                do {
-                    let recording = try BrowserRecording(
-                        outputURL: output, fps: fps, format: format, quality: quality
-                    ) { [weak controller] in
-                        guard let controller else { throw RecordingError.captureFailed("session closed") }
-                        return try controller.agentScreenshot(parameters: [:])
-                    }
-                    startedRecording = recording
-                    try storeRecording(recording, for: session)
-                } catch {
-                    if let startedRecording { _ = try? startedRecording.stop(timeout: 5) }
-                    try? FileManager.default.removeItem(at: output)
-                    throw error
-                }
-                guard let recording = startedRecording else { throw RecordingError.captureFailed("recorder did not start") }
-                result = recording.status()
-            case .recordStatus:
-                result = recording(for: session)?.status() ?? .object(["active": .bool(false)])
-            case .recordStop:
-                guard let activeRecording = recording(for: session) else {
-                    throw RecordingError.notActive
-                }
-                guard let artifacts else { throw ArtifactError.invalidRoot }
-                if let output = request.parameters["output"]?.stringValue,
-                   let actual = artifactExtension(output),
-                   actual != activeRecording.format.fileExtension {
-                    throw CaptureFormatError.mismatchedOutputFormat(
-                        expected: activeRecording.format.fileExtension,
-                        actual: actual
-                    )
-                }
-                guard let recording = takeRecording(for: session) else { throw RecordingError.notActive }
-                let status: JSONValue
-                do { status = try recording.stop() }
-                catch {
-                    try? FileManager.default.removeItem(at: recording.outputURL)
-                    throw error
-                }
-                let artifact = try artifacts.finalize(
-                    recording.outputURL, renameTo: request.parameters["output"]?.stringValue
-                )
-                result = merge(status, with: artifact)
-            case .qaReport:
-                result = controller.agentQAReport()
-            case .qaClear:
-                result = controller.agentQAClear()
-            case .consoleList:
-                result = controller.agentConsole(
-                    level: request.parameters["level"]?.stringValue ?? "all",
-                    limit: Int(request.parameters["limit"]?.numberValue ?? 100)
-                )
-            case .networkList:
-                result = controller.agentNetwork(
-                    failedOnly: request.parameters["failed"]?.boolValue ?? false,
-                    status: request.parameters["status"]?.numberValue.map(Int.init),
-                    limit: Int(request.parameters["limit"]?.numberValue ?? 100)
-                )
-            case .networkGet:
-                guard let requestID = request.parameters["requestId"]?.stringValue else {
-                    return failure(request, code: "MISSING_PARAMETER", message: "Network request ID is required.")
-                }
-                result = controller.agentNetworkDetail(requestID: requestID)
-            case .stylesGet:
-                result = try controller.agentStyles(parameters: request.parameters)
-            case .cookiesList:
-                result = try controller.agentCookies(
-                    includeValues: request.parameters["includeValues"]?.boolValue ?? false
-                )
-            case .storageList:
-                result = try controller.agentStorage(
-                    scope: request.parameters["scope"]?.stringValue ?? "all",
-                    includeValues: request.parameters["includeValues"]?.boolValue ?? false
-                )
-            case .performanceGet:
-                result = try controller.agentPerformance()
-            case .animationList:
-                result = try controller.agentAnimations()
-            case .visualCompare:
-                guard let before = request.parameters["before"]?.stringValue else {
-                    return failure(request, code: "MISSING_PARAMETER", message: "Before artifact name is required.")
-                }
-                guard let after = request.parameters["after"]?.stringValue else {
-                    return failure(request, code: "MISSING_PARAMETER", message: "After artifact name is required.")
-                }
-                guard let artifacts else { throw ArtifactError.invalidRoot }
-                _ = try artifacts.read(name: before, expectedExtension: "png", maximumBytes: 100 * 1_024 * 1_024)
-                _ = try artifacts.read(name: after, expectedExtension: "png", maximumBytes: 100 * 1_024 * 1_024)
-                let difference = try artifacts.reserve(
-                    requestedName: request.parameters["output"]?.stringValue,
-                    extension: "png", prefix: "difference-\(session)"
-                )
-                let comparison = try VisualComparison.compare(
-                    before: artifacts.rootURL.appendingPathComponent(before),
-                    after: artifacts.rootURL.appendingPathComponent(after), difference: difference
-                )
-                result = merge(comparison, with: try artifacts.finalize(difference, renameTo: nil))
-            case .reportCreate:
-                guard let artifacts else { throw ArtifactError.invalidRoot }
-                let report: JSONValue = .object([
-                    "format": .string("headless-qa-report-v1"),
-                    "createdAt": .number(Date().timeIntervalSince1970),
-                    "session": .string(session),
-                    "page": try controller.agentCaptureInfo(),
-                    "qa": controller.agentQAReport(),
-                    "trace": .array(onAgentMain { self.agentTrace[session] ?? [] }),
-                    "artifacts": try artifacts.list(),
-                    "security": .object(["sensitiveValuesIncluded": .bool(false), "transport": .string("local-unix-socket")]),
-                ])
-                let data = try ProtocolCodec.encoder.encode(report)
-                result = try artifacts.write(data, requestedName: request.parameters["output"]?.stringValue,
-                                             extension: "json", prefix: "qa-report-\(session)")
-            case .flowStart:
-                onAgentMain { self.activeFlows[session] = [] }
-                result = .object(["recording": .bool(true), "note": .string("Only safe navigation actions are recorded; typed values and credentials are never stored.")])
-            case .flowStop:
-                guard let artifacts else { throw ArtifactError.invalidRoot }
-                let steps = onAgentMain { self.activeFlows.removeValue(forKey: session) ?? [] }
-                let data = try ProtocolCodec.encoder.encode(RecordedFlow(commands: steps))
-                result = try artifacts.write(data, requestedName: request.parameters["output"]?.stringValue,
-                                             extension: "json", prefix: "flow-\(session)")
-            case .flowRun:
-                guard let input = request.parameters["input"]?.stringValue else { return failure(request, code: "MISSING_PARAMETER", message: "Flow input is required.") }
-                guard let artifacts else { throw ArtifactError.invalidRoot }
-                let flow = try ProtocolCodec.decoder.decode(RecordedFlow.self, from: artifacts.read(name: input, expectedExtension: "json", maximumBytes: 1_024 * 1_024))
-                guard flow.version == 1, flow.commands.count <= 200,
-                      flow.commands.allSatisfy({ replayableFlowCommands.contains($0.command) }) else {
-                    return failure(request, code: "INVALID_FLOW", message: "Flow contains unsupported commands.")
-                }
-                var completed = 0
-                for step in flow.commands {
-                    try CommandRequest(command: step.command, session: session, parameters: step.parameters).validate()
-                    let response = handleAgentRequest(CommandRequest(command: step.command, session: session, parameters: step.parameters))
-                    guard response.ok else {
-                        return failure(request, code: "FLOW_FAILED", message: "Step \(completed + 1) (\(step.command.rawValue)) failed: \(response.error?.message ?? "unknown error")")
-                    }
-                    completed += 1
-                }
-                result = .object(["completed": .number(Double(completed)), "input": .string(input)])
-            case .networkEmulate, .networkMockSet, .networkMockClear:
-                return failure(request, code: "UNSUPPORTED_CAPABILITY", message: "Network simulation and request mocking require the Chromium CDP host on Linux.", suggestion: "Use the Linux runtime for controlled CDP network emulation; no partial WebKit interception is exposed.")
-            case .ping, .shutdown, .sessionCreate, .sessionList, .sessionClose, .artifactList:
-                return failure(request, code: "INVALID_COMMAND", message: "Command is not valid in this context.")
-            }
-            onAgentMain {
-                self.recordTrace(command: request.command, session: session, result: result)
-                if let step = flowStepIfSafe(command: request.command, parameters: request.parameters), self.activeFlows[session] != nil {
-                    if (self.activeFlows[session]?.count ?? 0) < 200 { self.activeFlows[session]?.append(step) }
-                }
-            }
-            return .success(id: request.id, result: result)
-        } catch let error as HostError {
-            return failure(
-                request, code: error.code.rawValue, message: error.message,
-                suggestion: error.suggestion
-            )
-        } catch let error as ProtocolValidationError {
-            if case .unsafeResourceType = error {
-                return failure(request, code: "UNSAFE_RESOURCE_TYPE", message: error.description,
-                               suggestion: "Executable files, installers, scripts, and disk images are blocked. Use normal web pages or media only.")
-            }
-            return failure(request, code: "INVALID_URL", message: error.description)
-        } catch let error as CaptureFormatError {
-            return failure(request, code: "INVALID_CAPTURE_FORMAT", message: error.description)
-        } catch let error as RecordingError {
-            let code: String
-            let suggestion: String?
-            switch error {
-            case .unavailable:
-                code = "RECORDER_UNAVAILABLE"
-                suggestion = "Install FFmpeg or set HEADLESS_FFMPEG_EXECUTABLE."
-            case .alreadyActive: code = "RECORDING_ACTIVE"; suggestion = nil
-            case .notActive: code = "RECORDING_NOT_ACTIVE"; suggestion = nil
-            default: code = "RECORDING_FAILED"; suggestion = nil
-            }
-            return failure(request, code: code, message: error.description, suggestion: suggestion)
-        } catch let error as ArtifactError {
-            return failure(request, code: "ARTIFACT_ERROR", message: error.description)
-        } catch {
-            return failure(request, code: "INTERNAL_ERROR", message: String(describing: error))
-        }
-    }
-
-    private func recordTrace(command: CommandName, session: String, result: JSONValue? = nil) {
-        var event: [String: JSONValue] = [
-            "time": .number(ProcessInfo.processInfo.systemUptime - traceStartedAt),
-            "command": .string(command.rawValue),
-        ]
-        if case .object(let object) = result, let url = object["url"]?.stringValue {
-            event["url"] = .string(String(decoding: url.utf8.prefix(2_048), as: UTF8.self))
-        }
-        var entries = agentTrace[session] ?? []
-        entries.append(.object(event))
-        if entries.count > 256 { entries.removeFirst(entries.count - 256) }
-        agentTrace[session] = entries
-    }
-
-    private func recording(for session: String) -> BrowserRecording? {
-        recordingsLock.lock(); defer { recordingsLock.unlock() }
-        return recordings[session]
-    }
-
-    private func storeRecording(_ recording: BrowserRecording, for session: String) throws {
-        recordingsLock.lock(); defer { recordingsLock.unlock() }
-        guard recordings[session] == nil else { throw RecordingError.alreadyActive }
-        recordings[session] = recording
-    }
-
-    private func takeRecording(for session: String) -> BrowserRecording? {
-        recordingsLock.lock(); defer { recordingsLock.unlock() }
-        return recordings.removeValue(forKey: session)
-    }
-
-    private func takeAllRecordings() -> [BrowserRecording] {
-        recordingsLock.lock(); defer { recordingsLock.unlock() }
-        let active = Array(recordings.values)
-        recordings.removeAll()
-        return active
-    }
-
-    private func missingSession(_ request: CommandRequest, _ name: String) -> CommandResponse {
-        failure(request, code: "SESSION_NOT_FOUND", message: "Session does not exist: \(name)",
-                suggestion: "Run `headless session create \(name)`." )
-    }
-
-    private func failure(
-        _ request: CommandRequest,
-        code: String,
-        message: String,
-        suggestion: String? = nil
-    ) -> CommandResponse {
-        .failure(id: request.id, code: code, message: message, suggestion: suggestion)
-    }
-
-    private func merge(_ first: JSONValue, with second: JSONValue) -> JSONValue {
-        guard case .object(var result) = first, case .object(let extra) = second else { return second }
-        result.merge(extra) { _, new in new }
-        return .object(result)
     }
 
     // MARK: Menu

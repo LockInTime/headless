@@ -66,6 +66,9 @@ Cutting that release is tracked in
 
 ### Changed
 
+- macOS WebKit and Linux Chromium now share one `HostCore` dispatcher and
+  lifecycle implementation behind small engine adapters, eliminating the two
+  divergent copies of flow, capture, recording, report, trace, and error logic.
 - Protocol 0.5 marks diagnostic reports, events, derived issues, console
   messages, and network evidence as untrusted page content. The macOS
   page-world observer now has host-owned provenance and a per-document cap.

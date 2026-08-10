@@ -7,6 +7,11 @@ public enum HostErrorCode: String, Sendable {
     case unsafeNavigation = "UNSAFE_NAVIGATION"
     case unsafeResourceType = "UNSAFE_RESOURCE_TYPE"
     case sensitiveDiagnosticsDisabled = "SENSITIVE_DIAGNOSTICS_DISABLED"
+    case unsupportedCapability = "UNSUPPORTED_CAPABILITY"
+    case missingParameter = "MISSING_PARAMETER"
+    case invalidFlow = "INVALID_FLOW"
+    case flowFailed = "FLOW_FAILED"
+    case invalidCommand = "INVALID_COMMAND"
     case operationFailed = "OPERATION_FAILED"
 }
 
@@ -37,6 +42,10 @@ public struct HostError: Error, CustomStringConvertible, Sendable {
             return "Executable files, installers, scripts, and disk images are blocked."
         case .sensitiveDiagnosticsDisabled:
             return "Restart the host with HEADLESS_ALLOW_SENSITIVE_DIAGNOSTICS=1 only when cookie or storage values are required."
+        case .unsupportedCapability:
+            return "Use an engine that declares support for this capability."
+        case .missingParameter, .invalidFlow, .flowFailed, .invalidCommand:
+            return nil
         case .operationFailed:
             return nil
         }

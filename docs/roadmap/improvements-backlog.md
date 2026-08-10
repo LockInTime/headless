@@ -147,7 +147,7 @@ enforces web-only navigation in manual as well as agent-controlled use.
 
 ## §B — Structure & contract (Phase 2)
 
-**B1. HostCore extraction** ([#21](https://github.com/LockInTime/headless/issues/21)) — the headline refactor; full spec in
+**B1. HostCore extraction** ([#21](https://github.com/LockInTime/headless/issues/21)) — ~~the headline refactor; full spec in
 [architecture-decisions §3](architecture-decisions.md). Duplicated pairs to
 collapse (verified line ranges): dispatch switches (`main.swift:949-1291` /
 `LinuxHost/main.swift:65-343`), screenshot-series loops (`main.swift:911-945`
@@ -157,7 +157,12 @@ collapse (verified line ranges): dispatch switches (`main.swift:949-1291` /
 `LinuxHost/main.swift:250-261` — shapes already diverged), error ladders
 (`main.swift:1243-1290` / `LinuxHost/main.swift:293-342`), sensitive-diag
 gate, target validation (3 copies + JS), screenshot bounds, syscall shims
-(`Transport.swift:387-407` / `CDP.swift:278-288`).
+(`Transport.swift:387-407` / `CDP.swift:278-288`).~~ **Done:** `HostCore` now
+owns the dispatcher, lifecycle state, flows, traces, captures, recordings,
+reports, artifacts, and common error mapping. Thin WebKit and Chromium
+adapters implement one `BrowserEngineSession` contract, with a fake-engine
+protocol test locking the shared path. Element-target conversion, the
+sensitive-diagnostics gate, and screenshot safety bounds are shared as well.
 
 **B2. Typed errors end-to-end.** ([#22](https://github.com/LockInTime/headless/issues/22)) ~~Replace `message.contains("ELEMENT_NOT_FOUND")`
 string matching (both hosts; `Host/AgentBridge.swift:416-418`) with an error

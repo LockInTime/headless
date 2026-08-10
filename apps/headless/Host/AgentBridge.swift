@@ -38,12 +38,12 @@ extension BrowserWindowController {
     }
 
     func agentClick(parameters: [String: JSONValue]) throws -> JSONValue {
-        let args = try targetArguments(parameters)
+        let args = try browserTargetArguments(parameters)
         return try callAgent("return globalThis.__headlessAgent.click(args);", arguments: ["args": args])
     }
 
     func agentFill(parameters: [String: JSONValue]) throws -> JSONValue {
-        var args = try targetArguments(parameters)
+        var args = try browserTargetArguments(parameters)
         guard let value = parameters["value"]?.stringValue else {
             throw HostError(code: .operationFailed, message: "Missing command parameter: value")
         }
@@ -150,7 +150,7 @@ extension BrowserWindowController {
         var requestedRect: CGRect?
         let hasTarget = parameters["target"] != nil || parameters["role"] != nil || parameters["name"] != nil
         if hasTarget {
-            let args = try targetArguments(parameters)
+            let args = try browserTargetArguments(parameters)
             let value = try callAgent(
                 "return globalThis.__headlessAgent.rectangle(args);", arguments: ["args": args]
             )
@@ -271,7 +271,7 @@ extension BrowserWindowController {
     }
 
     func agentStyles(parameters: [String: JSONValue]) throws -> JSONValue {
-        let args = try targetArguments(parameters)
+        let args = try browserTargetArguments(parameters)
         var input = args
         if case .array(let properties)? = parameters["properties"] {
             input["properties"] = properties.compactMap(\.stringValue)
@@ -280,7 +280,7 @@ extension BrowserWindowController {
     }
 
     func agentStorage(scope: String, includeValues: Bool) throws -> JSONValue {
-        try requireSensitiveDiagnosticsIfNeeded(includeValues)
+        try requireSensitiveDiagnosticsAccess(if: includeValues)
         return try callAgent(
             "return globalThis.__headlessAgent.storage(args);",
             arguments: ["args": ["scope": scope, "includeValues": includeValues]]
@@ -296,7 +296,7 @@ extension BrowserWindowController {
     }
 
     func agentCookies(includeValues: Bool) throws -> JSONValue {
-        try requireSensitiveDiagnosticsIfNeeded(includeValues)
+        try requireSensitiveDiagnosticsAccess(if: includeValues)
         let semaphore = DispatchSemaphore(value: 0)
         let lock = NSLock()
         var result: [HTTPCookie] = []
@@ -339,38 +339,12 @@ extension BrowserWindowController {
         ])
     }
 
-    private func requireSensitiveDiagnosticsIfNeeded(_ requested: Bool) throws {
-        guard !requested || ProcessInfo.processInfo.environment["HEADLESS_ALLOW_SENSITIVE_DIAGNOSTICS"] == "1" else {
-            throw HostError(code: .sensitiveDiagnosticsDisabled, message: "Sensitive diagnostic values are disabled.")
-        }
-    }
-
     private func screenshotRect(_ object: [String: JSONValue]) throws -> CGRect {
-        guard let x = object["x"]?.numberValue, let y = object["y"]?.numberValue,
-              let width = object["width"]?.numberValue, let height = object["height"]?.numberValue,
-              x.isFinite, y.isFinite, width.isFinite, height.isFinite,
-              width > 0, height > 0, width <= 16_384, height <= 16_384,
-              width * height <= 64_000_000 else {
-            throw HostError(code: .operationFailed, message: "Screenshot dimensions exceed safety limits")
-        }
-        return CGRect(x: x, y: y, width: width, height: height)
-    }
-
-    private func targetArguments(_ parameters: [String: JSONValue]) throws -> [String: Any] {
-        var args: [String: Any] = [:]
-        if let target = parameters["target"]?.stringValue {
-            guard target.hasPrefix("@e"), target.count <= 16 else {
-                throw HostError(code: .operationFailed, message: "Invalid element reference")
-            }
-            args["target"] = target
-        } else {
-            if let role = parameters["role"]?.stringValue { args["role"] = role }
-            if let name = parameters["name"]?.stringValue { args["name"] = name }
-            guard !args.isEmpty else {
-                throw HostError(code: .operationFailed, message: "Missing command parameter: target")
-            }
-        }
-        return args
+        let rectangle = try BoundedScreenshotRectangle(object)
+        return CGRect(
+            x: rectangle.x, y: rectangle.y,
+            width: rectangle.width, height: rectangle.height
+        )
     }
 
     private func callAgent(
@@ -431,6 +405,104 @@ extension BrowserWindowController {
             return try evaluate(agentRuntimeJavaScript + "\n" + agentEvaluationBody(body))
         }
     }
+}
+
+final class WebKitBrowserEngine: BrowserEngine {
+    typealias Session = BrowserWindowController
+
+    let name = "webkit"
+    let platform = "macos"
+    private let create: () throws -> BrowserWindowController
+    private let close: (BrowserWindowController) -> Void
+    private let stopEngine: () -> Void
+
+    init(
+        create: @escaping () throws -> BrowserWindowController,
+        close: @escaping (BrowserWindowController) -> Void,
+        stop: @escaping () -> Void = {}
+    ) {
+        self.create = create
+        self.close = close
+        self.stopEngine = stop
+    }
+
+    func createSession() throws -> BrowserWindowController { try create() }
+    func closeSession(_ session: BrowserWindowController) { close(session) }
+    func stop() { stopEngine() }
+}
+
+extension BrowserWindowController: BrowserEngineSession {
+    func hostEnableAgentControl() { onMain { self.enableAgentControl() } }
+    func hostVisit(_ url: URL) throws -> JSONValue { try agentVisit(url) }
+    func hostInspect(parameters: [String: JSONValue]) throws -> JSONValue {
+        try agentInspect(parameters: parameters)
+    }
+    func hostClick(parameters: [String: JSONValue]) throws -> JSONValue {
+        try agentClick(parameters: parameters)
+    }
+    func hostFill(parameters: [String: JSONValue]) throws -> JSONValue {
+        try agentFill(parameters: parameters)
+    }
+    func hostPress(parameters: [String: JSONValue]) throws -> JSONValue {
+        try agentPress(parameters: parameters)
+    }
+    func hostScroll(parameters: [String: JSONValue]) throws -> JSONValue {
+        try agentScroll(parameters: parameters)
+    }
+    func hostWait(parameters: [String: JSONValue]) throws -> JSONValue {
+        try agentWait(parameters: parameters)
+    }
+    func hostTour(parameters: [String: JSONValue]) throws -> JSONValue {
+        try agentTour(parameters: parameters)
+    }
+    func hostBack() throws -> JSONValue {
+        onMain { _ = self.webView.goBack() }
+        return try agentWait(parameters: ["settled": .bool(true)])
+    }
+    func hostReload() throws -> JSONValue {
+        _ = onMain { self.webView.reload() }
+        return try agentWait(parameters: ["settled": .bool(true)])
+    }
+    func hostCaptureInfo() throws -> JSONValue { try agentCaptureInfo() }
+    func hostScreenshot(
+        parameters: [String: JSONValue], format: ScreenshotFormat, copyToClipboard: Bool
+    ) throws -> BrowserScreenshot {
+        let screenshot = try agentScreenshotData(
+            parameters: parameters, format: format, copyToClipboard: copyToClipboard
+        )
+        return BrowserScreenshot(
+            data: screenshot.data, clipboardCopied: screenshot.clipboardCopied
+        )
+    }
+    func hostRecordingFrame() throws -> Data { try agentScreenshot(parameters: [:]) }
+    func hostScreenshotSeriesPlan(mode: String) throws -> JSONValue {
+        try agentScreenshotSeriesPlan(mode: mode)
+    }
+    func hostScrollToCapturePoint(y: Double) throws -> JSONValue {
+        try agentScrollToCapturePoint(y: y)
+    }
+    func hostQAReport() throws -> JSONValue { agentQAReport() }
+    func hostQAClear() throws -> JSONValue { agentQAClear() }
+    func hostConsole(level: String, limit: Int) throws -> JSONValue {
+        agentConsole(level: level, limit: limit)
+    }
+    func hostNetwork(failedOnly: Bool, status: Int?, limit: Int) throws -> JSONValue {
+        agentNetwork(failedOnly: failedOnly, status: status, limit: limit)
+    }
+    func hostNetworkDetail(requestID: String) throws -> JSONValue {
+        agentNetworkDetail(requestID: requestID)
+    }
+    func hostStyles(parameters: [String: JSONValue]) throws -> JSONValue {
+        try agentStyles(parameters: parameters)
+    }
+    func hostCookies(includeValues: Bool) throws -> JSONValue {
+        try agentCookies(includeValues: includeValues)
+    }
+    func hostStorage(scope: String, includeValues: Bool) throws -> JSONValue {
+        try agentStorage(scope: scope, includeValues: includeValues)
+    }
+    func hostPerformance() throws -> JSONValue { try agentPerformance() }
+    func hostAnimations() throws -> JSONValue { try agentAnimations() }
 }
 
 private func onMain<T>(_ body: @escaping () -> T) -> T {

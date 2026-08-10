@@ -61,6 +61,8 @@ imports data instead of transcribing it.
 
 ## 3. Two hosts → one `HostCore` + `BrowserEngine` interface (change, Phase 2)
 
+**Status:** implemented 2026-08-10.
+
 **Decision:** extract everything currently duplicated between
 `apps/headless/main.swift` (macOS, ~340-line dispatch) and
 `apps/headless/LinuxHost/main.swift` (~280-line dispatch) into a shared
@@ -339,7 +341,7 @@ override, the 500-event bound, and truncation reporting.
 | # | Decision | Status | Date |
 | --- | --- | --- | --- |
 | 1 | Keep Swift core; Rust only via revisit trigger | Decided | 2026-08-04 |
-| 3 | Extract HostCore + BrowserEngine, typed errors | Planned (Phase 2) | 2026-08-04 |
+| 3 | Extract HostCore + BrowserEngine, typed errors | Implemented | 2026-08-10 |
 | 5 | Remote stays SSH-only; no cloud offering | Decided (owner) | 2026-08-04 |
 | 6 | Windows = stretch via Chromium engine; WSL2/Docker interim | Decided (owner) | 2026-08-04 |
 | 8 | Real CDP input on Linux as capability upgrade | Planned (Phase 4) | 2026-08-04 |

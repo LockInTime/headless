@@ -25,6 +25,7 @@ if [[ -z "${SDKROOT:-}" ]]; then
     if swiftc -module-cache-path build/module-cache -sdk "$sdk" \
         -target "$ARCH-apple-macos13.0" -typecheck \
         Sources/HeadlessProtocol/Protocol.swift \
+        Sources/HeadlessProtocol/HostError.swift \
         Sources/HeadlessProtocol/CaptureFormats.swift >/dev/null 2>&1; then
       export SDKROOT="$sdk"
       SDK_ARGS=(--sdk "$sdk")

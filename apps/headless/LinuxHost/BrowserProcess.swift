@@ -339,7 +339,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
     }
 
     func click(parameters: [String: JSONValue]) throws -> JSONValue {
-        let args = try targetArguments(parameters)
+        let args = try browserTargetArguments(parameters)
         let result = try evaluate("return globalThis.__headlessAgent.click(args);", input: ["args": args])
         // A click can synchronously begin a cross-document navigation. Let the
         // foreground wait command observe that transition before frame capture
@@ -349,7 +349,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
     }
 
     func fill(parameters: [String: JSONValue]) throws -> JSONValue {
-        var args = try targetArguments(parameters)
+        var args = try browserTargetArguments(parameters)
         guard let value = parameters["value"]?.stringValue else { throw CDPError.commandFailed("missing value") }
         args["value"] = value
         return try evaluate("return globalThis.__headlessAgent.fill(args);", input: ["args": args])
@@ -446,7 +446,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
         let hasTarget = parameters["target"] != nil || parameters["role"] != nil || parameters["name"] != nil
         if hasTarget {
             capture["captureBeyondViewport"] = true
-            let args = try targetArguments(parameters)
+            let args = try browserTargetArguments(parameters)
             let rectangle = try evaluate(
                 "return globalThis.__headlessAgent.rectangle(args);", input: ["args": args]
             )
@@ -541,7 +541,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
     }
 
     func styles(parameters: [String: JSONValue]) throws -> JSONValue {
-        var args = try targetArguments(parameters)
+        var args = try browserTargetArguments(parameters)
         if case .array(let properties)? = parameters["properties"] {
             args["properties"] = properties.compactMap(\.stringValue)
         }
@@ -549,7 +549,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
     }
 
     func storage(scope: String, includeValues: Bool) throws -> JSONValue {
-        try requireSensitiveDiagnosticsIfNeeded(includeValues)
+        try requireSensitiveDiagnosticsAccess(if: includeValues)
         return try evaluate(
             "return globalThis.__headlessAgent.storage(args);",
             input: ["args": ["scope": scope, "includeValues": includeValues]]
@@ -610,7 +610,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
     }
 
     func cookies(includeValues: Bool) throws -> JSONValue {
-        try requireSensitiveDiagnosticsIfNeeded(includeValues)
+        try requireSensitiveDiagnosticsAccess(if: includeValues)
         let response = try command("Network.getCookies")
         let rawCookies = response["cookies"] as? [[String: Any]] ?? []
         let cookies: [JSONValue] = rawCookies.prefix(200).map { cookie in
@@ -776,14 +776,11 @@ final class LinuxBrowserSession: @unchecked Sendable {
     }
 
     private func screenshotClip(_ rect: [String: JSONValue]) throws -> [String: Any] {
-        guard let x = rect["x"]?.numberValue, let y = rect["y"]?.numberValue,
-              let width = rect["width"]?.numberValue, let height = rect["height"]?.numberValue,
-              x.isFinite, y.isFinite, width.isFinite, height.isFinite,
-              width > 0, height > 0, width <= 16_384, height <= 16_384,
-              width * height <= 64_000_000 else {
-            throw CDPError.commandFailed("screenshot dimensions exceed safety limits")
-        }
-        return ["x": x, "y": y, "width": width, "height": height, "scale": 1]
+        let rectangle = try BoundedScreenshotRectangle(rect)
+        return [
+            "x": rectangle.x, "y": rectangle.y,
+            "width": rectangle.width, "height": rectangle.height, "scale": 1,
+        ]
     }
 
     private func evaluate(_ body: String, input: [String: Any] = [:], timeout: TimeInterval = 10) throws -> JSONValue {
@@ -887,27 +884,6 @@ final class LinuxBrowserSession: @unchecked Sendable {
         navigationLock.lock()
         if identifier == nil || isolatedContextID == identifier { isolatedContextID = nil }
         navigationLock.unlock()
-    }
-
-    private func targetArguments(_ parameters: [String: JSONValue]) throws -> [String: Any] {
-        if let target = parameters["target"]?.stringValue {
-            guard target.hasPrefix("@e"), target.count <= 16 else { throw CDPError.commandFailed("invalid element ref") }
-            return ["target": target]
-        }
-        var result: [String: Any] = [:]
-        if let role = parameters["role"]?.stringValue { result["role"] = role }
-        if let name = parameters["name"]?.stringValue { result["name"] = name }
-        guard !result.isEmpty else { throw CDPError.commandFailed("missing target") }
-        return result
-    }
-
-    private func requireSensitiveDiagnosticsIfNeeded(_ requested: Bool) throws {
-        guard !requested || ProcessInfo.processInfo.environment["HEADLESS_ALLOW_SENSITIVE_DIAGNOSTICS"] == "1" else {
-            throw HostError(
-                code: .sensitiveDiagnosticsDisabled,
-                message: "Sensitive diagnostic values are disabled."
-            )
-        }
     }
 
     private func stringHeaders(_ headers: [String: Any]?) -> [String: String] {
