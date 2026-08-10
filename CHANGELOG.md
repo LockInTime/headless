@@ -74,6 +74,8 @@ Cutting that release is tracked in
 
 ### Fixed
 
+- Linux DevTools-pipe framing now tracks its scan cursor and amortizes buffer
+  compaction, avoiding quadratic work for large screenshot responses.
 - Phase 1 hardening now bounds Chromium teardown after `SIGKILL`, uses libc's
   peer-credential constant, deterministically caps diagnostic headers, drops
   malformed CDP header values, atomically finalizes artifacts without
