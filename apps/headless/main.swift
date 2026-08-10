@@ -1251,29 +1251,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             return .success(id: request.id, result: result)
-        } catch let error as AgentOperationError {
-            switch error {
-            case .timedOut:
-                return failure(request, code: "TIMEOUT", message: error.description,
-                               suggestion: "Inspect the current page or wait for a narrower condition.")
-            case .elementNotFound:
-                return failure(request, code: "ELEMENT_NOT_FOUND", message: error.description,
-                               suggestion: "Run `headless inspect --interactive` to refresh element references.")
-            case .regionNotFound:
-                return failure(request, code: "REGION_NOT_FOUND", message: error.description,
-                               suggestion: "Run `headless inspect --context outline` to refresh region references.")
-            case .operationFailed(let message) where message.contains("UNSAFE_NAVIGATION"):
-                return failure(request, code: "UNSAFE_NAVIGATION", message: error.description,
-                               suggestion: "Agent-controlled sessions allow web navigation only.")
-            case .operationFailed(let message) where message.contains("UNSAFE_RESOURCE_TYPE"):
-                return failure(request, code: "UNSAFE_RESOURCE_TYPE", message: error.description,
-                               suggestion: "Executable files, installers, scripts, and disk images are blocked.")
-            case .operationFailed(let message) where message.contains("SENSITIVE_DIAGNOSTICS_DISABLED"):
-                return failure(request, code: "SENSITIVE_DIAGNOSTICS_DISABLED", message: "Sensitive diagnostic values are disabled.",
-                               suggestion: "Restart the host with HEADLESS_ALLOW_SENSITIVE_DIAGNOSTICS=1 only when cookie or storage values are required.")
-            default:
-                return failure(request, code: "OPERATION_FAILED", message: error.description)
-            }
+        } catch let error as HostError {
+            return failure(
+                request, code: error.code.rawValue, message: error.message,
+                suggestion: error.suggestion
+            )
         } catch let error as ProtocolValidationError {
             if case .unsafeResourceType = error {
                 return failure(request, code: "UNSAFE_RESOURCE_TYPE", message: error.description,

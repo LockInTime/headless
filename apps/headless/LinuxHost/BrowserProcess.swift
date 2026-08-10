@@ -793,7 +793,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
           const key = __input.key;
           const options = __input.options || {};
           \(agentRuntimeJavaScript)
-          \(body)
+          \(agentEvaluationBody(body))
         })()
         """
         let response = try command("Runtime.evaluate", parameters: [
@@ -812,7 +812,9 @@ final class LinuxBrowserSession: @unchecked Sendable {
         if let description = result["description"] as? String, result["subtype"] as? String == "error" {
             throw CDPError.commandFailed(description)
         }
-        return try JSONValue.foundationValue(result["value"] ?? NSNull())
+        return try unwrapAgentEvaluationResult(
+            JSONValue.foundationValue(result["value"] ?? NSNull())
+        )
     }
 
     /// Evaluate agent helpers in a fresh isolated world. Page scripts cannot
@@ -851,7 +853,10 @@ final class LinuxBrowserSession: @unchecked Sendable {
 
     private func requireSensitiveDiagnosticsIfNeeded(_ requested: Bool) throws {
         guard !requested || ProcessInfo.processInfo.environment["HEADLESS_ALLOW_SENSITIVE_DIAGNOSTICS"] == "1" else {
-            throw CDPError.commandFailed("SENSITIVE_DIAGNOSTICS_DISABLED")
+            throw HostError(
+                code: .sensitiveDiagnosticsDisabled,
+                message: "Sensitive diagnostic values are disabled."
+            )
         }
     }
 

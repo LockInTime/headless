@@ -101,7 +101,7 @@ assert(scopedActions.elements.every(element => element.actions.length > 0));
 
 assert.throws(
   () => agent.snapshot(false, false, {context: 'text', within: '@r999999'}),
-  /REGION_NOT_FOUND/,
+  error => error.headlessCode === 'REGION_NOT_FOUND' && /REGION_NOT_FOUND/.test(error.message),
 );
 
 // A region reference issued by an earlier inspection stays usable, which is
@@ -121,8 +121,14 @@ assert.throws(
 const staleRef = full.elements[full.elements.length - 1].ref;
 assert.match(staleRef, /^@e\d+$/);
 agent.snapshot(false, false, {context: 'summary', limit: 8, budget: 700});
-assert.throws(() => agent.click({target: staleRef}), /ELEMENT_NOT_FOUND.*expired/);
-assert.throws(() => agent.click({target: '@e999999'}), /ELEMENT_NOT_FOUND.*unknown/);
+assert.throws(
+  () => agent.click({target: staleRef}),
+  error => error.headlessCode === 'ELEMENT_NOT_FOUND' && /ELEMENT_NOT_FOUND.*expired/.test(error.message),
+);
+assert.throws(
+  () => agent.click({target: '@e999999'}),
+  error => error.headlessCode === 'ELEMENT_NOT_FOUND' && /ELEMENT_NOT_FOUND.*unknown/.test(error.message),
+);
 
 // A reference from the latest inspection still resolves.
 const fresh = agent.snapshot(false, false, {context: 'actions', limit: 5});
@@ -167,7 +173,7 @@ assert.throws(
 );
 assert.throws(
   () => agent.click({role: 'link', name: 'Unsafe runtime link'}),
-  /UNSAFE_NAVIGATION:javascript:/,
+  error => error.headlessCode === 'UNSAFE_NAVIGATION' && /UNSAFE_NAVIGATION:javascript:/.test(error.message),
 );
 
 window.scrollY = 0;

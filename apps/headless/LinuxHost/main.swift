@@ -370,6 +370,11 @@ final class LinuxBrowserHost: @unchecked Sendable {
                 }
             }
             return .success(id: request.id, result: result)
+        } catch let error as HostError {
+            return .failure(
+                id: request.id, code: error.code.rawValue, message: error.message,
+                suggestion: error.suggestion
+            )
         } catch let error as ProtocolValidationError {
             if case .unsafeResourceType = error {
                 return failure(request, "UNSAFE_RESOURCE_TYPE", error.description,
@@ -377,27 +382,19 @@ final class LinuxBrowserHost: @unchecked Sendable {
             }
             return failure(request, "INVALID_INPUT", error.description)
         } catch let error as CDPError {
-            let code: String
-            let suggestion: String?
             switch error {
             case .timedOut:
-                code = "TIMEOUT"; suggestion = "Inspect the page or wait for a narrower condition."
-            case .commandFailed(let message) where message.contains("ELEMENT_NOT_FOUND"):
-                code = "ELEMENT_NOT_FOUND"; suggestion = "Run `headless inspect --interactive` to refresh references."
-            case .commandFailed(let message) where message.contains("REGION_NOT_FOUND"):
-                code = "REGION_NOT_FOUND"; suggestion = "Run `headless inspect --context outline` to refresh region references."
-            case .commandFailed(let message) where message.contains("UNSAFE_NAVIGATION"):
-                code = "UNSAFE_NAVIGATION"; suggestion = "Agent-controlled sessions allow web navigation only."
-            case .commandFailed(let message) where message.contains("UNSAFE_RESOURCE_TYPE"):
-                code = "UNSAFE_RESOURCE_TYPE"
-                suggestion = "Executable files, installers, scripts, and disk images are blocked."
-            case .commandFailed(let message) where message.contains("SENSITIVE_DIAGNOSTICS_DISABLED"):
-                code = "SENSITIVE_DIAGNOSTICS_DISABLED"
-                suggestion = "Restart the host with HEADLESS_ALLOW_SENSITIVE_DIAGNOSTICS=1 only when cookie or storage values are required."
+                let hostError = HostError(code: .timedOut, message: error.description)
+                return .failure(
+                    id: request.id, code: hostError.code.rawValue,
+                    message: hostError.message, suggestion: hostError.suggestion
+                )
             default:
-                code = "OPERATION_FAILED"; suggestion = nil
+                return .failure(
+                    id: request.id, code: HostErrorCode.operationFailed.rawValue,
+                    message: error.description
+                )
             }
-            return .failure(id: request.id, code: code, message: error.description, suggestion: suggestion)
         } catch let error as RecordingError {
             let code: String
             let suggestion: String?

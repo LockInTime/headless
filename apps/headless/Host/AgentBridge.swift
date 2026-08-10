@@ -4,26 +4,6 @@ import CoreFoundation
 import Foundation
 import WebKit
 
-enum AgentOperationError: Error, CustomStringConvertible {
-    case timedOut(String)
-    case invalidResult
-    case missingParameter(String)
-    case elementNotFound(String)
-    case regionNotFound(String)
-    case operationFailed(String)
-
-    var description: String {
-        switch self {
-        case .timedOut(let operation): return "Timed out while waiting for \(operation)"
-        case .invalidResult: return "Browser returned an invalid agent result"
-        case .missingParameter(let value): return "Missing command parameter: \(value)"
-        case .elementNotFound(let value): return "Element was not found: \(value)"
-        case .regionNotFound(let value): return "Region was not found: \(value)"
-        case .operationFailed(let value): return value
-        }
-    }
-}
-
 private let agentWorld = WKContentWorld.world(name: "HeadlessAgent")
 
 struct ScreenshotArtifactData {
@@ -64,14 +44,16 @@ extension BrowserWindowController {
 
     func agentFill(parameters: [String: JSONValue]) throws -> JSONValue {
         var args = try targetArguments(parameters)
-        guard let value = parameters["value"]?.stringValue else { throw AgentOperationError.missingParameter("value") }
+        guard let value = parameters["value"]?.stringValue else {
+            throw HostError(code: .operationFailed, message: "Missing command parameter: value")
+        }
         args["value"] = value
         return try callAgent("return globalThis.__headlessAgent.fill(args);", arguments: ["args": args])
     }
 
     func agentPress(parameters: [String: JSONValue]) throws -> JSONValue {
         guard let key = parameters["key"]?.stringValue, !key.isEmpty, key.count <= 32 else {
-            throw AgentOperationError.missingParameter("key")
+            throw HostError(code: .operationFailed, message: "Missing command parameter: key")
         }
         return try callAgent("return globalThis.__headlessAgent.press(key);", arguments: ["key": key])
     }
@@ -93,7 +75,9 @@ extension BrowserWindowController {
 
         repeat {
             lastState = try callAgent("return globalThis.__headlessAgent.state();")
-            guard case .object(let state) = lastState else { throw AgentOperationError.invalidResult }
+            guard case .object(let state) = lastState else {
+                throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
+            }
             let urlMatches = expectedURL.map { state["url"]?.stringValue?.contains($0) == true } ?? true
             let textMatches = expectedText.map { state["text"]?.stringValue?.localizedCaseInsensitiveContains($0) == true } ?? true
             let isLoading = onMain { self.webView.isLoading }
@@ -105,7 +89,7 @@ extension BrowserWindowController {
             Thread.sleep(forTimeInterval: 0.05)
         } while Date() < deadline
 
-        throw AgentOperationError.timedOut("page condition")
+        throw HostError(code: .timedOut, message: "Timed out while waiting for page condition")
     }
 
     func agentTour(parameters: [String: JSONValue]) throws -> JSONValue {
@@ -148,11 +132,11 @@ extension BrowserWindowController {
     ) throws -> ScreenshotArtifactData {
         let image = try agentScreenshotImage(parameters: parameters)
         guard let data = encodeScreenshot(image, format: format) else {
-            throw AgentOperationError.invalidResult
+            throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
         }
         if copyToClipboard {
             guard format.isImage else {
-                throw AgentOperationError.operationFailed("Clipboard output is only supported for image screenshots")
+                throw HostError(code: .operationFailed, message: "Clipboard output is only supported for image screenshots")
             }
             onMain {
                 NSPasteboard.general.clearContents()
@@ -171,7 +155,7 @@ extension BrowserWindowController {
                 "return globalThis.__headlessAgent.rectangle(args);", arguments: ["args": args]
             )
             guard case .object(let outer) = value, case .object(let rect)? = outer["viewport"] else {
-                throw AgentOperationError.invalidResult
+                throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
             }
             requestedRect = try screenshotRect(rect)
         } else if parameters["fullPage"]?.boolValue == true {
@@ -179,7 +163,9 @@ extension BrowserWindowController {
                 return {x: 0, y: 0, width: document.documentElement.scrollWidth,
                         height: document.documentElement.scrollHeight};
                 """)
-            guard case .object(let rect) = value else { throw AgentOperationError.invalidResult }
+            guard case .object(let rect) = value else {
+                throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
+            }
             requestedRect = try screenshotRect(rect)
         }
 
@@ -199,16 +185,22 @@ extension BrowserWindowController {
             self.webView.takeSnapshot(with: configuration) { image, error in
                 lock.lock()
                 if let image { captured = .success(image) }
-                else { captured = .failure(error ?? AgentOperationError.invalidResult) }
+                else {
+                    captured = .failure(error ?? HostError(
+                        code: .operationFailed, message: "Browser returned an invalid agent result"
+                    ))
+                }
                 lock.unlock()
                 semaphore.signal()
             }
         }
         guard semaphore.wait(timeout: .now() + 30) == .success else {
-            throw AgentOperationError.timedOut("screenshot")
+            throw HostError(code: .timedOut, message: "Timed out while waiting for screenshot")
         }
         lock.lock(); let result = captured; lock.unlock()
-        guard let image = try result?.get() else { throw AgentOperationError.invalidResult }
+        guard let image = try result?.get() else {
+            throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
+        }
         return image
     }
 
@@ -315,7 +307,7 @@ extension BrowserWindowController {
             }
         }
         guard semaphore.wait(timeout: .now() + 5) == .success else {
-            throw AgentOperationError.timedOut("cookie inspection")
+            throw HostError(code: .timedOut, message: "Timed out while waiting for cookie inspection")
         }
         lock.lock(); let cookies = result; lock.unlock()
         let host = currentURL?.host?.lowercased()
@@ -349,7 +341,7 @@ extension BrowserWindowController {
 
     private func requireSensitiveDiagnosticsIfNeeded(_ requested: Bool) throws {
         guard !requested || ProcessInfo.processInfo.environment["HEADLESS_ALLOW_SENSITIVE_DIAGNOSTICS"] == "1" else {
-            throw AgentOperationError.operationFailed("SENSITIVE_DIAGNOSTICS_DISABLED")
+            throw HostError(code: .sensitiveDiagnosticsDisabled, message: "Sensitive diagnostic values are disabled.")
         }
     }
 
@@ -359,7 +351,7 @@ extension BrowserWindowController {
               x.isFinite, y.isFinite, width.isFinite, height.isFinite,
               width > 0, height > 0, width <= 16_384, height <= 16_384,
               width * height <= 64_000_000 else {
-            throw AgentOperationError.operationFailed("Screenshot dimensions exceed safety limits")
+            throw HostError(code: .operationFailed, message: "Screenshot dimensions exceed safety limits")
         }
         return CGRect(x: x, y: y, width: width, height: height)
     }
@@ -368,13 +360,15 @@ extension BrowserWindowController {
         var args: [String: Any] = [:]
         if let target = parameters["target"]?.stringValue {
             guard target.hasPrefix("@e"), target.count <= 16 else {
-                throw AgentOperationError.operationFailed("Invalid element reference")
+                throw HostError(code: .operationFailed, message: "Invalid element reference")
             }
             args["target"] = target
         } else {
             if let role = parameters["role"]?.stringValue { args["role"] = role }
             if let name = parameters["name"]?.stringValue { args["name"] = name }
-            guard !args.isEmpty else { throw AgentOperationError.missingParameter("target") }
+            guard !args.isEmpty else {
+                throw HostError(code: .operationFailed, message: "Missing command parameter: target")
+            }
         }
         return args
     }
@@ -389,7 +383,7 @@ extension BrowserWindowController {
         var capturedResult: Result<Any, Error>?
         DispatchQueue.main.async {
             self.webView.callAsyncJavaScript(
-                agentRuntimeJavaScript + "\n" + body,
+                agentRuntimeJavaScript + "\n" + agentEvaluationBody(body),
                 arguments: arguments,
                 in: nil,
                 in: agentWorld
@@ -401,21 +395,20 @@ extension BrowserWindowController {
             }
         }
         guard semaphore.wait(timeout: .now() + timeout) == .success else {
-            throw AgentOperationError.timedOut("browser operation")
+            throw HostError(code: .timedOut, message: "Timed out while waiting for browser operation")
         }
         lock.lock()
         let result = capturedResult
         lock.unlock()
-        guard let result else { throw AgentOperationError.invalidResult }
+        guard let result else {
+            throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
+        }
         do {
-            return try jsonValue(from: result.get())
-        } catch let error as AgentOperationError {
+            return try unwrapAgentEvaluationResult(jsonValue(from: result.get()))
+        } catch let error as HostError {
             throw error
         } catch {
-            let message = String(describing: error)
-            if message.contains("ELEMENT_NOT_FOUND:") { throw AgentOperationError.elementNotFound(message) }
-            if message.contains("REGION_NOT_FOUND:") { throw AgentOperationError.regionNotFound(message) }
-            throw AgentOperationError.operationFailed(message)
+            throw HostError(code: .operationFailed, message: String(describing: error))
         }
     }
 }
@@ -435,6 +428,6 @@ private func jsonValue(from value: Any) throws -> JSONValue {
     case let value as [String: Any]:
         return .object(try value.mapValues(jsonValue(from:)))
     case is NSNull: return .null
-    default: throw AgentOperationError.invalidResult
+    default: throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
     }
 }

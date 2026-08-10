@@ -19,6 +19,11 @@ if (!globalThis.__headlessAgent) {
     const normalize = value => String(value || '').replace(/\s+/g, ' ').trim();
     const clipped = (value, maximum) => normalize(value).slice(0, maximum);
     const clippedURL = value => String(value || '').slice(0, 512);
+    const fail = (code, message) => {
+      const error = new Error(message);
+      error.headlessCode = code;
+      throw error;
+    };
     const blockedResourceExtensions = new Set([
       'apk','app','bat','cmd','com','deb','dll','dmg','dylib','exe','img','iso','jar',
       'msi','msp','pif','pkg','ps1','psm1','scr','sh','so','vbe','vbs','wsf','zsh'
@@ -234,13 +239,13 @@ if (!globalThis.__headlessAgent) {
       if (!reference) return document;
       const element = currentRegions.get(reference);
       if (!element) {
-        throw new Error(issuedRegionRefs.has(reference)
+        fail('REGION_NOT_FOUND', issuedRegionRefs.has(reference)
           ? `REGION_NOT_FOUND:${reference} (expired: inspect again to refresh region references)`
           : `REGION_NOT_FOUND:${reference} (unknown: no inspection has issued this reference)`);
       }
       if (!element.isConnected || !visible(element)) {
         currentRegions.delete(reference);
-        throw new Error(`REGION_NOT_FOUND:${reference} (detached: the region is no longer visible on this page)`);
+        fail('REGION_NOT_FOUND', `REGION_NOT_FOUND:${reference} (detached: the region is no longer visible on this page)`);
       }
       return element;
     };
@@ -448,13 +453,13 @@ if (!globalThis.__headlessAgent) {
       // is the difference between an agent re-inspecting and an agent retrying
       // the same dead reference.
       if (!element) {
-        throw new Error(issuedRefs.has(target)
+        fail('ELEMENT_NOT_FOUND', issuedRefs.has(target)
           ? `ELEMENT_NOT_FOUND:${target} (expired: element references come from the most recent inspection — inspect again to refresh)`
           : `ELEMENT_NOT_FOUND:${target} (unknown: no inspection has issued this reference)`);
       }
       if (!element.isConnected) {
         current.delete(target);
-        throw new Error(`ELEMENT_NOT_FOUND:${target} (detached: the element is no longer in the page)`);
+        fail('ELEMENT_NOT_FOUND', `ELEMENT_NOT_FOUND:${target} (detached: the element is no longer in the page)`);
       }
       return element;
     };
@@ -465,7 +470,7 @@ if (!globalThis.__headlessAgent) {
         (!normalizedRole || role(element) === normalizedRole) &&
         (!normalizedName || name(element).toLowerCase() === normalizedName)
       );
-      if (matches.length === 0) throw new Error(`ELEMENT_NOT_FOUND:${wantedRole || ''}/${wantedName || ''}`);
+      if (matches.length === 0) fail('ELEMENT_NOT_FOUND', `ELEMENT_NOT_FOUND:${wantedRole || ''}/${wantedName || ''}`);
       if (matches.length > 1) throw new Error(`ELEMENT_AMBIGUOUS:${matches.length}`);
       refFor(matches[0]);
       return matches[0];
@@ -527,10 +532,10 @@ if (!globalThis.__headlessAgent) {
         const destination = new URL(element.href, document.baseURI);
         const scheme = destination.protocol.toLowerCase();
         if (!['http:', 'https:'].includes(scheme) || destination.username || destination.password) {
-          throw new Error(`UNSAFE_NAVIGATION:${scheme}`);
+          fail('UNSAFE_NAVIGATION', `UNSAFE_NAVIGATION:${scheme}`);
         }
         const safety = resourceSafety(destination.href);
-        if (safety.level === 'blocked') throw new Error(`UNSAFE_RESOURCE_TYPE:${safety.extension}`);
+        if (safety.level === 'blocked') fail('UNSAFE_RESOURCE_TYPE', `UNSAFE_RESOURCE_TYPE:${safety.extension}`);
       }
       element.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});
       element.focus({preventScroll: true});

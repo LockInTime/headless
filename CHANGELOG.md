@@ -74,6 +74,8 @@ Cutting that release is tracked in
 
 ### Fixed
 
+- Browser-operation failures now cross both WebKit and CDP as structured,
+  allowlisted error codes instead of host-side matching on error-message text.
 - Linux DevTools-pipe framing now tracks its scan cursor and amortizes buffer
   compaction, avoiding quadratic work for large screenshot responses.
 - Phase 1 hardening now bounds Chromium teardown after `SIGKILL`, uses libc's

@@ -992,17 +992,20 @@ struct ProtocolTests {
         }
 
         enum SyntheticInitialCaptureFailure: Error { case unavailable }
-        let initialFailureBegan = Date()
+        var initialCaptureAttempts = 0
         do {
             _ = try BrowserRecording(
                 outputURL: URL(fileURLWithPath: root + "/initial-failure.mp4"), fps: 8,
-                captureFrame: { throw SyntheticInitialCaptureFailure.unavailable }
+                captureFrame: {
+                    initialCaptureAttempts += 1
+                    throw SyntheticInitialCaptureFailure.unavailable
+                }
             )
             throw TestFailure(description: "an unavailable initial frame should fail recording startup")
         } catch RecordingError.captureFailed {
             try expect(
-                Date().timeIntervalSince(initialFailureBegan) < 2,
-                "recording startup should use short bounded backoff instead of busy-polling for three seconds"
+                initialCaptureAttempts == 6,
+                "recording startup should use six bounded attempts instead of polling for three seconds"
             )
         }
 
@@ -1539,6 +1542,42 @@ struct ProtocolTests {
         try expect(buffer.popFirst() == Array("two".utf8), "second buffered CDP message changed")
     }
 
+    static func typedHostErrorsRoundTrip() throws {
+        let success = try unwrapAgentEvaluationResult(.object([
+            "__headlessAgentResult": .bool(true), "ok": .bool(true),
+            "value": .object(["clicked": .string("@e1")]),
+        ]))
+        try expect(
+            success == .object(["clicked": .string("@e1")]),
+            "agent result envelope should preserve successful values"
+        )
+
+        do {
+            _ = try unwrapAgentEvaluationResult(.object([
+                "__headlessAgentResult": .bool(true), "ok": .bool(false),
+                "error": .object([
+                    "code": .string("ELEMENT_NOT_FOUND"),
+                    "message": .string("reference expired"),
+                ]),
+            ]))
+            throw TestFailure(description: "typed agent error should throw")
+        } catch let error as HostError {
+            try expect(error.code == .elementNotFound, "agent error code should survive the engine boundary")
+            try expect(error.message == "reference expired", "agent error message should survive the engine boundary")
+            try expect(error.suggestion?.contains("inspect --interactive") == true, "typed error should own its suggestion")
+        }
+
+        do {
+            _ = try unwrapAgentEvaluationResult(.object([
+                "__headlessAgentResult": .bool(true), "ok": .bool(false),
+                "error": .object(["code": .string("PAGE_DEFINED_CODE"), "message": .string("failed")]),
+            ]))
+            throw TestFailure(description: "unknown agent error should throw")
+        } catch let error as HostError {
+            try expect(error.code == .operationFailed, "unknown error codes must fail closed")
+        }
+    }
+
     static func main() {
         if CommandLine.arguments.count == 3,
            CommandLine.arguments[1] == "--peer-denied-client" {
@@ -1600,6 +1639,7 @@ struct ProtocolTests {
             ("oversized socket request", oversizedSocketRequestIsRejected),
             ("different peer uid", differentPeerUserIsRejected),
             ("incremental NUL message buffering", nullTerminatedBufferScansIncrementally),
+            ("typed host errors", typedHostErrorsRoundTrip),
         ]
 
         var failures = 0
