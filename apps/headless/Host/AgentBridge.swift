@@ -256,7 +256,7 @@ extension BrowserWindowController {
     }
 
     func agentQAReport() -> JSONValue { qaBridge.store.report() }
-    func agentQAClear() -> JSONValue { qaBridge.store.clear() }
+    func agentQAClear() -> JSONValue { qaBridge.clear() }
 
     func agentConsole(level: String, limit: Int) -> JSONValue {
         qaBridge.store.console(level: level, limit: limit)

@@ -11,7 +11,7 @@ Two versions travel independently, on purpose:
 - **Product version** — the git tag, flowing into the macOS `Info.plist` via
   `HEADLESS_VERSION` and into release assets.
 - **Protocol version** — `headlessProtocolVersion` in `Protocol.swift`,
-  currently `0.4`. It changes only when the wire contract changes, and always
+  currently `0.5`. It changes only when the wire contract changes, and always
   with an entry in
   [`docs/roadmap/architecture-decisions.md`](docs/roadmap/architecture-decisions.md).
 
@@ -66,6 +66,9 @@ Cutting that release is tracked in
 
 ### Changed
 
+- Protocol 0.5 marks diagnostic reports, events, derived issues, console
+  messages, and network evidence as untrusted page content. The macOS
+  page-world observer now has host-owned provenance and a per-document cap.
 - Both engines now install the compiled agent-runtime resource once per
   document; Chromium caches and safely invalidates its isolated context instead
   of resending the runtime for every command.

@@ -58,10 +58,10 @@ let webKitQAScript = #"""
     try {
       const response = await nativeFetch(...args);
       post({kind: 'response', requestId, url: response.url || url, method, status: response.status,
-        requestHeaders, responseHeaders: responseHeaders(response), source: 'webkit-fetch'});
+        requestHeaders, responseHeaders: responseHeaders(response)});
       return response;
     } catch (error) {
-      post({kind: 'request-failed', requestId, url, method, message: text(error), requestHeaders, source: 'webkit-fetch'});
+      post({kind: 'request-failed', requestId, url, method, message: text(error), requestHeaders});
       throw error;
     }
   };
@@ -85,8 +85,7 @@ let webKitQAScript = #"""
       status: this.status,
       message: this.status ? '' : 'XHR failed',
       requestHeaders: this.__headlessRequest?.headers || {},
-      responseHeaders: xhrHeaders(this.getAllResponseHeaders()),
-      source: 'webkit-xhr'
+      responseHeaders: xhrHeaders(this.getAllResponseHeaders())
     }), {once: true});
     return nativeSend.apply(this, args);
   };
@@ -95,11 +94,42 @@ let webKitQAScript = #"""
 
 final class WebKitQABridge: NSObject, WKScriptMessageHandler {
     let store = QADiagnosticStore()
+    private let lock = NSLock()
+    private var acceptedEvents = 0
+    private var didRejectEvents = false
+    private let maximumEventsPerDocument = 500
+
+    func beginDocument() {
+        lock.lock()
+        acceptedEvents = 0
+        didRejectEvents = false
+        lock.unlock()
+    }
+
+    func clear() -> JSONValue {
+        beginDocument()
+        return store.clear()
+    }
+
+    private func acceptEvent() -> Bool {
+        lock.lock()
+        if acceptedEvents < maximumEventsPerDocument {
+            acceptedEvents += 1
+            lock.unlock()
+            return true
+        }
+        let firstRejection = !didRejectEvents
+        didRejectEvents = true
+        lock.unlock()
+        if firstRejection { store.markTruncated() }
+        return false
+    }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == "headlessQA", let body = message.body as? [String: Any],
               let kind = body["kind"] as? String,
-              ["console", "page-error", "unhandled-rejection", "request-failed", "response"].contains(kind) else {
+              ["console", "page-error", "unhandled-rejection", "request-failed", "response"].contains(kind),
+              acceptEvent() else {
             return
         }
         store.append(
@@ -107,12 +137,12 @@ final class WebKitQABridge: NSObject, WKScriptMessageHandler {
             level: body["level"] as? String,
             message: body["message"] as? String,
             url: body["url"] as? String,
-        method: body["method"] as? String,
+            method: body["method"] as? String,
             status: (body["status"] as? NSNumber)?.doubleValue,
             requestID: body["requestId"] as? String,
             requestHeaders: body["requestHeaders"] as? [String: String],
             responseHeaders: body["responseHeaders"] as? [String: String],
-            source: body["source"] as? String
+            source: "webkit-page-bridge"
         )
     }
 }

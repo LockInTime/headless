@@ -655,6 +655,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
 
     // MARK: WKNavigationDelegate
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        qaBridge.beginDocument()
+    }
+
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         let u = webView.url?.absoluteString
         if u != nil && u != "about:blank" {

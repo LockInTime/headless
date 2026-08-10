@@ -226,11 +226,15 @@ install the compiled JavaScript resource at document start, Linux caches and
 invalidates its isolated context with one stale-context retry, and release /
 installer paths carry the SwiftPM resource bundle.
 
-**B8. QA diagnostics bridge isolation (macOS).** ([#28](https://github.com/LockInTime/headless/issues/28)) Page-world injection is
+**B8. QA diagnostics bridge isolation (macOS).** ([#28](https://github.com/LockInTime/headless/issues/28)) ~~Page-world injection is
 detectable/forgeable/spammable by a hostile page
 (`Host/QADiagnosticsBridge.swift:5-93`, `main.swift:233-236`) while P0 claims
 isolated-world helpers. Move what's possible; mark the rest untrusted. See
-architecture decision §7.
+architecture decision §7.~~ **Done:** agent actions remain in the isolated
+world; the unavoidable page-world observer is documented, host-attributed,
+bounded per document, and all diagnostic evidence is marked untrusted in
+protocol 0.5. A hostile WKWebView fixture proves spoofed provenance is ignored
+and spam is truncated.
 
 ## §C — MCP & agent surface (Phases 1/4)
 
