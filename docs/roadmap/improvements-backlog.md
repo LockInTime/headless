@@ -219,9 +219,11 @@ wait-derived, tour, screenshot-series, screenshot, and recording-stop cases.
 callable though the tool description says "safe"; decide policy (deny, or
 annotate) and test it.
 
-**C3. Zero MCP tests** ([#31](https://github.com/LockInTime/headless/issues/31)) — the only coverage is inside `qa-videos.sh`. Add a
+**C3. Zero MCP tests** ([#31](https://github.com/LockInTime/headless/issues/31)) — ~~the only coverage is inside `qa-videos.sh`. Add a
 stdio harness test: initialize / tools/list / tools/call / malformed line /
-oversized line / local-command rejection (`MCP/main.swift:64-66`).
+oversized line / local-command rejection (`MCP/main.swift:64-66`).~~ **Done:**
+`HeadlessMCPTests` drives the built stdio process through every named case and
+uses a private local socket server to verify a real browser-command round trip.
 
 **C4. Machine-accurate `capabilities`** ([#32](https://github.com/LockInTime/headless/issues/32)) — generate from `CommandName.allCases`
 + engine matrix (see B6) so agents can trust it.
