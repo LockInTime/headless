@@ -1,5 +1,10 @@
 import HeadlessProtocol
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 private struct TestFailure: Error, CustomStringConvertible {
     let description: String
@@ -678,6 +683,118 @@ struct ProtocolTests {
         }
     }
 
+    static func artifactReadsStayInsideBounds() throws {
+        let root = "/tmp/headless-artifact-read-test-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let store = try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": root])
+        let payload = Data("bounded artifact".utf8)
+        _ = try store.write(
+            payload, requestedName: "bounded.json", extension: "json", prefix: "unused"
+        )
+        try expect(
+            try store.read(name: "bounded.json", expectedExtension: "json", maximumBytes: payload.count) == payload,
+            "an exact-bound regular artifact should be readable"
+        )
+        try expectThrows("artifacts larger than the caller's bound should be rejected") {
+            _ = try store.read(name: "bounded.json", expectedExtension: "json", maximumBytes: payload.count - 1)
+        }
+        try expectThrows("artifact reads should validate the expected extension") {
+            _ = try store.read(name: "bounded.json", expectedExtension: "png", maximumBytes: payload.count)
+        }
+
+        let outside = root + "-outside.json"
+        defer { try? FileManager.default.removeItem(atPath: outside) }
+        try payload.write(to: URL(fileURLWithPath: outside))
+        try FileManager.default.createSymbolicLink(
+            atPath: root + "/linked.json", withDestinationPath: outside
+        )
+        try expectThrows("artifact reads should reject symbolic links") {
+            _ = try store.read(name: "linked.json", expectedExtension: "json", maximumBytes: payload.count)
+        }
+
+        try FileManager.default.createDirectory(atPath: root + "/folder.json", withIntermediateDirectories: false)
+        try expectThrows("artifact reads should reject non-regular files") {
+            _ = try store.read(name: "folder.json", expectedExtension: "json", maximumBytes: payload.count)
+        }
+    }
+
+    static func flowRecordingOmitsSensitiveCommands() throws {
+        let safeParameters: [String: JSONValue] = ["target": .string("@e1")]
+        for command in replayableFlowCommands {
+            let step = flowStepIfSafe(command: command, parameters: safeParameters)
+            try expect(step?.command == command, "\(command.rawValue) should remain replayable")
+            try expect(step?.parameters == safeParameters, "safe flow parameters should be retained")
+        }
+
+        let secret = "never-record-this-value"
+        let fill = flowStepIfSafe(
+            command: .fill,
+            parameters: ["target": .string("@e1"), "value": .string(secret)]
+        )
+        try expect(fill == nil, "fill values must never become replayable flow steps")
+        for command in [CommandName.shutdown, .sessionClose, .cookiesList, .storageList] {
+            try expect(
+                flowStepIfSafe(command: command, parameters: [:]) == nil,
+                "\(command.rawValue) should not be replayable"
+            )
+        }
+
+        let commands = replayableFlowCommands.compactMap {
+            flowStepIfSafe(command: $0, parameters: safeParameters)
+        }
+        let encoded = try ProtocolCodec.encoder.encode(RecordedFlow(commands: commands))
+        try expect(!String(decoding: encoded, as: UTF8.self).contains(secret), "serialized flows must omit fill values")
+    }
+
+    static func visualComparisonInvokesBoundedTool() throws {
+        let root = "/tmp/headless-visual-test-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: false)
+        let executable = root + "/ffmpeg"
+        let script = """
+        #!/bin/sh
+        set -eu
+        last=''
+        for argument in "$@"; do last="$argument"; done
+        printf '%s\n' "$@" > "$last"
+        """
+        try script.write(toFile: executable, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable)
+
+        let previous = ProcessInfo.processInfo.environment["HEADLESS_FFMPEG_EXECUTABLE"]
+        setenv("HEADLESS_FFMPEG_EXECUTABLE", executable, 1)
+        defer {
+            if let previous { setenv("HEADLESS_FFMPEG_EXECUTABLE", previous, 1) }
+            else { unsetenv("HEADLESS_FFMPEG_EXECUTABLE") }
+        }
+
+        let before = URL(fileURLWithPath: root + "/before.png")
+        let after = URL(fileURLWithPath: root + "/after.png")
+        let difference = URL(fileURLWithPath: root + "/difference.png")
+        try Data([0x01]).write(to: before)
+        try Data([0x02]).write(to: after)
+        let result = try VisualComparison.compare(before: before, after: after, difference: difference)
+        guard case .object(let metadata) = result else {
+            throw TestFailure(description: "visual comparison metadata")
+        }
+        try expect(metadata["differenceGenerated"] == .bool(true), "visual comparison should report success")
+        let arguments = try String(contentsOf: difference, encoding: .utf8)
+        try expect(arguments.contains(before.path), "visual comparison should pass the before artifact")
+        try expect(arguments.contains(after.path), "visual comparison should pass the after artifact")
+        try expect(arguments.contains("blend=all_mode=difference"), "visual comparison should use difference blending")
+        try expect(arguments.contains("-frames:v\n1"), "visual comparison should remain bounded to one output frame")
+
+        let failingExecutable = root + "/ffmpeg-fail"
+        try "#!/bin/sh\necho deliberate-failure >&2\nexit 7\n".write(
+            toFile: failingExecutable, atomically: true, encoding: .utf8
+        )
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: failingExecutable)
+        setenv("HEADLESS_FFMPEG_EXECUTABLE", failingExecutable, 1)
+        try expectThrows("visual comparison should surface encoder failure") {
+            _ = try VisualComparison.compare(before: before, after: after, difference: difference)
+        }
+    }
+
     static func screenshotSeriesHelpers() throws {
         let rawPlan = JSONValue.object([
             "initialY": .number(240),
@@ -991,6 +1108,9 @@ struct ProtocolTests {
             ("CLI command matrix", cliCommandMatrix),
             ("Chromium runtime selection", chromiumRuntimeSelection),
             ("artifact store round-trip", artifactStoreRoundTrip),
+            ("artifact read boundaries", artifactReadsStayInsideBounds),
+            ("flow recording safety", flowRecordingOmitsSensitiveCommands),
+            ("visual comparison", visualComparisonInvokesBoundedTool),
             ("screenshot series helpers", screenshotSeriesHelpers),
             ("diagnostic summary", diagnosticSummary),
             ("diagnostic bounds and URL redaction", diagnosticsBoundAndRedacted),

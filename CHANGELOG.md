@@ -28,6 +28,8 @@ Cutting that release is tracked in
   CLI commands.
 - CLI parser coverage for the previously untested session, navigation,
   diagnostics, flow, network emulation, reporting, and local command paths.
+- Core regression coverage for bounded artifact reads, non-regular artifacts,
+  non-replayable fill values in flows, and the ffmpeg visual-difference path.
 - Progressive context pruning: `inspect --context summary|outline|text|actions|full`
   with `--task` ranking, `--within @rN` scoping, and `--limit` / `--budget` /
   `--depth` bounds. Every focused response reports `contextStats` and `omitted`.
