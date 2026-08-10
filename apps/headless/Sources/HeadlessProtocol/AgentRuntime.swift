@@ -371,31 +371,66 @@ if (!globalThis.__headlessAgent) {
           budget,
           budgetApplied: Boolean(budget)
         };
-        for (let pass = 0; pass < 2; pass += 1) {
-          const bytes = encodedBytes(result);
-          result.contextStats.encodedBytes = bytes;
-          result.contextStats.estimatedTokens = Math.ceil(bytes / 4);
+        const baseBytes = encodedBytes(result);
+        let bytes = baseBytes;
+        let estimatedTokens = Math.ceil(bytes / 4);
+        while (true) {
+          const measured = baseBytes + String(bytes).length - 1 + String(estimatedTokens).length - 1;
+          const measuredTokens = Math.ceil(measured / 4);
+          if (measured === bytes && measuredTokens === estimatedTokens) break;
+          bytes = measured;
+          estimatedTokens = measuredTokens;
         }
+        result.contextStats.encodedBytes = bytes;
+        result.contextStats.estimatedTokens = estimatedTokens;
+        return bytes;
       };
-      refresh();
-      if (budget) {
-        const maximumBytes = budget * 4;
-        while (encodedBytes(result) > maximumBytes) {
-          const populated = arrays.filter(key => result[key].length > 0);
-          if (populated.length === 0) {
-            if (typeof result.text === 'string' && result.text.length > 0) {
-              result.text = result.text.slice(0, Math.max(0, result.text.length - 256));
-              refresh();
-              continue;
-            }
-            break;
-          }
-          populated.sort((left, right) => encodedBytes(result[right][result[right].length - 1]) - encodedBytes(result[left][result[left].length - 1]));
-          result[populated[0]].pop();
-          refresh();
+      let currentBytes = refresh();
+      if (!budget) return result;
+
+      const maximumBytes = budget * 4;
+      if (currentBytes > maximumBytes) {
+        const candidates = arrays.flatMap(key => result[key].map((value, index) => ({
+          key, index, bytes: encodedBytes(value) + (result[key].length > 1 ? 1 : 0)
+        }))).sort((left, right) => right.bytes - left.bytes);
+        const removed = new Map(arrays.map(key => [key, new Set()]));
+        // Reserve a small allowance for omitted-count digit growth. Each item
+        // is encoded once; removal then preserves the order of retained items.
+        const targetBytes = Math.max(0, maximumBytes - 32);
+        for (const candidate of candidates) {
+          if (currentBytes <= targetBytes) break;
+          removed.get(candidate.key).add(candidate.index);
+          currentBytes -= candidate.bytes;
         }
+        for (const key of arrays) {
+          const indexes = removed.get(key);
+          if (indexes.size > 0) result[key] = result[key].filter((_, index) => !indexes.has(index));
+        }
+        currentBytes = refresh();
       }
-      refresh();
+
+      if (currentBytes > maximumBytes && typeof result.text === 'string' && result.text.length > 0) {
+        const textBytes = Math.max(0, encodedBytes(result.text) - 2);
+        const targetTextBytes = Math.max(0, textBytes - (currentBytes - maximumBytes) - 32);
+        let lower = 0;
+        let upper = result.text.length;
+        while (lower < upper) {
+          const middle = Math.ceil((lower + upper) / 2);
+          const prefixBytes = Math.max(0, encodedBytes(result.text.slice(0, middle)) - 2);
+          if (prefixBytes <= targetTextBytes) lower = middle;
+          else upper = middle - 1;
+        }
+        result.text = result.text.slice(0, lower);
+        currentBytes = refresh();
+      }
+
+      // Metadata is deliberately bounded, but keep the budget fail-closed if
+      // its final digit widths ever outgrow the allowance above.
+      if (currentBytes > maximumBytes) {
+        for (const key of arrays) result[key] = [];
+        if (typeof result.text === 'string') result.text = '';
+        refresh();
+      }
       return result;
     };
     const snapshot = (interactiveOnly, includeText, options = {}) => {

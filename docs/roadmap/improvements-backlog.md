@@ -191,11 +191,14 @@ Foundation conversion paths, made both hosts share `JSONValue.foundationValue`,
 honored the bounded Linux evaluation timeout, deleted the unreachable PDF
 branch, and hid the backward-compatible no-op `--json` parser flag from help.
 
-**B5. `pruneToBudget` quality.** ([#25](https://github.com/LockInTime/headless/issues/25)) Hand-rolled 2-pass fixed point
+**B5. `pruneToBudget` quality.** ([#25](https://github.com/LockInTime/headless/issues/25)) ~~Hand-rolled 2-pass fixed point
 (`HP/AgentRuntime.swift:348-352`), O(n²) re-encoding per trim, pop-largest-
 *last*-element heuristic misses large mid-array items
 (`AgentRuntime.swift:367-369`), text-chop fallback untested. Rework with a
-size-estimating single pass; add unit tests in the jsdom suite.
+size-estimating single pass; add unit tests in the jsdom suite.~~ **Done:**
+each candidate is measured once, largest entries are pruned regardless of
+position while retained order is stable, text uses a byte-budgeted prefix
+search, and jsdom locks the mid-array and text-fallback cases.
 
 **B6. Declared capability matrix.** ([#26](https://github.com/LockInTime/headless/issues/26)) Silent per-platform divergences to either
 fix or promote to declared differences asserted in tests: PDF raster (macOS,

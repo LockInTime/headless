@@ -66,6 +66,8 @@ Cutting that release is tracked in
 
 ### Changed
 
+- Context-budget pruning now measures each candidate once, removes oversized
+  entries regardless of array position, and byte-budgets text fallback.
 - Removed stale screenshot and JSON conversion paths, honored per-operation
   Linux evaluation timeouts, and stopped advertising the compatibility-only
   `--json` flag.
