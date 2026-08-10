@@ -40,4 +40,7 @@ TEST_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/headless-tests.XXXXXX")"
 trap 'rm -rf "$TEST_SCRATCH"' EXIT
 BIN_PATH="$(swift build "${SDK_ARGS[@]}" --scratch-path "$TEST_SCRATCH" --show-bin-path)"
 swift build "${SDK_ARGS[@]}" --product headless-protocol-tests --scratch-path "$TEST_SCRATCH"
+swift build "${SDK_ARGS[@]}" --product headless-mcp --scratch-path "$TEST_SCRATCH"
+swift build "${SDK_ARGS[@]}" --product headless-mcp-tests --scratch-path "$TEST_SCRATCH"
 "$BIN_PATH/headless-protocol-tests"
+"$BIN_PATH/headless-mcp-tests" "$BIN_PATH/headless-mcp"

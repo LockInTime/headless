@@ -10,6 +10,7 @@ let package = Package(
         .executable(name: "headless-host", targets: ["HeadlessHost"]),
         .executable(name: "headless-linux-host", targets: ["HeadlessLinuxHost"]),
         .executable(name: "headless-mcp", targets: ["HeadlessMCP"]),
+        .executable(name: "headless-mcp-tests", targets: ["HeadlessMCPTests"]),
         .executable(name: "headless-protocol-tests", targets: ["HeadlessProtocolTests"]),
         .library(name: "HeadlessProtocol", targets: ["HeadlessProtocol"]),
     ],
@@ -50,6 +51,11 @@ let package = Package(
             name: "HeadlessProtocolTests",
             dependencies: ["HeadlessProtocol"],
             path: "Tests/HeadlessProtocolTests"
+        ),
+        .executableTarget(
+            name: "HeadlessMCPTests",
+            dependencies: ["HeadlessProtocol"],
+            path: "Tests/HeadlessMCPTests"
         ),
     ]
 )
