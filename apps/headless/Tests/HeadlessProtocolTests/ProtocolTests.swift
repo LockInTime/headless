@@ -1578,6 +1578,60 @@ struct ProtocolTests {
         }
     }
 
+    static func singleSourceContractConstants() throws {
+        func javaScriptSet(named name: String) throws -> Set<String> {
+            let marker = "const \(name) = new Set(["
+            guard let start = agentRuntimeJavaScript.range(of: marker),
+                  let end = agentRuntimeJavaScript.range(
+                    of: "]);", range: start.upperBound..<agentRuntimeJavaScript.endIndex
+                  ) else {
+                throw TestFailure(description: "missing JavaScript set: \(name)")
+            }
+            return Set(agentRuntimeJavaScript[start.upperBound..<end.lowerBound]
+                .split(separator: ",")
+                .map {
+                    $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+                })
+        }
+
+        try expect(
+            javaScriptSet(named: "blockedResourceExtensions") == blockedRemoteResourceExtensions,
+            "blocked resource extensions drifted between Swift and the isolated runtime"
+        )
+        try expect(
+            javaScriptSet(named: "cautionResourceExtensions") == cautionRemoteResourceExtensions,
+            "caution resource extensions drifted between Swift and the isolated runtime"
+        )
+        try expect(hasPortableNameCharacters("artifact-1_name.json"), "portable artifact characters changed")
+        try expect(!hasPortableNameCharacters("artifact/name.json"), "path separators must not be portable name characters")
+        try expect(
+            localDevelopmentHosts == ["localhost", "127.0.0.1", "0.0.0.0", "::1"],
+            "local development host allowlist changed"
+        )
+
+        let minimumScroll = try CLIParser().parse([
+            "scroll", "down", "--amount", String(ProtocolBounds.scrollAmount.lowerBound),
+        ])
+        try minimumScroll.request?.validate()
+        try expectThrows("CLI should reject scroll amounts below the validator minimum") {
+            _ = try CLIParser().parse(["scroll", "down", "--amount", "0.09"])
+        }
+        let maximumNetwork = try CLIParser().parse([
+            "network", "emulate",
+            "--latency", String(ProtocolBounds.networkLatencyMilliseconds.upperBound),
+            "--download-kbps", String(ProtocolBounds.networkThroughputKbps.upperBound),
+            "--upload-kbps", String(ProtocolBounds.networkThroughputKbps.lowerBound),
+        ])
+        try maximumNetwork.request?.validate()
+        try expectThrows("CLI should reject latency above the validator maximum") {
+            _ = try CLIParser().parse(["network", "emulate", "--latency", "120001"])
+        }
+        try expectThrows("CLI should reject throughput below the validator minimum") {
+            _ = try CLIParser().parse(["network", "emulate", "--download-kbps", "-2"])
+        }
+    }
+
     static func main() {
         if CommandLine.arguments.count == 3,
            CommandLine.arguments[1] == "--peer-denied-client" {
@@ -1640,6 +1694,7 @@ struct ProtocolTests {
             ("different peer uid", differentPeerUserIsRejected),
             ("incremental NUL message buffering", nullTerminatedBufferScansIncrementally),
             ("typed host errors", typedHostErrorsRoundTrip),
+            ("single-source contract constants", singleSourceContractConstants),
         ]
 
         var failures = 0

@@ -245,7 +245,7 @@ public final class QADiagnosticStore: @unchecked Sendable {
 
     private func isLocalURL(_ value: String) -> Bool {
         guard let host = URL(string: value)?.host?.lowercased() else { return false }
-        return ["localhost", "127.0.0.1", "0.0.0.0", "::1"].contains(host)
+        return isLocalDevelopmentHost(host)
     }
 
     private func redactedURL(_ value: String) -> String {

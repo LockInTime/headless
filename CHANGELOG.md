@@ -74,6 +74,10 @@ Cutting that release is tracked in
 
 ### Fixed
 
+- Portable name characters, local-development hosts, scroll bounds, and
+  network-emulation bounds now have one definition shared by CLI validation,
+  protocol validation, and diagnostics; tests also lock the Swift/JavaScript
+  unsafe-resource extension sets together.
 - Browser-operation failures now cross both WebKit and CDP as structured,
   allowlisted error codes instead of host-side matching on error-message text.
 - Linux DevTools-pipe framing now tracks its scan cursor and amortizes buffer
