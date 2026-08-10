@@ -423,9 +423,8 @@ private func peerUserID(fd: Int32) throws -> uid_t {
     struct PeerCredentials { var pid: pid_t = 0; var uid: uid_t = 0; var gid: gid_t = 0 }
     var credentials = PeerCredentials()
     var length = socklen_t(MemoryLayout<PeerCredentials>.size)
-    let soPeerCred: Int32 = 17
     guard withUnsafeMutablePointer(to: &credentials, {
-        getsockopt(fd, SOL_SOCKET, soPeerCred, $0, &length)
+        getsockopt(fd, SOL_SOCKET, SO_PEERCRED, $0, &length)
     }) == 0 else { throw LocalTransportError.socketFailure("peer credential check") }
     return credentials.uid
     #endif

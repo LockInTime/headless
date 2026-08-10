@@ -35,7 +35,11 @@ private final class ChromiumChildProcess {
         while isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
         if isRunning {
             _ = kill(processIdentifier, SIGKILL)
-            while isRunning { Thread.sleep(forTimeInterval: 0.01) }
+            // An uninterruptible child must not wedge host teardown forever.
+            // SIGKILL normally reaps immediately; after this final bound the
+            // operating system remains responsible for the stuck process.
+            let killDeadline = Date().addingTimeInterval(2)
+            while isRunning && Date() < killDeadline { Thread.sleep(forTimeInterval: 0.01) }
         }
     }
 }
@@ -852,9 +856,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
     }
 
     private func stringHeaders(_ headers: [String: Any]?) -> [String: String] {
-        (headers ?? [:]).reduce(into: [:]) { result, entry in
-            result[entry.key] = String(describing: entry.value)
-        }
+        diagnosticStringHeaders(headers)
     }
 
     private func matchingMock(_ url: String) -> NetworkMock? {

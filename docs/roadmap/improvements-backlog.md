@@ -113,27 +113,35 @@ base64 screenshot triggers thousands of full scans under a 128 MiB cap.
 Track a scan offset / use a ring buffer.
 
 **A9. Misc hardening (smaller, same phase).** ([#20](https://github.com/LockInTime/headless/issues/20))
-- `ChromiumChildProcess.stop()` can busy-wait forever post-SIGKILL
-  (`LinuxHost/BrowserProcess.swift:38`); bound it.
-- `SO_PEERCRED` hard-coded as `17` + hand-rolled `ucred`
+- ~~`ChromiumChildProcess.stop()` can busy-wait forever post-SIGKILL
+  (`LinuxHost/BrowserProcess.swift:38`); bound it.~~
+- ~~`SO_PEERCRED` hard-coded as `17` + hand-rolled `ucred`
   (`HP/Transport.swift:372-378`); use the libc constant and add the missing
-  **peer-UID test** (the most security-critical untested branch).
-- `Diagnostics.headersValue` uses `prefix(64)` on a Dictionary —
-  non-deterministic header survival (`HP/Diagnostics.swift:213`).
-- `ArtifactStore.finalize` has a `fileExists`+`move` TOCTOU vs the `O_EXCL`
-  used elsewhere (`HP/Artifacts.swift:148-151`).
-- `Recording.status()` reads `process.isRunning` cross-thread; recording init
-  busy-polls 3 s for the first frame (`HP/Recording.swift:71-88,186-215`).
-- `stringHeaders` stringifies non-string header values via
-  `String(describing:)` (`LinuxHost/BrowserProcess.swift:854-858`).
-- `flow run` executes up to 200 steps inside one socket request while the CLI
+  **peer-UID test** (the most security-critical untested branch).~~
+- ~~`Diagnostics.headersValue` uses `prefix(64)` on a Dictionary —
+  non-deterministic header survival (`HP/Diagnostics.swift:213`).~~
+- ~~`ArtifactStore.finalize` has a `fileExists`+`move` TOCTOU vs the `O_EXCL`
+  used elsewhere (`HP/Artifacts.swift:148-151`).~~
+- ~~`Recording.status()` reads `process.isRunning` cross-thread; recording init
+  busy-polls 3 s for the first frame (`HP/Recording.swift:71-88,186-215`).~~
+- ~~`stringHeaders` stringifies non-string header values via
+  `String(describing:)` (`LinuxHost/BrowserProcess.swift:854-858`).~~
+- ~~`flow run` executes up to 200 steps inside one socket request while the CLI
   timeout is 15 s (`main.swift:1224`, `HeadlessCLI/main.swift:113`) — stream
-  progress or raise/derive the client timeout.
-- `qa` subcommand validates trailing args before checking the subcommand is
-  known → wrong error for `headless qa bogus --x` (`HP/CLI.swift:115-119`).
-- macOS non-agent nav policy hands unknown schemes to `NSWorkspace.open` and
+  progress or raise/derive the client timeout.~~
+- ~~`qa` subcommand validates trailing args before checking the subcommand is
+  known → wrong error for `headless qa bogus --x` (`HP/CLI.swift:115-119`).~~
+- ~~macOS non-agent nav policy hands unknown schemes to `NSWorkspace.open` and
   allows `data:`/`blob:`/`javascript:` when agent control is off
-  (`main.swift:710-716`) — fine for humans, but document why, or tighten.
+  (`main.swift:710-716`) — fine for humans, but document why, or tighten.~~
+
+**Done:** child teardown has a post-SIGKILL bound; Linux uses the libc socket
+constant and the cross-UID test; header selection is sorted and malformed CDP
+values are dropped; artifact finalization uses atomic no-replace linking;
+recording startup uses a short six-attempt exponential backoff and status
+tracks process termination under its lock; flow replay gets the transport's
+125-second bound; QA errors are ordered correctly; and the visible macOS app
+enforces web-only navigation in manual as well as agent-controlled use.
 
 ## §B — Structure & contract (Phase 2)
 

@@ -1,5 +1,13 @@
 import Foundation
 
+/// CDP defines header values as strings. Drop malformed values instead of
+/// turning arbitrary JSON containers into implementation-dependent debug text.
+public func diagnosticStringHeaders(_ headers: [String: Any]?) -> [String: String] {
+    (headers ?? [:]).reduce(into: [:]) { result, entry in
+        if let value = entry.value as? String { result[entry.key] = value }
+    }
+}
+
 public final class QADiagnosticStore: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [JSONValue] = []
@@ -249,7 +257,7 @@ public final class QADiagnosticStore: @unchecked Sendable {
 
     private func headersValue(_ headers: [String: String]) -> JSONValue {
         var safe: [String: JSONValue] = [:]
-        for (name, value) in headers.prefix(64) {
+        for (name, value) in headers.sorted(by: { $0.key < $1.key }).prefix(64) {
             let normalizedName = bounded(name, bytes: 128)
             safe[normalizedName] = .string(
                 sensitiveHeader(normalizedName) ? "[redacted]" : bounded(value, bytes: 1_024)
