@@ -99,6 +99,44 @@ const scopedActions = agent.snapshot(false, false, {
 assert(scopedActions.elements.some(element => element.name === 'Copy authentication command'));
 assert(scopedActions.elements.every(element => element.actions.length > 0));
 
+// Budget pruning measures every candidate once and removes the largest item
+// wherever it appears, without discarding smaller entries that follow it.
+const pruningFixture = window.document.createElement('section');
+pruningFixture.innerHTML = `
+  <p>Budget prefix should survive.</p>
+  <p>${'🚧'.repeat(300)}</p>
+  <p>Budget suffix should survive.</p>
+`;
+for (const [index, paragraph] of [...pruningFixture.querySelectorAll('p')].entries()) {
+  paragraph.getBoundingClientRect = () => ({
+    x: 24, y: 100 + index * 50, top: 100 + index * 50, left: 24,
+    right: 824, bottom: 148 + index * 50, width: 800, height: 48,
+  });
+}
+window.document.getElementById('content').prepend(pruningFixture);
+let encodeCalls = 0;
+const NativeTextEncoder = window.TextEncoder;
+window.TextEncoder = class CountingTextEncoder extends NativeTextEncoder {
+  encode(value) {
+    encodeCalls += 1;
+    return super.encode(value);
+  }
+};
+const middlePruned = agent.snapshot(false, false, {context: 'text', limit: 4, budget: 256});
+window.TextEncoder = NativeTextEncoder;
+assert(
+  middlePruned.snippets.some(item => item.text === 'Budget suffix should survive.'),
+  JSON.stringify(middlePruned),
+);
+assert(!middlePruned.snippets.some(item => item.text.includes('🚧')));
+assert(encodeCalls <= 8, 'budget pruning should encode the result and each candidate only once');
+assert(middlePruned.contextStats.encodedBytes <= 1024);
+assert.equal(
+  new TextEncoder().encode(JSON.stringify(middlePruned)).length,
+  middlePruned.contextStats.encodedBytes,
+  'reported bytes should include the finalized context statistics',
+);
+
 assert.throws(
   () => agent.snapshot(false, false, {context: 'text', within: '@r999999'}),
   error => error.headlessCode === 'REGION_NOT_FOUND' && /REGION_NOT_FOUND/.test(error.message),
@@ -256,6 +294,10 @@ const budgetedText = agent.snapshot(false, true, {context: 'full', limit: 1, bud
 assert(budgetedText.contextStats.encodedBytes <= 1024);
 assert(budgetedText.text.length < 30000, 'text fallback should be shortened to fit the budget');
 assert.equal(budgetedText.contextStats.budgetApplied, true);
+assert.equal(
+  new TextEncoder().encode(JSON.stringify(budgetedText)).length,
+  budgetedText.contextStats.encodedBytes,
+);
 
 console.log(JSON.stringify({
   selectedRegion: targetRegion.ref,
