@@ -128,7 +128,7 @@ if SUSPICIOUS_RESULT="$(headless --session qa click --role link --name 'Suspicio
   exit 1
 fi
 echo "$SUSPICIOUS_RESULT" | grep -q 'UNSAFE_RESOURCE_TYPE'
-headless --session qa click --role button --name 'Scripted non-web navigation' | grep -q '"clicked"'
+headless --session qa click --role button --name 'Scripted host-blocked navigation' | grep -q '"clicked"'
 headless --session qa wait --url /designers/dashboard --settled --timeout 10000 | grep -q 'Designers Dashboard'
 BLOCKED_NAVIGATION_REPORT="$(headless --session qa qa report)"
 echo "$BLOCKED_NAVIGATION_REPORT" | grep -q '"kind":"navigation-blocked"'
