@@ -205,7 +205,7 @@ each candidate is measured once, largest entries are pruned regardless of
 position while retained order is stable, text uses a byte-budgeted prefix
 search, and jsdom locks the mid-array and text-fallback cases.
 
-**B6. Declared capability matrix.** ([#26](https://github.com/LockInTime/headless/issues/26)) Silent per-platform divergences to either
+**B6. Declared capability matrix.** ([#26](https://github.com/LockInTime/headless/issues/26)) ~~Silent per-platform divergences to either
 fix or promote to declared differences asserted in tests: PDF raster (macOS,
 `Host/AgentBridge.swift:236-250`) vs vector (`Page.printToPDF`,
 `BrowserProcess.swift:471-496`); element-screenshot coordinate space viewport
@@ -220,7 +220,12 @@ capture-info/report shapes; `back` with no history errors on Linux
 through it; `press` length enforced in bridge only on macOS
 (`AgentBridge.swift:73`); Linux `qa report` flush hack
 (`BrowserProcess.swift:521`). Generate `capabilities` from code
-(`CLI.swift:648-682` is a hand-written literal today) and assert it.
+(`CLI.swift:648-682` is a hand-written literal today) and assert it.~~ **Done:**
+WebKit and Chromium now declare exhaustive command sets and typed profiles for
+every audited difference. The CLI document and host ping output are generated
+from those profiles and the protocol/format enums. Empty-history `back`, tour
+timeouts, and key validation are aligned; irreducible engine behavior is
+explicit and regression-tested.
 
 **B7. Runtime injection cost** ([#27](https://github.com/LockInTime/headless/issues/27)) — ~~cache the isolated world / install runtime
 per-navigation instead of per-call on both engines; extract the JS to a

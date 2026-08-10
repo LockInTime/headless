@@ -356,7 +356,9 @@ final class LinuxBrowserSession: @unchecked Sendable {
     }
 
     func press(parameters: [String: JSONValue]) throws -> JSONValue {
-        guard let key = parameters["key"]?.stringValue else { throw CDPError.commandFailed("missing key") }
+        guard let key = parameters["key"]?.stringValue, !key.isEmpty, key.count <= 32 else {
+            throw HostError(code: .operationFailed, message: "Missing command parameter: key")
+        }
         return try evaluate("return globalThis.__headlessAgent.press(key);", input: ["key": key])
     }
 
