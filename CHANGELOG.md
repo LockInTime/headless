@@ -74,6 +74,17 @@ Cutting that release is tracked in
 
 ### Fixed
 
+- Phase 1 hardening now bounds Chromium teardown after `SIGKILL`, uses libc's
+  peer-credential constant, deterministically caps diagnostic headers, drops
+  malformed CDP header values, atomically finalizes artifacts without
+  overwriting, and derives the long transport timeout for flow replay.
+- Recording startup replaces its three-second busy poll with six short,
+  bounded backoff attempts, and status no longer reads `Process.isRunning`
+  across threads.
+- macOS now keeps manual and agent-controlled browsing inside the same HTTP(S)
+  navigation boundary instead of dispatching application or script schemes.
+- Unknown `qa` subcommands now report the command error before inspecting
+  irrelevant trailing options.
 - `fill` preserves quoted whitespace and accepts literal `--json` or
   `--session` values after the standard `--` end-of-options sentinel.
 

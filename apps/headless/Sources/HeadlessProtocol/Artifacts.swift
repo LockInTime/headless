@@ -137,6 +137,14 @@ public final class ArtifactStore: @unchecked Sendable {
 
     public func finalize(_ source: URL, renameTo requestedName: String?) throws -> JSONValue {
         lock.lock(); defer { lock.unlock() }
+        guard source.deletingLastPathComponent().standardizedFileURL == rootURL.standardizedFileURL else {
+            throw ArtifactError.invalidName(source.lastPathComponent)
+        }
+        var sourceInfo = stat()
+        guard lstat(source.path, &sourceInfo) == 0,
+              (sourceInfo.st_mode & S_IFMT) == S_IFREG else {
+            throw ArtifactError.invalidName(source.lastPathComponent)
+        }
         var finalURL = source
         if let requestedName, requestedName != source.lastPathComponent {
             do { try validateArtifactName(requestedName, expectedExtension: source.pathExtension) }
@@ -145,11 +153,19 @@ public final class ArtifactStore: @unchecked Sendable {
             guard destination.deletingLastPathComponent().standardizedFileURL == rootURL.standardizedFileURL else {
                 throw ArtifactError.invalidName(requestedName)
             }
-            guard !FileManager.default.fileExists(atPath: destination.path) else {
-                throw ArtifactError.alreadyExists(requestedName)
+            // Both names live in the private artifact directory. A hard link
+            // is an atomic no-replace operation on that filesystem: unlike a
+            // fileExists + move pair, an external creator cannot win a race
+            // and have its destination overwritten.
+            guard link(source.path, destination.path) == 0 else {
+                if errno == EEXIST { throw ArtifactError.alreadyExists(requestedName) }
+                throw ArtifactError.writeFailed(String(cString: strerror(errno)))
             }
-            do { try FileManager.default.moveItem(at: source, to: destination) }
-            catch { throw ArtifactError.writeFailed(error.localizedDescription) }
+            guard unlink(source.path) == 0 else {
+                let reason = String(cString: strerror(errno))
+                _ = unlink(destination.path)
+                throw ArtifactError.writeFailed(reason)
+            }
             finalURL = destination
         }
         guard chmod(finalURL.path, 0o600) == 0 else {

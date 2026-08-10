@@ -455,16 +455,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
         }
     }
 
-    /// Once a window is driven through the local agent protocol, keep page
-    /// navigation inside the browser boundary. This prevents an untrusted page
-    /// from using an agent click to open another macOS application.
+    /// Once a window is driven through the local agent protocol, abandon any
+    /// legacy local page before its contents can become agent-visible.
     func enableAgentControl() {
         if !agentControlEnabled,
            let currentURL = webView.url,
            currentURL.absoluteString != "about:blank",
            !agentMayNavigate(to: currentURL) {
-            // A user may have opened a file or app URL before deciding to use
-            // the CLI. Do not make that existing content readable to an agent.
+            // Older builds allowed a user to open file or application URLs.
+            // Do not make restored legacy content readable to an agent.
             loadStartPage()
         }
         agentControlEnabled = true
@@ -702,7 +701,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if agentControlEnabled, let url = navigationAction.request.url, !agentMayNavigate(to: url) {
+        if let url = navigationAction.request.url,
+           !(onStartPage && url.absoluteString == "about:blank"),
+           !agentMayNavigate(to: url) {
             decisionHandler(.cancel)
             return
         }
@@ -710,13 +711,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
             // Convert explicit download intent into WKDownload so the
             // delegate below can classify and cancel it deterministically.
             decisionHandler(.download)
-            return
-        }
-        // Hand non-web schemes (mailto:, facetime:, app links…) to the system.
-        if let url = navigationAction.request.url, let scheme = url.scheme?.lowercased(),
-           !["http", "https", "file", "about", "data", "blob", "javascript"].contains(scheme) {
-            NSWorkspace.shared.open(url)
-            decisionHandler(.cancel)
             return
         }
         decisionHandler(.allow)
@@ -766,7 +760,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         // No tabs, no popups: target=_blank loads right here.
         if let url = navigationAction.request.url,
-           !agentControlEnabled || agentMayNavigate(to: url) {
+           agentMayNavigate(to: url) {
             webView.load(URLRequest(url: url))
         }
         return nil

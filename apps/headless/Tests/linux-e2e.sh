@@ -197,7 +197,12 @@ if headless screenshot --output ../escape.png >/dev/null 2>&1; then
   echo "artifact path traversal was not rejected" >&2
   exit 1
 fi
-headless --session qa record start --fps 5 | grep -q '"active":true'
+if ! RECORD_START="$(headless --session qa record start --fps 5)"; then
+  echo "$RECORD_START" >&2
+  exit 1
+fi
+echo "$RECORD_START"
+echo "$RECORD_START" | grep -q '"active":true'
 RECORDING_STATUS="$(headless --session qa record status)"
 echo "$RECORDING_STATUS" | grep -q '"active":true'
 echo "$RECORDING_STATUS" | grep -Eq '"frames":[1-9][0-9]*'

@@ -40,6 +40,7 @@ public final class BrowserRecording: @unchecked Sendable {
     private var frameCount = 0
     private var droppedFrames = 0
     private var failure: Error?
+    private var processExited = false
 
     public init(
         outputURL: URL,
@@ -66,26 +67,29 @@ public final class BrowserRecording: @unchecked Sendable {
         process.standardInput = inputPipe
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        do { try process.run() }
-        catch { throw RecordingError.captureFailed(error.localizedDescription) }
-        let firstFrameDeadline = Date().addingTimeInterval(3)
+        process.terminationHandler = { [weak self] _ in
+            guard let self else { return }
+            self.lock.lock(); self.processExited = true; self.lock.unlock()
+        }
         var firstFrame: Data?
         var firstFrameError: Error?
-        repeat {
+        let initialCaptureAttempts = 6
+        for attempt in 0..<initialCaptureAttempts where firstFrame == nil {
             do { firstFrame = try captureFrame() }
             catch {
                 firstFrameError = error
-                Thread.sleep(forTimeInterval: 0.05)
+                if attempt < initialCaptureAttempts - 1 {
+                    Thread.sleep(forTimeInterval: 0.05 * pow(2, Double(attempt)))
+                }
             }
-        } while firstFrame == nil && Date() < firstFrameDeadline
+        }
         guard let firstFrame else {
-            try? inputPipe.fileHandleForWriting.close()
-            process.terminate()
-            process.waitUntilExit()
             throw RecordingError.captureFailed(
-                "initial browser frame was unavailable: \(firstFrameError.map(String.init(describing:)) ?? "unknown error")"
+                "initial browser frame was unavailable after \(initialCaptureAttempts) attempts: \(firstFrameError.map(String.init(describing:)) ?? "unknown error")"
             )
         }
+        do { try process.run() }
+        catch { throw RecordingError.captureFailed(error.localizedDescription) }
         do {
             try inputPipe.fileHandleForWriting.write(contentsOf: firstFrame)
             frameCount = 1
@@ -150,7 +154,7 @@ public final class BrowserRecording: @unchecked Sendable {
 
     public func status() -> JSONValue {
         lock.lock()
-        let active = process.isRunning && !stopRequested && failure == nil
+        let active = !processExited && !stopRequested && failure == nil
         let frames = frameCount
         let dropped = droppedFrames
         let error = failure.map(String.init(describing:))
@@ -187,7 +191,7 @@ public final class BrowserRecording: @unchecked Sendable {
         let interval = 1.0 / fps
         var consecutiveFailures = 0
         while true {
-            lock.lock(); let shouldStop = stopRequested; lock.unlock()
+            lock.lock(); let shouldStop = stopRequested || processExited; lock.unlock()
             if shouldStop { break }
             let began = Date()
             do {
@@ -211,6 +215,7 @@ public final class BrowserRecording: @unchecked Sendable {
         while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
         if process.isRunning { process.terminate() }
         process.waitUntilExit()
+        lock.lock(); processExited = true; lock.unlock()
         finished.signal()
     }
 

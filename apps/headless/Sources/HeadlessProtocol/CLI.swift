@@ -23,7 +23,7 @@ public func requestTimeout(for request: CommandRequest) -> TimeInterval {
     if let milliseconds = request.parameters["timeoutMs"]?.numberValue {
         return min(125, max(10, milliseconds / 1_000 + 5))
     }
-    if request.command == .tour { return 125 }
+    if request.command == .tour || request.command == .flowRun { return 125 }
     if request.command == .recordStop { return 30 }
     if request.command == .screenshot {
         return request.parameters["series"]?.stringValue == nil ? 30 : 125
@@ -131,10 +131,17 @@ public struct CLIParser {
             return try parseRecord(arguments, session: session, jsonOutput: jsonOutput)
         case "qa":
             guard let subcommand = arguments.first else { throw CLIParseError.missingArgument("qa report|clear") }
-            try requireEmpty(Array(arguments.dropFirst()))
-            if subcommand == "report" { return remote(.qaReport, session: session, jsonOutput: jsonOutput) }
-            if subcommand == "clear" { return remote(.qaClear, session: session, jsonOutput: jsonOutput) }
-            throw CLIParseError.unknownCommand("qa \(subcommand)")
+            let trailing = Array(arguments.dropFirst())
+            switch subcommand {
+            case "report":
+                try requireEmpty(trailing)
+                return remote(.qaReport, session: session, jsonOutput: jsonOutput)
+            case "clear":
+                try requireEmpty(trailing)
+                return remote(.qaClear, session: session, jsonOutput: jsonOutput)
+            default:
+                throw CLIParseError.unknownCommand("qa \(subcommand)")
+            }
         case "console":
             return try parseConsole(arguments, session: session, jsonOutput: jsonOutput)
         case "network":

@@ -507,6 +507,7 @@ struct ProtocolTests {
         try expect(shortWait.request.map { requestTimeout(for: $0) } == 10, "wait timeout should retain the transport minimum")
 
         try expect(requestTimeout(for: CommandRequest(command: .tour)) == 125, "tour should use the long timeout")
+        try expect(requestTimeout(for: CommandRequest(command: .flowRun)) == 125, "flow replay should use the long timeout")
         try expect(
             requestTimeout(for: CommandRequest(command: .screenshot, parameters: ["series": .string("viewport")])) == 125,
             "screenshot series should use the long timeout"
@@ -780,6 +781,30 @@ struct ProtocolTests {
         )
         let recordingMode = (try FileManager.default.attributesOfItem(atPath: recording.path)[.posixPermissions] as? NSNumber)?.intValue
         try expect(recordingMode == 0o600, "reserved recording should be private")
+        _ = try store.writeReserved(Data("recording".utf8), to: recording)
+        let finalized = try store.finalize(recording, renameTo: "final-recording.mp4")
+        guard case .object(let finalizedMetadata) = finalized else {
+            throw TestFailure(description: "finalized artifact metadata")
+        }
+        try expect(finalizedMetadata["name"] == .string("final-recording.mp4"), "artifact rename should return its final name")
+        try expect(!FileManager.default.fileExists(atPath: recording.path), "artifact rename should remove its reserved source name")
+
+        let collisionSource = try store.reserve(
+            requestedName: "collision-source.mp4", extension: "mp4", prefix: "unused"
+        )
+        _ = try store.writeReserved(Data("source".utf8), to: collisionSource)
+        _ = try store.write(
+            Data("destination".utf8), requestedName: "collision.mp4",
+            extension: "mp4", prefix: "unused"
+        )
+        try expectThrows("artifact finalization must never replace an existing destination") {
+            _ = try store.finalize(collisionSource, renameTo: "collision.mp4")
+        }
+        try expect(
+            try Data(contentsOf: URL(fileURLWithPath: root + "/collision.mp4")) == Data("destination".utf8),
+            "artifact collision should preserve the existing destination"
+        )
+        try expect(FileManager.default.fileExists(atPath: collisionSource.path), "failed finalization should preserve its source")
         try expectThrows("artifact overwrite should be rejected") {
             _ = try store.write(Data(), requestedName: "sample.png", extension: "png", prefix: "unused")
         }
@@ -919,6 +944,9 @@ struct ProtocolTests {
         last=''
         for argument in "$@"; do last="$argument"; done
         printf '%s\n' "$@" > "$last.arguments"
+        case "$last" in
+          *exit-early*) dd bs=1 count=1 of=/dev/null 2>/dev/null; : > "$last"; exit 0 ;;
+        esac
         cat >/dev/null
         : > "$last"
         """
@@ -962,6 +990,37 @@ struct ProtocolTests {
             guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
             return arguments[index + 1]
         }
+
+        enum SyntheticInitialCaptureFailure: Error { case unavailable }
+        let initialFailureBegan = Date()
+        do {
+            _ = try BrowserRecording(
+                outputURL: URL(fileURLWithPath: root + "/initial-failure.mp4"), fps: 8,
+                captureFrame: { throw SyntheticInitialCaptureFailure.unavailable }
+            )
+            throw TestFailure(description: "an unavailable initial frame should fail recording startup")
+        } catch RecordingError.captureFailed {
+            try expect(
+                Date().timeIntervalSince(initialFailureBegan) < 2,
+                "recording startup should use short bounded backoff instead of busy-polling for three seconds"
+            )
+        }
+
+        let earlyExitRecording = try BrowserRecording(
+            outputURL: URL(fileURLWithPath: root + "/exit-early.mp4"), fps: 4,
+            captureFrame: { Data([0x01, 0x02, 0x03, 0x04]) }
+        )
+        let earlyExitDeadline = Date().addingTimeInterval(2)
+        while Date() < earlyExitDeadline {
+            guard case .object(let status) = earlyExitRecording.status(),
+                  status["active"] == .bool(true) else { break }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        guard case .object(let earlyExitStatus) = earlyExitRecording.status() else {
+            throw TestFailure(description: "early-exit recording status")
+        }
+        try expect(earlyExitStatus["active"] == .bool(false), "encoder termination should update recording status")
+        _ = try earlyExitRecording.stop(timeout: 2)
 
         for format in RecordingFormat.allCases {
             for quality in RecordingQuality.allCases {
@@ -1287,6 +1346,10 @@ struct ProtocolTests {
 
     static func diagnosticServices() throws {
         let store = QADiagnosticStore()
+        let typedHeaders = diagnosticStringHeaders([
+            "X-String": "value", "X-Number": 42, "X-Object": ["nested": true],
+        ])
+        try expect(typedHeaders == ["X-String": "value"], "non-string CDP header values should be dropped")
         store.append(kind: "console", level: "warn", message: "first")
         store.append(kind: "console", level: "error", message: "second")
         store.append(
@@ -1309,6 +1372,21 @@ struct ProtocolTests {
         let detailText = String(decoding: try ProtocolCodec.encoder.encode(store.networkDetail(requestID: "request-1")), as: UTF8.self)
         try expect(detailText.contains("[redacted]"), "network details must redact sensitive headers")
         try expect(detailText.contains("X-Visible"), "network details should retain non-sensitive headers")
+
+        var manyHeaders: [String: String] = [:]
+        for index in (0..<70).reversed() {
+            manyHeaders[String(format: "X-%03d", index)] = "value-\(index)"
+        }
+        store.append(kind: "response", requestID: "request-headers", requestHeaders: manyHeaders)
+        guard case .object(let headerDetail) = store.networkDetail(requestID: "request-headers"),
+              case .object(let requestEvent)? = headerDetail["request"],
+              case .object(let boundedHeaders)? = requestEvent["requestHeaders"] else {
+            throw TestFailure(description: "bounded diagnostic headers")
+        }
+        try expect(boundedHeaders.count == 64, "diagnostic headers should remain capped at 64")
+        try expect(boundedHeaders["X-000"] == .string("value-0"), "header selection should use sorted keys")
+        try expect(boundedHeaders["X-063"] == .string("value-63"), "the deterministic header boundary changed")
+        try expect(boundedHeaders["X-064"] == nil, "headers beyond the sorted cap should be omitted")
     }
 
     static func diagnosticCLI() throws {
@@ -1320,6 +1398,12 @@ struct ProtocolTests {
         try expect(styles.request?.parameters["properties"] == .array([.string("display")]), "style property should parse")
         let storage = try CLIParser().parse(["storage", "list", "--scope", "local"])
         try expect(storage.request?.command == .storageList, "storage command should parse")
+        do {
+            _ = try CLIParser().parse(["qa", "bogus", "--x"])
+            throw TestFailure(description: "unknown QA subcommands should fail")
+        } catch let error as CLIParseError {
+            try expect(error == .unknownCommand("qa bogus"), "unknown QA subcommands should win over trailing-option validation")
+        }
     }
 
     static func localSocketRoundTrip() throws {
