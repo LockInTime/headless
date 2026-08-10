@@ -185,31 +185,38 @@ echo "$QA_REPORT" | grep -q '"kind":"local-not-found"'
 STEP="safe-input-navigation"
 "$CLI" --session qa fill @e1 'Ada Lovelace' | grep -q '"valueLength":12'
 "$CLI" --session qa press Escape | grep -q '"pressed":"Escape"'
+STEP="safe-input-external-link"
 if EXTERNAL_RESULT="$("$CLI" --session qa click --role link --name 'External application')"; then
   echo "external application link was not blocked" >&2
   fail
 fi
 echo "$EXTERNAL_RESULT" | grep -q 'UNSAFE_NAVIGATION'
+STEP="safe-input-non-web-link"
 if NON_WEB_RESULT="$("$CLI" --session qa click --role link --name 'Non-web browser URL')"; then
   echo "non-HTTP browser URL was not blocked" >&2
   fail
 fi
 echo "$NON_WEB_RESULT" | grep -q 'UNSAFE_NAVIGATION'
+STEP="safe-input-credential-link"
 if CREDENTIAL_RESULT="$("$CLI" --session qa click --role link --name 'Credential-bearing URL')"; then
   echo "credential-bearing browser URL was not blocked" >&2
   fail
 fi
 echo "$CREDENTIAL_RESULT" | grep -q 'UNSAFE_NAVIGATION'
+STEP="safe-input-suspicious-link"
 if SUSPICIOUS_RESULT="$("$CLI" --session qa click --role link --name 'Suspicious installer')"; then
   echo "suspicious installer link was not blocked" >&2
   fail
 fi
 echo "$SUSPICIOUS_RESULT" | grep -q 'UNSAFE_RESOURCE_TYPE'
+STEP="safe-input-scripted-navigation"
 "$CLI" --session qa click --role button --name 'Scripted non-web navigation' | grep -q '"clicked"'
 "$CLI" --session qa wait --url /designers/dashboard --settled --timeout 10000 | grep -q 'Designers Dashboard'
+STEP="safe-input-download"
 "$CLI" --session qa click --role link --name 'Download fixture' | grep -q '"clicked"'
 sleep 1
 BLOCKED_DOWNLOAD_REPORT="$("$CLI" --session qa qa report)"
+STEP="safe-input-download-report"
 echo "$BLOCKED_DOWNLOAD_REPORT" | grep -q '"kind":"download-blocked"'
 echo "$BLOCKED_DOWNLOAD_REPORT" | grep -q '/download.txt'
 "$CLI" --session qa qa clear | grep -q '"cleared"'
