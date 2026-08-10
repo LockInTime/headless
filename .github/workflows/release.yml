@@ -21,7 +21,7 @@ jobs:
     needs: version
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install FFmpeg
         run: brew install ffmpeg
       - name: Build
@@ -47,7 +47,7 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build
         run: HEADLESS_LINUX_PLATFORM=linux/amd64 ./apps/headless/build-linux.sh
       - name: E2E
@@ -67,7 +67,7 @@ jobs:
     needs: version
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build
         run: HEADLESS_LINUX_PLATFORM=linux/arm64 ./apps/headless/build-linux.sh
       - name: E2E
