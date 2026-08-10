@@ -107,7 +107,11 @@ struct ProtocolTests {
     }
 
     static func rejectsUnexpectedRequestFields() throws {
-        let data = Data(#"{"id":"request-1","version":"0.1","command":"ping","parameters":{},"execute":"anything"}"#.utf8)
+        let valid = Data(#"{"id":"request-1","version":"0.4","command":"ping","parameters":{}}"#.utf8)
+        let decoded = try ProtocolCodec.decodeLine(CommandRequest.self, from: valid)
+        try expect(decoded.command == .ping, "the strict-field control request should decode")
+
+        let data = Data(#"{"id":"request-1","version":"0.4","command":"ping","parameters":{},"execute":"anything"}"#.utf8)
         try expectThrows("unexpected top-level request fields should be rejected") {
             _ = try ProtocolCodec.decodeLine(CommandRequest.self, from: data)
         }
@@ -499,6 +503,66 @@ struct ProtocolTests {
                 "url": .string("https://example.com/api"), "body": .string("{}"),
                 "contentType": .string("application/json\r\nX-Injected: yes"),
             ]).validate()
+        }
+    }
+
+    static func cliCommandMatrix() throws {
+        let remoteCommands: [([String], CommandName)] = [
+            (["status"], .ping),
+            (["stop"], .shutdown),
+            (["session", "create", "qa"], .sessionCreate),
+            (["session", "list"], .sessionList),
+            (["session", "close", "qa"], .sessionClose),
+            (["back"], .back),
+            (["reload"], .reload),
+            (["tour", "--pace", "750"], .tour),
+            (["capture-info"], .captureInfo),
+            (["artifacts", "list"], .artifactList),
+            (["qa", "report"], .qaReport),
+            (["qa", "clear"], .qaClear),
+            (["performance", "get"], .performanceGet),
+            (["animations", "list"], .animationList),
+            (["report", "create", "--output", "report.json"], .reportCreate),
+            (["flow", "start"], .flowStart),
+            (["flow", "stop", "--output", "flow.json"], .flowStop),
+            (["network", "emulate", "--offline", "--latency", "100"], .networkEmulate),
+            (["network", "mock", "clear"], .networkMockClear),
+        ]
+        for (arguments, command) in remoteCommands {
+            let invocation = try CLIParser().parse(arguments)
+            try expect(
+                invocation.request?.command == command,
+                "\(arguments.joined(separator: " ")) should parse as \(command.rawValue)"
+            )
+        }
+
+        let localCommands: [([String], LocalCommand)] = [
+            (["start"], .start),
+            (["help"], .help),
+            (["--help"], .help),
+        ]
+        for (arguments, command) in localCommands {
+            let invocation = try CLIParser().parse(arguments)
+            try expect(
+                invocation.local == command && invocation.request == nil,
+                "\(arguments.joined(separator: " ")) should stay local"
+            )
+        }
+
+        let sessionCreate = try CLIParser().parse(["session", "create", "qa"])
+        try expect(sessionCreate.request?.parameters["name"] == .string("qa"), "session create name should parse")
+        let sessionClose = try CLIParser().parse(["session", "close", "qa"])
+        try expect(sessionClose.request?.session == "qa", "session close target should parse")
+        let tour = try CLIParser().parse(["tour", "--pace", "750"])
+        try expect(tour.request?.parameters["pace"] == .number(750), "tour pace should parse")
+        let emulation = try CLIParser().parse([
+            "network", "emulate", "--offline", "--latency", "100",
+            "--download-kbps", "2000", "--upload-kbps", "500",
+        ])
+        try expect(emulation.request?.parameters["offline"] == .bool(true), "offline emulation should parse")
+        try expect(emulation.request?.parameters["latencyMs"] == .number(100), "emulation latency should parse")
+        try expectThrows("unknown trailing arguments should not be ignored") {
+            _ = try CLIParser().parse(["performance", "get", "extra"])
         }
     }
 
@@ -924,6 +988,7 @@ struct ProtocolTests {
             ("client timeout parity", clientTimeoutsMatchCommandBounds),
             ("CLI P1 artifacts", cliP1Artifacts),
             ("CLI P2 commands and boundaries", cliP2CommandsAndBoundaries),
+            ("CLI command matrix", cliCommandMatrix),
             ("Chromium runtime selection", chromiumRuntimeSelection),
             ("artifact store round-trip", artifactStoreRoundTrip),
             ("screenshot series helpers", screenshotSeriesHelpers),

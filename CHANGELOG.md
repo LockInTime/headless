@@ -26,6 +26,8 @@ Cutting that release is tracked in
 - An MCP stdio integration suite covering initialization, tool discovery,
   browser-command calls, malformed and oversized input, and rejection of local
   CLI commands.
+- CLI parser coverage for the previously untested session, navigation,
+  diagnostics, flow, network emulation, reporting, and local command paths.
 - Progressive context pruning: `inspect --context summary|outline|text|actions|full`
   with `--task` ranking, `--within @rN` scoping, and `--limit` / `--budget` /
   `--depth` bounds. Every focused response reports `contextStats` and `omitted`.

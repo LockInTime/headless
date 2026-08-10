@@ -277,6 +277,11 @@ flow start-stop/network emulate/mock clear/session ops/status/stop/start/help).
 Also tighten `rejectsUnexpectedRequestFields` (`ProtocolTests.swift:109-114`)
 which currently passes for the wrong reason.
 
+**Progress:** MCP stdio coverage now exercises C3 end to end. The audited CLI
+command matrix is covered, and the unexpected-field test first proves its
+current-version control request decodes before adding the forbidden field.
+Recording, flow, artifact, runtime, transport, and host-specific gaps remain.
+
 **D3. Web CI:** ~~`next build` + eslint on PR (site can break invisibly today).~~
 **Done** — the `web` job in `ci.yml` runs `pnpm --filter @headless/web lint`
 and `build`.
