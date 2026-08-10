@@ -129,6 +129,128 @@ const fresh = agent.snapshot(false, false, {context: 'actions', limit: 5});
 assert(fresh.elements.length > 0, 'actions context should return executable controls');
 assert.equal(agent.click({target: fresh.elements[0].ref}).clicked, fresh.elements[0].ref);
 
+// Exercise the command surface against controls with unique semantic names.
+const controls = window.document.createElement('section');
+controls.innerHTML = `
+  <button type="button" aria-label="Runtime action">Run</button>
+  <input aria-label="Runtime input">
+  <a href="javascript:alert(1)" aria-label="Unsafe runtime link">Unsafe</a>
+  <div role="button" aria-label="Read only runtime control" tabindex="0">Read only</div>
+`;
+window.document.body.prepend(controls);
+const button = controls.querySelector('button');
+const input = controls.querySelector('input');
+let clicks = 0;
+let inputs = 0;
+let changes = 0;
+const pressed = [];
+button.addEventListener('click', () => { clicks += 1; });
+input.addEventListener('input', () => { inputs += 1; });
+input.addEventListener('change', () => { changes += 1; });
+input.addEventListener('keydown', event => pressed.push(`down:${event.key}`));
+input.addEventListener('keyup', event => pressed.push(`up:${event.key}`));
+
+const clicked = agent.click({role: 'button', name: 'Runtime action'});
+assert.match(clicked.clicked, /^@e\d+$/);
+assert.equal(clicks, 1, 'click should dispatch exactly once');
+const filled = agent.fill({role: 'textbox', name: 'Runtime input', value: 'private value'});
+assert.equal(filled.valueLength, 13);
+assert.equal(filled.value, undefined, 'fill responses must not echo values');
+assert.equal(input.value, 'private value');
+assert.equal(inputs, 1);
+assert.equal(changes, 1);
+assert.equal(agent.press('A').pressed, 'A');
+assert.deepEqual(pressed, ['down:A', 'up:A']);
+assert.throws(
+  () => agent.fill({role: 'button', name: 'Read only runtime control', value: 'no'}),
+  /NOT_EDITABLE/,
+);
+assert.throws(
+  () => agent.click({role: 'link', name: 'Unsafe runtime link'}),
+  /UNSAFE_NAVIGATION:javascript:/,
+);
+
+window.scrollY = 0;
+const downward = agent.scroll({direction: 'down', amount: 300});
+assert.equal(downward.direction, 'down');
+assert.equal(downward.amount, 300);
+assert.equal(window.scrollY, 300);
+agent.scroll({direction: 'up', amount: 125});
+assert.equal(window.scrollY, 175);
+agent.scroll({direction: 'top'});
+assert.equal(window.scrollY, 0);
+agent.scroll({direction: 'bottom'});
+assert.equal(window.scrollY, 32000);
+
+const pageState = agent.state();
+assert.equal(pageState.url, 'http://127.0.0.1:41739/large-document');
+assert.equal(pageState.contentHeight, 32000);
+assert.equal(pageState.runningAnimations, 0);
+assert(pageState.text.includes('Run'));
+assert(pageState.text.length <= 30000, 'state text must stay bounded');
+
+const stationaryTour = await agent.tour({fullPage: false});
+assert.equal(stationaryTour.start, stationaryTour.end);
+assert.equal(stationaryTour.durationMs, 0);
+Object.defineProperty(window.document.documentElement, 'scrollHeight', {
+  value: 1000,
+  configurable: true,
+});
+const fullTour = await agent.tour({fullPage: true, pace: 5000});
+assert.equal(fullTour.start, 0);
+assert.equal(fullTour.end, 240);
+assert.equal(fullTour.durationMs, 500);
+assert.equal(window.scrollY, 240);
+
+// A very tall page must produce an explicit, end-anchored 80-point cap.
+Object.defineProperty(window.document.documentElement, 'scrollHeight', {
+  value: 100000,
+  configurable: true,
+});
+window.scrollY = 321;
+const viewportPlan = agent.screenshotPlan({mode: 'viewport'});
+assert.equal(viewportPlan.initialY, 321);
+assert.equal(viewportPlan.points.length, 80);
+assert.equal(viewportPlan.truncated, true);
+assert(viewportPlan.totalPoints > viewportPlan.points.length);
+assert.equal(viewportPlan.points.at(-1).y, 100000 - window.innerHeight);
+
+// Section plans deduplicate points within 96 px and apply the same hard cap.
+const sectionRoot = window.document.createElement('main');
+for (let index = 0; index < 100; index += 1) {
+  const heading = window.document.createElement('h2');
+  heading.textContent = `Runtime section ${index + 1}`;
+  heading.getBoundingClientRect = () => ({
+    x: 24,
+    y: index * 200,
+    top: index * 200,
+    left: 24,
+    right: 824,
+    bottom: index * 200 + 48,
+    width: 800,
+    height: 48,
+  });
+  sectionRoot.append(heading);
+}
+window.document.body.append(sectionRoot);
+window.scrollY = 0;
+const sectionPlan = agent.screenshotPlan({mode: 'section'});
+assert.equal(sectionPlan.points.length, 80);
+assert.equal(sectionPlan.truncated, true);
+for (let index = 1; index < sectionPlan.points.length; index += 1) {
+  assert(
+    sectionPlan.points[index].y - sectionPlan.points[index - 1].y > 96,
+    'section capture points within 96 px should be deduplicated',
+  );
+}
+
+// Once result arrays are exhausted, budget pruning must fall back to chopping
+// page text instead of returning an oversized response.
+const budgetedText = agent.snapshot(false, true, {context: 'full', limit: 1, budget: 256});
+assert(budgetedText.contextStats.encodedBytes <= 1024);
+assert(budgetedText.text.length < 30000, 'text fallback should be shortened to fit the budget');
+assert.equal(budgetedText.contextStats.budgetApplied, true);
+
 console.log(JSON.stringify({
   selectedRegion: targetRegion.ref,
   full: full.contextStats,
@@ -136,4 +258,5 @@ console.log(JSON.stringify({
   outline: outline.contextStats,
   scopedText: scopedText.contextStats,
   scopedActions: scopedActions.contextStats,
+  budgetedText: budgetedText.contextStats,
 }));

@@ -30,6 +30,9 @@ Cutting that release is tracked in
   diagnostics, flow, network emulation, reporting, and local command paths.
 - Core regression coverage for bounded artifact reads, non-regular artifacts,
   non-replayable fill values in flows, and the ffmpeg visual-difference path.
+- Agent-runtime regression coverage for interaction commands, page state,
+  tours, screenshot-plan bounds and deduplication, budget fallback, unsafe
+  links, and stale element references.
 - Progressive context pruning: `inspect --context summary|outline|text|actions|full`
   with `--task` ranking, `--within @rN` scoping, and `--limit` / `--budget` /
   `--depth` bounds. Every focused response reports `contextStats` and `omitted`.
