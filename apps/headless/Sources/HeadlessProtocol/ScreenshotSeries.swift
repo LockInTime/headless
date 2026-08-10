@@ -71,10 +71,6 @@ public func parseScreenshotSeriesPlan(_ plan: JSONValue) throws -> ScreenshotSer
     )
 }
 
-public func screenshotSeriesPoints(from plan: JSONValue) throws -> [ScreenshotSeriesPoint] {
-    try parseScreenshotSeriesPlan(plan).points
-}
-
 public func screenshotSeriesPrefix(parameters: [String: JSONValue], mode: String) throws -> String {
     if let requested = parameters["outputPrefix"]?.stringValue {
         try validateArtifactPrefix(requested)

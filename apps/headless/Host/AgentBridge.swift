@@ -404,7 +404,7 @@ extension BrowserWindowController {
             throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
         }
         do {
-            return try unwrapAgentEvaluationResult(jsonValue(from: result.get()))
+            return try unwrapAgentEvaluationResult(JSONValue.foundationValue(result.get()))
         } catch let error as HostError {
             throw error
         } catch {
@@ -416,18 +416,4 @@ extension BrowserWindowController {
 private func onMain<T>(_ body: @escaping () -> T) -> T {
     if Thread.isMainThread { return body() }
     return DispatchQueue.main.sync(execute: body)
-}
-
-private func jsonValue(from value: Any) throws -> JSONValue {
-    switch value {
-    case let value as String: return .string(value)
-    case let value as NSNumber:
-        if CFGetTypeID(value) == CFBooleanGetTypeID() { return .bool(value.boolValue) }
-        return .number(value.doubleValue)
-    case let value as [Any]: return .array(try value.map(jsonValue(from:)))
-    case let value as [String: Any]:
-        return .object(try value.mapValues(jsonValue(from:)))
-    case is NSNull: return .null
-    default: throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
-    }
 }

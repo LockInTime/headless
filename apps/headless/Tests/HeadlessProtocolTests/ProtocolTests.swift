@@ -419,6 +419,7 @@ struct ProtocolTests {
             invocation.request?.parameters["url"] == .string("http://localhost:3000/designers/dashboard"),
             "visit URL should normalize"
         )
+        try expect(!agentHelp.contains("--json"), "the no-op --json compatibility flag should stay out of help")
     }
 
     static func cliFillPreservesLiteralValue() throws {
