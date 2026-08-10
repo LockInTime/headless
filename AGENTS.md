@@ -128,6 +128,6 @@ If a change brushes against any of these, stop and record a decision in
 ## Versioning & release
 
 Tags `v*` trigger `.github/workflows/release.yml` (macOS zip + Linux
-tarballs). `HEADLESS_VERSION` flows from the tag; protocol version (`"0.4"`
+tarballs). `HEADLESS_VERSION` flows from the tag; protocol version (`"0.5"`
 in `Protocol.swift`) is independent — bump it only for wire-visible changes,
 with a decision entry.

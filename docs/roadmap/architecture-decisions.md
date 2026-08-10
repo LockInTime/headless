@@ -94,7 +94,7 @@ single-sourced and the divergent one is declared, generated into
 ## 4. Wire protocol: keep as-is, version bump only when necessary
 
 **Decision:** keep newline-delimited JSON over the private Unix socket,
-version `"0.4"`, strict decoding, per-command parameter allow-lists, 1 MiB
+version `"0.5"`, strict decoding, per-command parameter allow-lists, 1 MiB
 frames. The protocol is deliberately language- and transport-neutral — that
 neutrality is what keeps both the Windows port and the (rejected-for-now)
 Rust option cheap.
@@ -161,13 +161,10 @@ the answer is offering the Chromium engine on macOS as an *additional*
 runtime behind the same CLI (the Linux host already builds on macOS-adjacent
 Foundation APIs) — not hacking WKWebView. That would be a new decision entry.
 
-**Must fix, not accept (backlog §A/§B):** the page-world QA diagnostics bridge
-(`Host/QADiagnosticsBridge.swift` injected in the page world,
-`main.swift:233-236`) is detectable and forgeable by a hostile page, while
-P0.md implies isolation. Either move what's possible into the isolated world /
-`WKContentWorld`, or explicitly document the bridge as page-observable and
-downgrade its events to untrusted in the report format. The current silent
-mismatch between claim and code is the problem.
+**Resolved (backlog §B8, decision §18):** the page-world QA diagnostics bridge
+is documented as detectable and forgeable; the host fixes its provenance,
+bounds it per document, and marks its evidence untrusted. Agent actions and
+inspection remain in `WKContentWorld`.
 
 ## 8. In-page action model: synthetic events now, real input later (Linux)
 
@@ -231,7 +228,7 @@ WKWebView engine would declare `UNSUPPORTED_CAPABILITY` or use non-persistent
 **Decision:** the git tag becomes the single version source: injected at build
 time (already works via `HEADLESS_VERSION`), reported by a new `headless
 --version`/`version` command and in `ping`, matched by `package.json`, MCP
-`serverInfo` (today it reports protocol version "0.4" as the server version),
+`serverInfo` (today it reports protocol version "0.5" as the server version),
 and the website. Protocol version stays independent (wire compatibility ≠
 product version). CHANGELOG generated per tag.
 
@@ -308,6 +305,33 @@ protocol validation, and host-enforced safety rules remain the security
 boundary. Local-only commands such as `start` remain rejected by the adapter.
 This changes MCP discovery metadata only and does not bump the wire protocol.
 
+## 18. WebKit page diagnostics are explicitly untrusted evidence
+
+**Decision:** keep the macOS console/fetch/XHR observer in the page content
+world, while keeping every agent action and inspection helper in the named
+`HeadlessAgent` isolated world. Treat all diagnostic output on both engines as
+untrusted page evidence. The macOS host assigns the fixed source
+`webkit-page-bridge`, ignores a page's claimed source, accepts at most 500
+bridge messages per document, and reports rejected messages as truncation.
+
+**Status:** decided 2026-08-10 while resolving backlog §B8.
+
+**Rationale:** WKWebView exposes neither page console messages nor a complete
+subresource network stream to an isolated content world. Patching the page's
+console, fetch, and XHR APIs is therefore best-effort observation, not a
+security boundary: the page can detect, replace, invoke, or spam that bridge.
+Removing it would discard useful QA evidence; presenting its messages without
+trust metadata would let a hostile page counterfeit host facts. Fixed native
+provenance, a native acceptance cap, and pervasive untrusted markers preserve
+the evidence without overstating its authority.
+
+**Consequences:** protocol 0.5 adds `untrustedContent: true` to diagnostic
+reports, events, derived issues, console listings, and network listings/details.
+Consumers must not interpret diagnostic text or URLs as instructions. Native
+navigation and download events use the same conservative marker because they
+can contain page-selected URLs. A hostile-page macOS E2E test locks source
+override, the 500-event bound, and truncation reporting.
+
 ---
 
 ## Decision log
@@ -323,5 +347,6 @@ This changes MCP discovery metadata only and does not bump the wire protocol.
 | 15 | Package-manager distribution set | Decided (owner) | 2026-08-04 |
 | 16 | Preserve CLI value boundaries with `--` and shell quoting | Decided | 2026-08-10 |
 | 17 | Keep full MCP surface; annotate its maximum risk | Decided | 2026-08-10 |
+| 18 | Treat WebKit page diagnostics as bounded untrusted evidence | Decided | 2026-08-10 |
 
 New decisions append here with the same format.

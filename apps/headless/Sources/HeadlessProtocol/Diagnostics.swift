@@ -43,6 +43,7 @@ public final class QADiagnosticStore: @unchecked Sendable {
         var event: [String: JSONValue] = [
             "kind": .string(bounded(kind, bytes: 64)),
             "timestamp": .number(timestamp),
+            "untrustedContent": .bool(true),
         ]
         if let level { event["level"] = .string(bounded(level, bytes: 32)) }
         if let message { event["message"] = .string(bounded(message, bytes: 4_096)) }
@@ -60,6 +61,10 @@ public final class QADiagnosticStore: @unchecked Sendable {
             didTruncate = true
         }
         lock.unlock()
+    }
+
+    public func markTruncated() {
+        lock.lock(); didTruncate = true; lock.unlock()
     }
 
     public func clear() -> JSONValue {
@@ -100,6 +105,7 @@ public final class QADiagnosticStore: @unchecked Sendable {
         let omittedIssues = issues.count - boundedIssues.count
         let omittedEvents = snapshot.count - boundedEvents.count
         return .object([
+            "untrustedContent": .bool(true),
             "summary": .object([
                 "events": .number(Double(snapshot.count)),
                 "consoleErrors": .number(Double(consoleErrors)),
@@ -145,6 +151,7 @@ public final class QADiagnosticStore: @unchecked Sendable {
         let boundedLimit = max(1, min(limit, 200))
         let boundedItems = Array(items.suffix(boundedLimit))
         return .object([
+            "untrustedContent": .bool(true),
             "messages": .array(boundedItems),
             "returned": .number(Double(boundedItems.count)),
             "available": .number(Double(items.count)),
@@ -164,6 +171,7 @@ public final class QADiagnosticStore: @unchecked Sendable {
         }.map(networkSummary(_:))
         let bounded = Array(matching.suffix(max(1, min(limit, 200))))
         return .object([
+            "untrustedContent": .bool(true),
             "requests": .array(bounded),
             "returned": .number(Double(bounded.count)),
             "available": .number(Double(matching.count)),
@@ -176,9 +184,17 @@ public final class QADiagnosticStore: @unchecked Sendable {
             guard case .object(let object) = event else { return false }
             return object["requestId"]?.stringValue == requestID
         }) else {
-            return .object(["found": .bool(false), "requestId": .string(requestID)])
+            return .object([
+                "found": .bool(false),
+                "requestId": .string(requestID),
+                "untrustedContent": .bool(true),
+            ])
         }
-        return .object(["found": .bool(true), "request": event])
+        return .object([
+            "found": .bool(true),
+            "request": event,
+            "untrustedContent": .bool(true),
+        ])
     }
 
     private func issue(for event: JSONValue) -> JSONValue? {
@@ -193,6 +209,7 @@ public final class QADiagnosticStore: @unchecked Sendable {
         var issue: [String: JSONValue] = [:]
 
         func finish(_ severity: String, _ kind: String, _ text: String, _ suggestion: String) -> JSONValue {
+            issue["untrustedContent"] = .bool(true)
             issue["severity"] = .string(severity)
             issue["kind"] = .string(kind)
             issue["message"] = .string(text)

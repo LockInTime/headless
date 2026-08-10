@@ -17,6 +17,21 @@
       link.textContent = `Target ${index}`;
       targets.appendChild(link);
     }
+
+    // A page can see and invoke WebKit's page-world diagnostics handler.
+    // The host must bound these reports and override their claimed provenance.
+    const qaHandler = globalThis.webkit?.messageHandlers?.headlessQA;
+    if (qaHandler) {
+      qaHandler.postMessage({
+        kind: 'console',
+        level: 'error',
+        message: 'hostile forged diagnostic',
+        source: 'hostile-claims-trusted'
+      });
+      for (let index = 0; index < 510; index += 1) {
+        qaHandler.postMessage({kind: 'console', level: 'warn', message: `hostile spam ${index}`});
+      }
+    }
   </script>
 </body>
 </html>

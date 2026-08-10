@@ -3,7 +3,7 @@
 [![CI](https://github.com/LockInTime/headless/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/LockInTime/headless/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/LockInTime/headless?sort=semver)](https://github.com/LockInTime/headless/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Protocol](https://img.shields.io/badge/protocol-0.4-informational)](apps/headless/Sources/HeadlessProtocol/Protocol.swift)
+[![Protocol](https://img.shields.io/badge/protocol-0.5-informational)](apps/headless/Sources/HeadlessProtocol/Protocol.swift)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey)](#build-and-install)
 
 Persistent browser control for agents, without Playwright scripts or screen

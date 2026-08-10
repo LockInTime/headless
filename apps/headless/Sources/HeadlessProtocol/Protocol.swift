@@ -1,7 +1,7 @@
 import Foundation
 import CoreFoundation
 
-public let headlessProtocolVersion = "0.4"
+public let headlessProtocolVersion = "0.5"
 public let headlessMaximumMessageBytes = 1_048_576
 
 public enum JSONValue: Codable, Equatable, Sendable {

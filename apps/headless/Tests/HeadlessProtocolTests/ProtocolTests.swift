@@ -225,11 +225,11 @@ struct ProtocolTests {
     }
 
     static func rejectsUnexpectedRequestFields() throws {
-        let valid = Data(#"{"id":"request-1","version":"0.4","command":"ping","parameters":{}}"#.utf8)
+        let valid = Data(#"{"id":"request-1","version":"0.5","command":"ping","parameters":{}}"#.utf8)
         let decoded = try ProtocolCodec.decodeLine(CommandRequest.self, from: valid)
         try expect(decoded.command == .ping, "the strict-field control request should decode")
 
-        let data = Data(#"{"id":"request-1","version":"0.4","command":"ping","parameters":{},"execute":"anything"}"#.utf8)
+        let data = Data(#"{"id":"request-1","version":"0.5","command":"ping","parameters":{},"execute":"anything"}"#.utf8)
         try expectThrows("unexpected top-level request fields should be rejected") {
             _ = try ProtocolCodec.decodeLine(CommandRequest.self, from: data)
         }
@@ -1259,11 +1259,18 @@ struct ProtocolTests {
         guard case .object(let report) = store.report(), case .object(let summary)? = report["summary"] else {
             throw TestFailure(description: "diagnostic report")
         }
+        try expect(report["untrustedContent"] == .bool(true), "diagnostic reports should mark page evidence untrusted")
         try expect(summary["consoleErrors"] == .number(1), "console errors should be counted")
         try expect(summary["pageErrors"] == .number(1), "page errors should be counted")
         try expect(summary["httpErrors"] == .number(1), "HTTP errors should be counted")
         guard case .array(let issues)? = report["issues"] else { throw TestFailure(description: "diagnostic issues") }
         try expect(issues.count == 3, "each actionable diagnostic should have an issue")
+        guard case .object(let firstIssue) = issues[0] else { throw TestFailure(description: "diagnostic issue shape") }
+        try expect(firstIssue["untrustedContent"] == .bool(true), "derived diagnostic issues should stay untrusted")
+        guard case .array(let events)? = report["events"], case .object(let firstEvent) = events[0] else {
+            throw TestFailure(description: "diagnostic event shape")
+        }
+        try expect(firstEvent["untrustedContent"] == .bool(true), "diagnostic events should mark page evidence untrusted")
         let serialized = String(decoding: try ProtocolCodec.encoder.encode(report), as: UTF8.self)
         try expect(serialized.contains("framework-error"), "framework issues should be classified")
         try expect(serialized.contains("local-not-found"), "local 404s should be classified")
@@ -1281,6 +1288,12 @@ struct ProtocolTests {
         try expect(overflow["truncated"] == .bool(true), "overflow diagnostics should be marked truncated")
         let serialized = String(decoding: try ProtocolCodec.encoder.encode(overflow), as: UTF8.self)
         try expect(!serialized.contains("secret@"), "diagnostics must redact URL credentials")
+        _ = store.clear()
+        store.markTruncated()
+        guard case .object(let externallyTruncated) = store.report() else {
+            throw TestFailure(description: "externally truncated diagnostic report")
+        }
+        try expect(externallyTruncated["truncated"] == .bool(true), "diagnostic sources should report rejected events")
     }
 
     static func responsesFitTheProtocolFrame() throws {
@@ -1365,15 +1378,20 @@ struct ProtocolTests {
               case .array(let messages)? = console["messages"] else {
             throw TestFailure(description: "console service")
         }
+        try expect(console["untrustedContent"] == .bool(true), "console output should mark page evidence untrusted")
         try expect(messages.count == 1, "console service should filter by level")
         guard case .object(let network) = store.network(failedOnly: true, status: nil, limit: 10),
               case .array(let requests)? = network["requests"] else {
             throw TestFailure(description: "network service")
         }
+        try expect(network["untrustedContent"] == .bool(true), "network output should mark page evidence untrusted")
         try expect(requests.count == 1, "network service should find failed HTTP responses")
         let networkText = String(decoding: try ProtocolCodec.encoder.encode(network), as: UTF8.self)
         try expect(!networkText.contains("Bearer secret"), "network summaries must omit headers")
-        let detailText = String(decoding: try ProtocolCodec.encoder.encode(store.networkDetail(requestID: "request-1")), as: UTF8.self)
+        let detail = store.networkDetail(requestID: "request-1")
+        guard case .object(let detailObject) = detail else { throw TestFailure(description: "network detail shape") }
+        try expect(detailObject["untrustedContent"] == .bool(true), "network detail should mark page evidence untrusted")
+        let detailText = String(decoding: try ProtocolCodec.encoder.encode(detail), as: UTF8.self)
         try expect(detailText.contains("[redacted]"), "network details must redact sensitive headers")
         try expect(detailText.contains("X-Visible"), "network details should retain non-sensitive headers")
 
