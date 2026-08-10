@@ -330,7 +330,10 @@ echo "$HOSTILE_DIAGNOSTICS" | grep -q '"source":"webkit-page-bridge"'
 echo "$HOSTILE_DIAGNOSTICS" | grep -q '"untrustedContent":true'
 echo "$HOSTILE_DIAGNOSTICS" | grep -q '"events":500'
 echo "$HOSTILE_DIAGNOSTICS" | grep -q '"truncated":true'
-! echo "$HOSTILE_DIAGNOSTICS" | grep -q 'hostile-claims-trusted'
+if echo "$HOSTILE_DIAGNOSTICS" | grep -q 'hostile-claims-trusted'; then
+  echo "hostile page controlled diagnostic provenance" >&2
+  fail
+fi
 "$CLI" session close qa | grep -q '"closed":"qa"'
 
 echo "macOS P2 end-to-end flow passed"
