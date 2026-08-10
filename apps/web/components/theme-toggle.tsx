@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 type Theme = "light" | "dark";
 
@@ -8,19 +8,27 @@ function readTheme(): Theme {
   return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
 }
 
+function readServerTheme(): Theme {
+  return "dark";
+}
+
+function subscribeToTheme(onStoreChange: () => void) {
+  const observer = new MutationObserver(onStoreChange);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+  return () => observer.disconnect();
+}
+
 /** Light/dark switcher. Reflects and writes `data-theme` on <html>, set first by the no-flash inline script in the root layout. */
 export function ThemeToggle({ className }: { className?: string }) {
-  const [theme, setTheme] = useState<Theme>("dark");
-
-  useEffect(() => {
-    setTheme(readTheme());
-  }, []);
+  const theme = useSyncExternalStore(subscribeToTheme, readTheme, readServerTheme);
 
   function toggle() {
     const next: Theme = theme === "light" ? "dark" : "light";
     document.documentElement.setAttribute("data-theme", next);
     window.localStorage.setItem("theme", next);
-    setTheme(next);
   }
 
   return (

@@ -48,6 +48,8 @@ Cutting that release is tracked in
 - QA evidence now includes a recorded progressive-pruning scenario, and the
   committed bundle is checksum-verified in CI.
 - Repository moved to the `LockInTime` organisation; site links updated.
+- The website now runs on Next.js 16 with its native flat ESLint configuration;
+  the legacy `FlatCompat` and `@eslint/eslintrc` path has been removed.
 
 ### Known gaps
 

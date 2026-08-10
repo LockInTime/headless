@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import github from "@/public/scan-github.png";
 
 /** Viewport for the capture below — must match scan-github.png pixel size. */
@@ -63,23 +63,18 @@ function toPercent(box: PixelBox) {
   };
 }
 
+const resolvedSteps = steps.map((step) => ({ ...step, box: toPercent(step.bounds) }));
+
 /** Hero demo: viewport screenshot + inspect bounds from the same Headless session. */
 export function ScanFrame() {
   const [active, setActive] = useState(0);
-  const [ready, setReady] = useState(false);
-
-  const resolvedSteps = useMemo(
-    () => steps.map((step) => ({ ...step, box: toPercent(step.bounds) })),
-    [],
-  );
 
   useEffect(() => {
-    setReady(true);
     const timer = window.setInterval(() => {
       setActive((index) => (index + 1) % resolvedSteps.length);
     }, STEP_MS);
     return () => window.clearInterval(timer);
-  }, [resolvedSteps.length]);
+  }, []);
 
   const step = resolvedSteps[active];
 
@@ -100,7 +95,7 @@ export function ScanFrame() {
         </span>
       </div>
 
-      <div className={`scan-canvas${ready ? " scan-canvas-ready" : ""}`}>
+      <div className="scan-canvas scan-canvas-ready">
         <Image
           src={github}
           alt=""
