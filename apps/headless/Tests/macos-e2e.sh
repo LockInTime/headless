@@ -137,6 +137,11 @@ if lsof -nP -a -p "$HOST_PID" -iTCP -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; t
   echo "Headless host opened an unexpected TCP listener" >&2
   fail
 fi
+STEP="cross-engine-conformance"
+HEADLESS_CONFORMANCE_CLI="$CLI" \
+HEADLESS_CONFORMANCE_ENGINE=webkit \
+HEADLESS_CONFORMANCE_BASE_URL="http://127.0.0.1:$PORT" \
+  Tests/conformance.sh
 STEP="session-visit"
 "$CLI" session create qa | grep -q '"session":"qa"'
 "$CLI" session list | grep -q '"qa"'

@@ -59,6 +59,11 @@ headless start | grep -q '"ready":true'
 UNEXPECTED_TCP="$(awk 'NR > 1 && $4 == "0A" && $2 !~ /:A30B$/ { print $2 }' /proc/net/tcp /proc/net/tcp6)"
 test -z "$UNEXPECTED_TCP"
 
+HEADLESS_CONFORMANCE_CLI="$(command -v headless)" \
+HEADLESS_CONFORMANCE_ENGINE=chromium \
+HEADLESS_CONFORMANCE_BASE_URL=http://127.0.0.1:41739 \
+  /opt/headless/conformance.sh
+
 headless session create qa | grep -q '"session":"qa"'
 headless session list | grep -q '"qa"'
 headless --session qa visit http://127.0.0.1:41739/designers/dashboard/ | grep -q 'Designers Dashboard'

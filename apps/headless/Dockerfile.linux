@@ -41,12 +41,13 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY Tests/Fixtures /opt/headless/fixtures
 COPY Tests/linux-e2e.sh /opt/headless/linux-e2e.sh
+COPY Tests/conformance.sh /opt/headless/conformance.sh
 COPY install-linux.sh /opt/headless/package/install-linux.sh
 COPY --from=builder /src/.build/release/headless /opt/headless/package/headless
 COPY --from=builder /src/.build/release/headless-linux-host /opt/headless/package/headless-host
 COPY --from=builder /src/.build/release/headless-mcp /opt/headless/package/headless-mcp
 COPY --from=builder /src/.build/release/Headless_HeadlessProtocol.resources /opt/headless/package/Headless_HeadlessProtocol.resources
-RUN chmod 0755 /opt/headless/linux-e2e.sh \
+RUN chmod 0755 /opt/headless/linux-e2e.sh /opt/headless/conformance.sh \
     /opt/headless/package/install-linux.sh \
     /opt/headless/package/headless \
     /opt/headless/package/headless-host \

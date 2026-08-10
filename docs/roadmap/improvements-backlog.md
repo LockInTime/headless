@@ -339,8 +339,12 @@ now has direct regression coverage.
 **Done** — the `web` job in `ci.yml` runs `pnpm --filter @headless/web lint`
 and `build`.
 
-**D4. Cross-engine conformance runner** ([#37](https://github.com/LockInTime/headless/issues/37)) (architecture §14) replacing drifted
-hand-mirrored E2E assertions (e.g. `macos-e2e.sh:231` vs `linux-e2e.sh:157`).
+**D4. Cross-engine conformance runner** ([#37](https://github.com/LockInTime/headless/issues/37)) ~~(architecture §14) replacing drifted
+hand-mirrored E2E assertions (e.g. `macos-e2e.sh:231` vs `linux-e2e.sh:157`).~~
+**Done:** one portable scenario now runs unchanged inside both real-engine E2E
+suites. It locks common JSON fields across lifecycle, navigation, inspection,
+diagnostics, capture, flows, reports, and errors, branching only through the
+declared capability matrix for intentional differences.
 
 **D5. Benchmark refresh discipline [exists: benchmark.sh].** ([#38](https://github.com/LockInTime/headless/issues/38)) Emit JSON
 results artifact; re-run with the task-aware flow (BENCHMARK.md:29-31 says

@@ -23,6 +23,9 @@ Cutting that release is tracked in
 
 ### Added
 
+- A single cross-engine conformance scenario now runs against real WKWebView
+  and Chromium hosts, locking shared response shapes and declared capability
+  errors without mirrored platform assertions.
 - A generated WebKit/Chromium capability matrix now declares exhaustive
   command support and intentional engine differences; host ping responses
   include the active engine profile.

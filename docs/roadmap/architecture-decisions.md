@@ -254,13 +254,20 @@ CI, metadata/sitemap/404. Details: backlog §F.
 
 ## 14. Testing architecture: promote the conformance suite (Phase 1–2)
 
+**Status:** implemented 2026-08-10.
+
 **Decision:** keep the three-layer shape (protocol unit suite, jsdom runtime
 suite, per-platform E2E), and add the missing keystone: a **cross-engine
 conformance runner** — one scenario file executed against both engines
 asserting identical JSON shapes (or declared capability errors), replacing
-today's hand-mirrored `macos-e2e.sh`/`linux-e2e.sh` assertions that have
+today’s hand-mirrored `macos-e2e.sh`/`linux-e2e.sh` assertions that have
 already drifted. The hand-rolled no-XCTest runner is fine (it keeps Linux
 docker runs trivial); don't churn it to a framework.
+
+The portable `Tests/conformance.sh` scenario is invoked by both platform E2E
+suites. It asserts the same response fields for shared behavior and consults
+the generated engine profile only for declared differences, so adding an
+engine or changing a shared response requires updating one executable contract.
 
 ## 15. Distribution architecture (Phase 3, owner-decided)
 
@@ -353,6 +360,7 @@ override, the 500-event bound, and truncation reporting.
 | 6 | Windows = stretch via Chromium engine; WSL2/Docker interim | Decided (owner) | 2026-08-04 |
 | 8 | Real CDP input on Linux as capability upgrade | Planned (Phase 4) | 2026-08-04 |
 | 12 | Version unification on git tag | Planned (Phase 3) | 2026-08-04 |
+| 14 | Run one conformance scenario against every engine | Implemented | 2026-08-10 |
 | 15 | Package-manager distribution set | Decided (owner) | 2026-08-04 |
 | 16 | Preserve CLI value boundaries with `--` and shell quoting | Decided | 2026-08-10 |
 | 17 | Keep full MCP surface; annotate its maximum risk | Decided | 2026-08-10 |
