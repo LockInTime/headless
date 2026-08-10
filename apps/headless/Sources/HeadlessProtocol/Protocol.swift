@@ -258,7 +258,10 @@ public struct CommandRequest: Codable, Equatable, Sendable {
             guard ["up", "down", "top", "bottom"].contains(direction) else {
                 throw ProtocolValidationError.invalidParameter("Invalid scroll direction")
             }
-            _ = try number("amount", minimum: 0.1, maximum: 100_000)
+            _ = try number(
+                "amount", minimum: ProtocolBounds.scrollAmount.lowerBound,
+                maximum: ProtocolBounds.scrollAmount.upperBound
+            )
         case .wait:
             try allow(["settled", "url", "text", "timeoutMs"])
             try boolean("settled")
@@ -393,9 +396,18 @@ public struct CommandRequest: Codable, Equatable, Sendable {
         case .networkEmulate:
             try allow(["offline", "latencyMs", "downloadKbps", "uploadKbps"])
             try boolean("offline")
-            _ = try number("latencyMs", minimum: 0, maximum: 120_000)
-            _ = try number("downloadKbps", minimum: -1, maximum: 1_000_000)
-            _ = try number("uploadKbps", minimum: -1, maximum: 1_000_000)
+            _ = try number(
+                "latencyMs", minimum: ProtocolBounds.networkLatencyMilliseconds.lowerBound,
+                maximum: ProtocolBounds.networkLatencyMilliseconds.upperBound
+            )
+            _ = try number(
+                "downloadKbps", minimum: ProtocolBounds.networkThroughputKbps.lowerBound,
+                maximum: ProtocolBounds.networkThroughputKbps.upperBound
+            )
+            _ = try number(
+                "uploadKbps", minimum: ProtocolBounds.networkThroughputKbps.lowerBound,
+                maximum: ProtocolBounds.networkThroughputKbps.upperBound
+            )
         case .networkMockSet:
             try allow(["url", "status", "body", "contentType"])
             if let url = try string("url", required: true, maximumBytes: 8_192) { _ = try normalizedWebURL(url) }
@@ -490,8 +502,7 @@ public func validateIdentifier(_ value: String, field: String) throws {
     guard !value.isEmpty, value.utf8.count <= 64 else {
         throw ProtocolValidationError.invalidIdentifier(field: field)
     }
-    let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
-    guard value.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+    guard hasPortableNameCharacters(value) else {
         throw ProtocolValidationError.invalidIdentifier(field: field)
     }
 }
@@ -511,8 +522,7 @@ public func validateArtifactName(_ value: String, expectedExtensions: Set<String
             "Artifact output must be a simple \(extensionDescription) filename"
         )
     }
-    let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
-    guard value.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+    guard hasPortableNameCharacters(value) else {
         throw ProtocolValidationError.invalidParameter("Artifact output contains unsupported characters")
     }
 }
@@ -523,10 +533,23 @@ public func validateArtifactPrefix(_ value: String) throws {
           !value.hasPrefix(".") else {
         throw ProtocolValidationError.invalidParameter("Artifact prefix must be a simple filename prefix")
     }
-    let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
-    guard value.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+    guard hasPortableNameCharacters(value) else {
         throw ProtocolValidationError.invalidParameter("Artifact prefix contains unsupported characters")
     }
+}
+
+private let portableNameCharacters = CharacterSet(
+    charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+)
+
+public func hasPortableNameCharacters(_ value: String) -> Bool {
+    value.unicodeScalars.allSatisfy(portableNameCharacters.contains)
+}
+
+public enum ProtocolBounds {
+    public static let scrollAmount = 0.1...100_000.0
+    public static let networkLatencyMilliseconds = 0.0...120_000.0
+    public static let networkThroughputKbps = -1.0...1_000_000.0
 }
 
 /// Agent navigation is deliberately limited to web URLs in P0. File URLs and
@@ -617,7 +640,13 @@ public func isLocalDevelopmentAddress(_ input: String) -> Bool {
     let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let components = URLComponents(string: "//" + trimmed),
           let host = components.host?.lowercased() else { return false }
-    return ["localhost", "127.0.0.1", "0.0.0.0", "::1"].contains(host)
+    return isLocalDevelopmentHost(host)
+}
+
+public let localDevelopmentHosts: Set<String> = ["localhost", "127.0.0.1", "0.0.0.0", "::1"]
+
+public func isLocalDevelopmentHost(_ host: String) -> Bool {
+    localDevelopmentHosts.contains(host.lowercased())
 }
 
 public enum ProtocolCodec {

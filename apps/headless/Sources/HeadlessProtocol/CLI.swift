@@ -270,7 +270,8 @@ public struct CLIParser {
         guard args.count <= 1 else { throw CLIParseError.invalidOption(args[1]) }
         var parameters: [String: JSONValue] = ["direction": .string(direction)]
         if let amountText {
-            guard let amount = Double(amountText), amount > 0, amount <= 100_000 else {
+            guard let amount = Double(amountText), amount.isFinite,
+                  ProtocolBounds.scrollAmount.contains(amount) else {
                 throw CLIParseError.invalidNumber(amountText)
             }
             parameters["amount"] = .number(amount)
@@ -469,9 +470,15 @@ public struct CLIParser {
             let up = try removeOption("--upload-kbps", from: &args)
             try requireEmpty(args)
             var parameters: [String: JSONValue] = ["offline": .bool(offline)]
-            for (option, value) in [("latencyMs", latency), ("downloadKbps", down), ("uploadKbps", up)] {
+            for (option, value, range) in [
+                ("latencyMs", latency, ProtocolBounds.networkLatencyMilliseconds),
+                ("downloadKbps", down, ProtocolBounds.networkThroughputKbps),
+                ("uploadKbps", up, ProtocolBounds.networkThroughputKbps),
+            ] {
                 if let value {
-                    guard let number = Double(value), number.isFinite else { throw CLIParseError.invalidNumber(value) }
+                    guard let number = Double(value), number.isFinite, range.contains(number) else {
+                        throw CLIParseError.invalidNumber(value)
+                    }
                     parameters[option] = .number(number)
                 }
             }

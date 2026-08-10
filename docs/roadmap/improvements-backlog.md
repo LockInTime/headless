@@ -167,13 +167,16 @@ and both hosts propagate a shared `HostError` whose typed code owns the
 protocol response and recovery suggestion. Unknown page codes fail closed as
 `OPERATION_FAILED`; no host classifies human-readable error text.
 
-**B3. Single-source constants + drift tests.** ([#23](https://github.com/LockInTime/headless/issues/23)) Blocked/caution extensions
+**B3. Single-source constants + drift tests.** ([#23](https://github.com/LockInTime/headless/issues/23)) ~~Blocked/caution extensions
 exist in Swift (`HP/Protocol.swift:576-591`) and JS
 (`HP/AgentRuntime.swift:17-21`) with no cross-check; artifact charset written
 4×; local-address list 3×; CLI vs validator bounds disagree (scroll amount
 `>0` vs `>=0.1`, `CLI.swift:248` / `Protocol.swift:261`; network emulate
 unbounded in CLI, `CLI.swift:449` / `Protocol.swift:396-398`). One definition
-each + a test asserting the JS copy contains the Swift set.
+each + a test asserting the JS copy contains the Swift set.~~ **Done:** name
+characters, local hosts, and numeric bounds have one shared definition; the
+CLI enforces the validator's scroll and network ranges; and protocol coverage
+parses both JavaScript extension sets and requires exact equality with Swift.
 
 **B4. Dead code removal.** ([#24](https://github.com/LockInTime/headless/issues/24)) `screenshotSeriesPoints(from:)`
 (`HP/ScreenshotSeries.swift:74-76`), `JSONValue.foundationObject`
