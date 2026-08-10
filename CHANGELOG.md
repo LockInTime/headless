@@ -38,6 +38,9 @@ Cutting that release is tracked in
   accuracy, and oversized Unix-socket requests.
 - Cross-uid Unix-socket rejection and host E2E classification checks for
   blocked top-frame navigation and denied page-initiated downloads.
+- macOS explicitly converts download-intent links, attachment responses, and
+  unsupported response types into cancellable `WKDownload` objects so every
+  denied download is classified without writing page-controlled bytes.
 - Progressive context pruning: `inspect --context summary|outline|text|actions|full`
   with `--task` ranking, `--within @rN` scoping, and `--limit` / `--budget` /
   `--depth` bounds. Every focused response reports `contextStats` and `omitted`.
