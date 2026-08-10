@@ -701,14 +701,4 @@ public extension JSONValue {
         }
     }
 
-    var foundationObject: Any {
-        switch self {
-        case .string(let value): return value
-        case .number(let value): return value
-        case .bool(let value): return value
-        case .object(let value): return value.mapValues(\.foundationObject)
-        case .array(let value): return value.map(\.foundationObject)
-        case .null: return NSNull()
-        }
-    }
 }

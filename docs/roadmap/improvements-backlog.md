@@ -178,7 +178,7 @@ characters, local hosts, and numeric bounds have one shared definition; the
 CLI enforces the validator's scroll and network ranges; and protocol coverage
 parses both JavaScript extension sets and requires exact equality with Swift.
 
-**B4. Dead code removal.** ([#24](https://github.com/LockInTime/headless/issues/24)) `screenshotSeriesPoints(from:)`
+**B4. Dead code removal.** ([#24](https://github.com/LockInTime/headless/issues/24)) ~~`screenshotSeriesPoints(from:)`
 (`HP/ScreenshotSeries.swift:74-76`), `JSONValue.foundationObject`
 (`HP/Protocol.swift:670-679`), discarded `timeout` param
 (`LinuxHost/BrowserProcess.swift:777-778`) — either honor it (tour expects
@@ -186,7 +186,10 @@ parses both JavaScript extension sets and requires exact equality with Swift.
 (`BrowserProcess.swift:483-486`), effectively-no-op `--json` flag
 (`HeadlessCLI/main.swift:145`) — implement human-readable output or remove
 the flag from help, `jsonValue(from:)` duplicate
-(`AgentBridge.swift:428-441`).
+(`AgentBridge.swift:428-441`).~~ **Done:** removed the unused screenshot and
+Foundation conversion paths, made both hosts share `JSONValue.foundationValue`,
+honored the bounded Linux evaluation timeout, deleted the unreachable PDF
+branch, and hid the backward-compatible no-op `--json` parser flag from help.
 
 **B5. `pruneToBudget` quality.** ([#25](https://github.com/LockInTime/headless/issues/25)) Hand-rolled 2-pass fixed point
 (`HP/AgentRuntime.swift:348-352`), O(n²) re-encoding per trim, pop-largest-

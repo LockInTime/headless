@@ -66,6 +66,9 @@ Cutting that release is tracked in
 
 ### Changed
 
+- Removed stale screenshot and JSON conversion paths, honored per-operation
+  Linux evaluation timeouts, and stopped advertising the compatibility-only
+  `--json` flag.
 - QA evidence now includes a recorded progressive-pruning scenario, and the
   committed bundle is checksum-verified in CI.
 - Repository moved to the `LockInTime` organisation; site links updated.

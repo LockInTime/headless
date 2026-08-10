@@ -480,14 +480,10 @@ final class LinuxBrowserSession: @unchecked Sendable {
         if hasTarget {
             throw CDPError.commandFailed("PDF capture is not supported for element targets")
         }
-        var printParameters: [String: Any] = [
+        let printParameters: [String: Any] = [
             "printBackground": true,
             "preferCSSPageSize": true,
         ]
-        if parameters["fullPage"]?.boolValue != true {
-            printParameters["paperWidth"] = 11
-            printParameters["paperHeight"] = 8.5
-        }
         let response = try command(
             "Page.printToPDF",
             parameters: printParameters,
@@ -779,7 +775,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
     }
 
     private func evaluate(_ body: String, input: [String: Any] = [:], timeout: TimeInterval = 10) throws -> JSONValue {
-        _ = timeout // The dedicated DevTools socket has a bounded 125-second timeout.
+        let timeoutMilliseconds = Int32(min(125_000, max(1, ceil(timeout * 1_000))))
         let inputData = try JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])
         guard let inputJSON = String(data: inputData, encoding: .utf8) else {
             throw CDPError.invalidResponse("input encoding")
@@ -796,13 +792,17 @@ final class LinuxBrowserSession: @unchecked Sendable {
           \(agentEvaluationBody(body))
         })()
         """
-        let response = try command("Runtime.evaluate", parameters: [
-            "expression": expression,
-            "awaitPromise": true,
-            "returnByValue": true,
-            "userGesture": true,
-            "contextId": try isolatedExecutionContextID(),
-        ])
+        let response = try command(
+            "Runtime.evaluate",
+            parameters: [
+                "expression": expression,
+                "awaitPromise": true,
+                "returnByValue": true,
+                "userGesture": true,
+                "contextId": try isolatedExecutionContextID(),
+            ],
+            timeoutMilliseconds: timeoutMilliseconds
+        )
         if let exception = response["exceptionDetails"] as? [String: Any] {
             throw CDPError.commandFailed(exception["text"] as? String ?? String(describing: exception))
         }

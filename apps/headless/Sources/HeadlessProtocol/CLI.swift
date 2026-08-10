@@ -631,11 +631,11 @@ Core workflow:
   headless start
   headless session create qa
   headless --session qa visit localhost:3000/designers/dashboard
-  headless --session qa inspect --context summary --task "click Continue" --json
+  headless --session qa inspect --context summary --task "click Continue"
   headless --session qa tour --full-page
   headless --session qa click --role button --name Continue
   headless --session qa wait --settled
-  headless --session qa capture-info --json
+  headless --session qa capture-info
 
 Commands:
   start | status | stop | runtime
@@ -674,7 +674,6 @@ Commands:
 
 Global options:
   --session NAME   target a named browser session
-  --json           emit one JSON object on stdout
   --               stop parsing global options; quote multi-word fill values
 """
 
