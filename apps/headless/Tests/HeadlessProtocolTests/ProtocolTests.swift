@@ -138,6 +138,70 @@ private func readRawSocketLine(descriptor: Int32) throws -> Data {
     throw TestFailure(description: "raw socket response exceeded the protocol limit")
 }
 
+private final class TestBrowserSession: BrowserEngineSession {
+    private(set) var agentControlEnableCount = 0
+
+    func hostEnableAgentControl() { agentControlEnableCount += 1 }
+    func hostVisit(_ url: URL) throws -> JSONValue { .object(["url": .string(url.absoluteString)]) }
+    func hostInspect(parameters: [String: JSONValue]) throws -> JSONValue {
+        .object(["engineResult": .bool(true), "parameters": .object(parameters)])
+    }
+    func hostClick(parameters: [String: JSONValue]) throws -> JSONValue { .object(["clicked": .bool(true)]) }
+    func hostFill(parameters: [String: JSONValue]) throws -> JSONValue { .object(["filled": .bool(true)]) }
+    func hostPress(parameters: [String: JSONValue]) throws -> JSONValue { .object(["pressed": .bool(true)]) }
+    func hostScroll(parameters: [String: JSONValue]) throws -> JSONValue { .object(["scrolled": .bool(true)]) }
+    func hostWait(parameters: [String: JSONValue]) throws -> JSONValue { .object(["waited": .bool(true)]) }
+    func hostTour(parameters: [String: JSONValue]) throws -> JSONValue { .object(["toured": .bool(true)]) }
+    func hostBack() throws -> JSONValue { .object(["back": .bool(true)]) }
+    func hostReload() throws -> JSONValue { .object(["reloaded": .bool(true)]) }
+    func hostCaptureInfo() throws -> JSONValue { .object(["engine": .string("fake")]) }
+    func hostScreenshot(
+        parameters: [String: JSONValue], format: ScreenshotFormat, copyToClipboard: Bool
+    ) throws -> BrowserScreenshot { BrowserScreenshot(data: Data("image".utf8)) }
+    func hostRecordingFrame() throws -> Data { Data("frame".utf8) }
+    func hostScreenshotSeriesPlan(mode: String) throws -> JSONValue {
+        .object([
+            "initialY": .number(0), "totalPoints": .number(1), "truncated": .bool(false),
+            "points": .array([.object(["y": .number(0), "label": .string("viewport")])]),
+        ])
+    }
+    func hostScrollToCapturePoint(y: Double) throws -> JSONValue { .object(["y": .number(y)]) }
+    func hostQAReport() throws -> JSONValue { .object(["issues": .array([])]) }
+    func hostQAClear() throws -> JSONValue { .object(["cleared": .bool(true)]) }
+    func hostConsole(level: String, limit: Int) throws -> JSONValue { .object(["entries": .array([])]) }
+    func hostNetwork(failedOnly: Bool, status: Int?, limit: Int) throws -> JSONValue {
+        .object(["requests": .array([])])
+    }
+    func hostNetworkDetail(requestID: String) throws -> JSONValue {
+        .object(["requestId": .string(requestID)])
+    }
+    func hostStyles(parameters: [String: JSONValue]) throws -> JSONValue { .object(["styles": .array([])]) }
+    func hostCookies(includeValues: Bool) throws -> JSONValue { .object(["cookies": .array([])]) }
+    func hostStorage(scope: String, includeValues: Bool) throws -> JSONValue { .object(["scope": .string(scope)]) }
+    func hostPerformance() throws -> JSONValue { .object(["metrics": .array([])]) }
+    func hostAnimations() throws -> JSONValue { .object(["animations": .array([])]) }
+}
+
+private final class TestBrowserEngine: BrowserEngine {
+    typealias Session = TestBrowserSession
+
+    let name = "fake"
+    let platform = "test"
+    private(set) var createdSessions: [TestBrowserSession] = []
+    private(set) var closedSessions: [TestBrowserSession] = []
+    private(set) var stopped = false
+
+    func createSession() throws -> TestBrowserSession {
+        let session = TestBrowserSession()
+        createdSessions.append(session)
+        return session
+    }
+
+    func closeSession(_ session: TestBrowserSession) { closedSessions.append(session) }
+    func stop() { stopped = true }
+    func pingDetails() -> [String: JSONValue] { ["adapter": .string("test-adapter")] }
+}
+
 @main
 struct ProtocolTests {
     typealias TestCase = (String, () throws -> Void)
@@ -1628,6 +1692,35 @@ struct ProtocolTests {
             localDevelopmentHosts == ["localhost", "127.0.0.1", "0.0.0.0", "::1"],
             "local development host allowlist changed"
         )
+        let maximumScreenshot = try BoundedScreenshotRectangle([
+            "x": .number(0), "y": .number(0),
+            "width": .number(ProtocolBounds.screenshotDimension),
+            "height": .number(ProtocolBounds.screenshotPixels / ProtocolBounds.screenshotDimension),
+        ])
+        try expect(
+            maximumScreenshot.width * maximumScreenshot.height == ProtocolBounds.screenshotPixels,
+            "the shared screenshot pixel bound should accept its exact limit"
+        )
+        try expectThrows("the shared screenshot bound should reject oversized captures") {
+            _ = try BoundedScreenshotRectangle([
+                "x": .number(0), "y": .number(0),
+                "width": .number(ProtocolBounds.screenshotDimension),
+                "height": .number(ProtocolBounds.screenshotDimension),
+            ])
+        }
+        try expect(
+            try browserTargetArguments(["target": .string("@e123")])["target"] as? String == "@e123",
+            "shared target conversion should preserve validated references"
+        )
+        try expectThrows("shared target conversion should reject invalid references") {
+            _ = try browserTargetArguments(["target": .string("#page-owned-selector")])
+        }
+        try requireSensitiveDiagnosticsAccess(
+            if: true, environment: ["HEADLESS_ALLOW_SENSITIVE_DIAGNOSTICS": "1"]
+        )
+        try expectThrows("sensitive diagnostics should stay double-gated") {
+            try requireSensitiveDiagnosticsAccess(if: true, environment: [:])
+        }
 
         let minimumScroll = try CLIParser().parse([
             "scroll", "down", "--amount", String(ProtocolBounds.scrollAmount.lowerBound),
@@ -1649,6 +1742,66 @@ struct ProtocolTests {
         try expectThrows("CLI should reject throughput below the validator minimum") {
             _ = try CLIParser().parse(["network", "emulate", "--download-kbps", "-2"])
         }
+    }
+
+    static func sharedHostCoreDispatch() throws {
+        let root = "/tmp/headless-host-core-test-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let defaultSession = TestBrowserSession()
+        let engine = TestBrowserEngine()
+        let core = HostCore(
+            engine: engine,
+            artifacts: try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": root]),
+            defaultSession: defaultSession,
+            shutdownHandler: {}
+        )
+        defer { core.stop() }
+
+        let ping = core.handle(CommandRequest(command: .ping))
+        guard ping.ok, case .object(let pingResult) = ping.result else {
+            throw TestFailure(description: "shared host ping should succeed")
+        }
+        try expect(pingResult["engine"] == .string("fake"), "ping should identify the engine")
+        try expect(pingResult["platform"] == .string("test"), "ping should identify the platform")
+        try expect(pingResult["adapter"] == .string("test-adapter"), "engine ping details should be merged")
+
+        let created = core.handle(CommandRequest(
+            command: .sessionCreate, parameters: ["name": .string("secondary")]
+        ))
+        try expect(created.ok, "shared session creation should succeed")
+        try expect(engine.createdSessions.count == 1, "session creation should delegate to the engine")
+
+        let inspected = core.handle(CommandRequest(
+            command: .inspect, session: "secondary", parameters: ["interactive": .bool(true)]
+        ))
+        guard inspected.ok, case .object(let inspectResult) = inspected.result else {
+            throw TestFailure(description: "shared inspect dispatch should succeed")
+        }
+        try expect(inspectResult["engineResult"] == .bool(true), "inspect should delegate to the session")
+        try expect(
+            engine.createdSessions[0].agentControlEnableCount == 2,
+            "agent control should be enabled at creation and before command execution"
+        )
+
+        let capture = core.handle(CommandRequest(command: .captureInfo, session: "secondary"))
+        guard capture.ok, case .object(let captureResult) = capture.result else {
+            throw TestFailure(description: "shared capture info should succeed")
+        }
+        try expect(captureResult["engine"] == .string("fake"), "capture info should retain engine fields")
+        try expect(captureResult["trace"] != nil, "capture info should include the shared trace")
+        try expect(captureResult["recording"] != nil, "capture info should include recording state")
+
+        let unsupported = core.handle(CommandRequest(command: .networkEmulate, session: "secondary"))
+        try expect(
+            unsupported.error?.code == "UNSUPPORTED_CAPABILITY",
+            "unsupported engine features should return a typed capability error"
+        )
+
+        let closed = core.handle(CommandRequest(command: .sessionClose, session: "secondary"))
+        try expect(closed.ok, "shared session close should succeed")
+        try expect(engine.closedSessions.count == 1, "session close should delegate to the engine")
+        let missing = core.handle(CommandRequest(command: .inspect, session: "secondary"))
+        try expect(missing.error?.code == "SESSION_NOT_FOUND", "closed sessions should be removed from shared state")
     }
 
     static func main() {
@@ -1714,6 +1867,7 @@ struct ProtocolTests {
             ("incremental NUL message buffering", nullTerminatedBufferScansIncrementally),
             ("typed host errors", typedHostErrorsRoundTrip),
             ("single-source contract constants", singleSourceContractConstants),
+            ("shared host core dispatch", sharedHostCoreDispatch),
         ]
 
         var failures = 0

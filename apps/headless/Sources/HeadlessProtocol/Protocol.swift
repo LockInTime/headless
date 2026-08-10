@@ -550,6 +550,63 @@ public enum ProtocolBounds {
     public static let scrollAmount = 0.1...100_000.0
     public static let networkLatencyMilliseconds = 0.0...120_000.0
     public static let networkThroughputKbps = -1.0...1_000_000.0
+    public static let screenshotDimension = 16_384.0
+    public static let screenshotPixels = 64_000_000.0
+}
+
+public struct BoundedScreenshotRectangle: Equatable, Sendable {
+    public let x: Double
+    public let y: Double
+    public let width: Double
+    public let height: Double
+
+    public init(_ object: [String: JSONValue]) throws {
+        guard let x = object["x"]?.numberValue, let y = object["y"]?.numberValue,
+              let width = object["width"]?.numberValue,
+              let height = object["height"]?.numberValue,
+              x.isFinite, y.isFinite, width.isFinite, height.isFinite,
+              width > 0, height > 0,
+              width <= ProtocolBounds.screenshotDimension,
+              height <= ProtocolBounds.screenshotDimension,
+              width * height <= ProtocolBounds.screenshotPixels else {
+            throw HostError(
+                code: .operationFailed,
+                message: "Screenshot dimensions exceed safety limits"
+            )
+        }
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+}
+
+public func browserTargetArguments(_ parameters: [String: JSONValue]) throws -> [String: Any] {
+    if let target = parameters["target"]?.stringValue {
+        guard target.hasPrefix("@e"), target.count <= 16 else {
+            throw HostError(code: .operationFailed, message: "Invalid element reference")
+        }
+        return ["target": target]
+    }
+    var result: [String: Any] = [:]
+    if let role = parameters["role"]?.stringValue { result["role"] = role }
+    if let name = parameters["name"]?.stringValue { result["name"] = name }
+    guard !result.isEmpty else {
+        throw HostError(code: .operationFailed, message: "Missing command parameter: target")
+    }
+    return result
+}
+
+public func requireSensitiveDiagnosticsAccess(
+    if requested: Bool,
+    environment: [String: String] = ProcessInfo.processInfo.environment
+) throws {
+    guard !requested || environment["HEADLESS_ALLOW_SENSITIVE_DIAGNOSTICS"] == "1" else {
+        throw HostError(
+            code: .sensitiveDiagnosticsDisabled,
+            message: "Sensitive diagnostic values are disabled."
+        )
+    }
 }
 
 /// Agent navigation is deliberately limited to web URLs in P0. File URLs and

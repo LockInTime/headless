@@ -4,478 +4,170 @@ import Foundation
 import Glibc
 #endif
 
-final class LinuxBrowserHost: @unchecked Sendable {
-    private let browser: ChromiumProcess
-    private var sessions: [String: LinuxBrowserSession] = [:]
-    private var trace: [String: [JSONValue]] = [:]
-    private var activeFlows: [String: [RecordedFlowStep]] = [:]
-    private var recordings: [String: BrowserRecording] = [:]
-    private let traceStartedAt = ProcessInfo.processInfo.systemUptime
-    private let artifacts: ArtifactStore
-    private let stateLock = NSLock()
-    private var stopping = false
-    var onShutdown: (() -> Void)?
+final class ChromiumBrowserEngine: BrowserEngine {
+    typealias Session = ChromiumBrowserEngineSession
+
+    let name = "chromium"
+    let platform = "linux"
+    let browser: ChromiumProcess
 
     init() throws {
-        artifacts = try ArtifactStore()
         browser = try ChromiumProcess()
-        sessions["default"] = try browser.createSession()
-        trace["default"] = []
     }
 
-    /// Every mutation of `sessions`, `trace`, `activeFlows`, and `recordings`
-    /// goes through here. `shutdown` deliberately bypasses the transport's
-    /// request queue so an operator can always stop a stalled browser action,
-    /// which means `stop()` runs while a normal command may still be in
-    /// flight — without this lock both threads mutate the same dictionaries.
-    /// Hold it only around collection access, never across browser I/O, so a
-    /// stalled command cannot delay teardown.
-    private func withState<T>(_ body: () -> T) -> T {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        return body()
+    func createSession() throws -> ChromiumBrowserEngineSession {
+        ChromiumBrowserEngineSession(engine: self, browserSession: try browser.createSession())
     }
 
-    private func lookupSession(_ name: String) -> LinuxBrowserSession? {
-        withState { sessions[name] }
+    func closeSession(_ session: ChromiumBrowserEngineSession) {
+        browser.closeSession(session.browserSession)
     }
 
-    private func lookupRecording(_ name: String) -> BrowserRecording? {
-        withState { recordings[name] }
-    }
+    func stop() { browser.stop() }
 
-    private func traceEvents(for name: String) -> [JSONValue] {
-        withState { trace[name] ?? [] }
-    }
-
-    func stop() {
-        let (activeRecordings, openSessions) = withState {
-            () -> ([BrowserRecording], [LinuxBrowserSession]) in
-            if stopping { return ([], []) }
-            stopping = true
-            let capturedRecordings = Array(recordings.values)
-            let capturedSessions = Array(sessions.values)
-            recordings.removeAll()
-            sessions.removeAll()
-            trace.removeAll()
-            activeFlows.removeAll()
-            return (capturedRecordings, capturedSessions)
-        }
-        for recording in activeRecordings { _ = try? recording.stop(timeout: 5) }
-        for session in openSessions { browser.closeSession(session) }
-        browser.stop()
-    }
-
-    private func captureScreenshotSeries(
-        session: LinuxBrowserSession,
-        parameters: [String: JSONValue]
-    ) throws -> JSONValue {
-        let mode = parameters["series"]?.stringValue ?? "viewport"
-        let format = try screenshotFormat(
-            explicit: parameters["format"]?.stringValue,
-            output: nil
-        )
-        let rawPlan = try session.screenshotSeriesPlan(mode: mode)
-        let plan = try parseScreenshotSeriesPlan(rawPlan)
-        let points = plan.points
-        let prefix = try screenshotSeriesPrefix(parameters: parameters, mode: mode)
-        defer { _ = try? session.scrollToCapturePoint(y: plan.initialY) }
-        let reserved = try reserveScreenshotSeriesArtifacts(
-            store: artifacts, points: points, prefix: prefix, mode: mode, format: format
-        )
-        do {
-            let metadata = try points.enumerated().map { index, point -> JSONValue in
-                _ = try session.scrollToCapturePoint(y: point.y)
-                let data = try session.screenshot(parameters: [:], format: format)
-                return try artifacts.writeReserved(data, to: reserved[index])
-            }
-            return screenshotSeriesSummary(
-                mode: mode, points: points, artifacts: metadata,
-                truncated: plan.truncated, totalPoints: plan.totalPoints
-            )
-        } catch {
-            artifacts.discardReserved(reserved)
-            throw error
-        }
-    }
-
-    func handle(_ request: CommandRequest) -> CommandResponse {
-        if request.command == .ping {
-            return .success(id: request.id, result: .object([
-                "ready": .bool(true), "pid": .number(Double(ProcessInfo.processInfo.processIdentifier)),
-                "engine": .string("chromium"), "platform": .string("linux"),
-                "protocolVersion": .string(headlessProtocolVersion),
-                "recordingAvailable": .bool(BrowserRecording.isAvailable()),
-                "artifactDirectory": .string(artifacts.rootURL.path),
-                "browserExecutable": .string(browser.runtime.executableURL.path),
-                "browserRuntimeSource": .string(browser.runtime.source.rawValue),
-                "browserTransport": .string("inherited-devtools-pipe"),
-            ]))
-        }
-        if request.command == .shutdown {
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) { self.onShutdown?() }
-            return .success(id: request.id, result: .object(["stopping": .bool(true)]))
-        }
-        do {
-            if request.command == .artifactList {
-                return .success(id: request.id, result: try artifacts.list())
-            }
-            switch request.command {
-            case .sessionCreate:
-                guard let name = request.parameters["name"]?.stringValue else { return failure(request, "MISSING_PARAMETER", "Session name is required.") }
-                try validateIdentifier(name, field: "session")
-                guard withState({ sessions[name] == nil }) else { return failure(request, "SESSION_EXISTS", "Session already exists: \(name)") }
-                let created = try browser.createSession()
-                // Re-check under the lock: teardown may have started while the
-                // browser was creating the target.
-                let rejection = withState { () -> String? in
-                    if stopping { return "HOST_UNAVAILABLE" }
-                    if sessions[name] != nil { return "SESSION_EXISTS" }
-                    sessions[name] = created
-                    trace[name] = []
-                    return nil
-                }
-                if let rejection {
-                    browser.closeSession(created)
-                    return failure(
-                        request, rejection,
-                        rejection == "SESSION_EXISTS"
-                            ? "Session already exists: \(name)"
-                            : "Host is shutting down."
-                    )
-                }
-                record(.sessionCreate, session: name)
-                return .success(id: request.id, result: .object(["session": .string(name)]))
-            case .sessionList:
-                let names = withState { sessions.keys.sorted() }
-                return .success(id: request.id, result: .object(["sessions": .array(names.map(JSONValue.string))]))
-            case .sessionClose:
-                let name = request.session ?? "default"
-                let closing = withState { () -> (LinuxBrowserSession?, BrowserRecording?) in
-                    let session = sessions.removeValue(forKey: name)
-                    guard session != nil else { return (nil, nil) }
-                    let recording = recordings.removeValue(forKey: name)
-                    trace.removeValue(forKey: name)
-                    activeFlows.removeValue(forKey: name)
-                    return (session, recording)
-                }
-                guard let session = closing.0 else { return missingSession(request, name) }
-                if let recording = closing.1 { _ = try? recording.stop(timeout: 5) }
-                browser.closeSession(session)
-                return .success(id: request.id, result: .object(["closed": .string(name)]))
-            default:
-                break
-            }
-
-            let name = request.session ?? "default"
-            guard let session = lookupSession(name) else { return missingSession(request, name) }
-            let result: JSONValue
-            switch request.command {
-            case .visit:
-                guard let value = request.parameters["url"]?.stringValue else { return failure(request, "MISSING_PARAMETER", "URL is required.") }
-                result = try session.visit(normalizedWebURL(value))
-            case .inspect:
-                result = try session.inspect(parameters: request.parameters)
-            case .click: result = try session.click(parameters: request.parameters)
-            case .fill: result = try session.fill(parameters: request.parameters)
-            case .press: result = try session.press(parameters: request.parameters)
-            case .scroll: result = try session.scroll(parameters: request.parameters)
-            case .wait: result = try session.wait(parameters: request.parameters)
-            case .tour: result = try session.tour(parameters: request.parameters)
-            case .back: result = try session.back()
-            case .reload: result = try session.reload()
-            case .captureInfo:
-                result = .object([
-                    "engine": .string("chromium"), "headless": .bool(browser.headless),
-                    "browserPid": .number(Double(browser.processIdentifier)),
-                    "browserExecutable": .string(browser.runtime.executableURL.path),
-                    "browserRuntimeSource": .string(browser.runtime.source.rawValue),
-                    "browserTransport": .string("inherited-devtools-pipe"),
-                    "targetId": .string(session.targetID), "page": try session.state(),
-                    "trace": .array(traceEvents(for: name)),
-                    "recording": lookupRecording(name)?.status() ?? .object(["active": .bool(false)]),
-                ])
-            case .screenshot:
-                if request.parameters["series"]?.stringValue != nil {
-                    result = try captureScreenshotSeries(session: session, parameters: request.parameters)
-                } else {
-                    if request.parameters["clipboard"]?.boolValue == true {
-                        throw CDPError.commandFailed("Clipboard screenshots are only supported by the macOS host")
-                    }
-                    let format = try screenshotFormat(
-                        explicit: request.parameters["format"]?.stringValue,
-                        output: request.parameters["output"]?.stringValue
-                    )
-                    let data = try session.screenshot(parameters: request.parameters, format: format)
-                    result = try artifacts.write(
-                        data, requestedName: request.parameters["output"]?.stringValue,
-                        extension: artifactExtension(request.parameters["output"]?.stringValue ?? "") ?? format.fileExtension,
-                        prefix: "screenshot-\(name)"
-                    )
-                }
-            case .recordStart:
-                guard lookupRecording(name) == nil else { throw RecordingError.alreadyActive }
-                let format = try recordingFormat(
-                    explicit: request.parameters["format"]?.stringValue,
-                    output: request.parameters["output"]?.stringValue
-                )
-                let quality = try RecordingQuality.parse(request.parameters["quality"]?.stringValue ?? "balanced")
-                let output = try artifacts.reserve(
-                    requestedName: request.parameters["output"]?.stringValue,
-                    extension: format.fileExtension, prefix: "recording-\(name)"
-                )
-                let fps = request.parameters["fps"]?.numberValue ?? 10
-                let recording: BrowserRecording
-                do {
-                    recording = try BrowserRecording(
-                        outputURL: output, fps: fps, format: format, quality: quality
-                    ) { [weak session] in
-                        guard let session else { throw RecordingError.captureFailed("session closed") }
-                        return try session.recordingFrame()
-                    }
-                } catch {
-                    try? FileManager.default.removeItem(at: output)
-                    throw error
-                }
-                // Registering under the lock keeps a recording started during
-                // teardown from outliving the host as an orphaned FFmpeg
-                // process that nothing will ever stop.
-                let registered = withState { () -> Bool in
-                    guard !stopping, recordings[name] == nil else { return false }
-                    recordings[name] = recording
-                    return true
-                }
-                guard registered else {
-                    _ = try? recording.stop(timeout: 5)
-                    try? FileManager.default.removeItem(at: output)
-                    throw CDPError.commandFailed("Host is shutting down")
-                }
-                result = recording.status()
-            case .recordStatus:
-                result = lookupRecording(name)?.status() ?? .object(["active": .bool(false)])
-            case .recordStop:
-                guard let activeRecording = lookupRecording(name) else { throw RecordingError.notActive }
-                if let output = request.parameters["output"]?.stringValue,
-                   let actual = artifactExtension(output),
-                   actual != activeRecording.format.fileExtension {
-                    throw CaptureFormatError.mismatchedOutputFormat(
-                        expected: activeRecording.format.fileExtension,
-                        actual: actual
-                    )
-                }
-                guard let recording = withState({ recordings.removeValue(forKey: name) }) else { throw RecordingError.notActive }
-                let recordingStatus: JSONValue
-                do { recordingStatus = try recording.stop() }
-                catch {
-                    try? FileManager.default.removeItem(at: recording.outputURL)
-                    throw error
-                }
-                let artifact = try artifacts.finalize(
-                    recording.outputURL, renameTo: request.parameters["output"]?.stringValue
-                )
-                result = merge(recordingStatus, with: artifact)
-            case .qaReport:
-                result = try session.qaReport()
-            case .qaClear:
-                result = session.diagnostics.clear()
-            case .consoleList:
-                result = session.console(
-                    level: request.parameters["level"]?.stringValue ?? "all",
-                    limit: Int(request.parameters["limit"]?.numberValue ?? 100)
-                )
-            case .networkList:
-                result = session.network(
-                    failedOnly: request.parameters["failed"]?.boolValue ?? false,
-                    status: request.parameters["status"]?.numberValue.map(Int.init),
-                    limit: Int(request.parameters["limit"]?.numberValue ?? 100)
-                )
-            case .networkGet:
-                guard let requestID = request.parameters["requestId"]?.stringValue else {
-                    return failure(request, "MISSING_PARAMETER", "Network request ID is required.")
-                }
-                result = session.networkDetail(requestID: requestID)
-            case .stylesGet:
-                result = try session.styles(parameters: request.parameters)
-            case .cookiesList:
-                result = try session.cookies(includeValues: request.parameters["includeValues"]?.boolValue ?? false)
-            case .storageList:
-                result = try session.storage(
-                    scope: request.parameters["scope"]?.stringValue ?? "all",
-                    includeValues: request.parameters["includeValues"]?.boolValue ?? false
-                )
-            case .performanceGet: result = try session.performance()
-            case .animationList: result = try session.animations()
-            case .networkEmulate: result = try session.emulateNetwork(parameters: request.parameters)
-            case .networkMockSet: result = try session.setNetworkMock(parameters: request.parameters)
-            case .networkMockClear: result = try session.clearNetworkMocks()
-            case .visualCompare:
-                guard let before = request.parameters["before"]?.stringValue else {
-                    return failure(request, "MISSING_PARAMETER", "Before artifact name is required.")
-                }
-                guard let after = request.parameters["after"]?.stringValue else {
-                    return failure(request, "MISSING_PARAMETER", "After artifact name is required.")
-                }
-                _ = try artifacts.read(name: before, expectedExtension: "png", maximumBytes: 100 * 1_024 * 1_024)
-                _ = try artifacts.read(name: after, expectedExtension: "png", maximumBytes: 100 * 1_024 * 1_024)
-                let difference = try artifacts.reserve(requestedName: request.parameters["output"]?.stringValue,
-                                                       extension: "png", prefix: "difference-\(name)")
-                let comparison = try VisualComparison.compare(
-                    before: artifacts.rootURL.appendingPathComponent(before),
-                    after: artifacts.rootURL.appendingPathComponent(after), difference: difference
-                )
-                result = merge(comparison, with: try artifacts.finalize(difference, renameTo: nil))
-            case .reportCreate:
-                let report: JSONValue = .object([
-                    "format": .string("headless-qa-report-v1"),
-                    "createdAt": .number(Date().timeIntervalSince1970), "session": .string(name),
-                    "page": .object(["engine": .string("chromium"), "state": try session.state()]),
-                    "qa": try session.qaReport(), "trace": .array(traceEvents(for: name)),
-                    "artifacts": try artifacts.list(),
-                    "security": .object(["sensitiveValuesIncluded": .bool(false), "transport": .string("local-unix-socket")]),
-                ])
-                result = try artifacts.write(ProtocolCodec.encoder.encode(report),
-                                             requestedName: request.parameters["output"]?.stringValue,
-                                             extension: "json", prefix: "qa-report-\(name)")
-            case .flowStart:
-                withState { activeFlows[name] = [] }
-                result = .object(["recording": .bool(true), "note": .string("Only safe navigation actions are recorded; typed values and credentials are never stored.")])
-            case .flowStop:
-                let steps = withState { activeFlows.removeValue(forKey: name) } ?? []
-                result = try artifacts.write(ProtocolCodec.encoder.encode(RecordedFlow(commands: steps)),
-                                             requestedName: request.parameters["output"]?.stringValue,
-                                             extension: "json", prefix: "flow-\(name)")
-            case .flowRun:
-                guard let input = request.parameters["input"]?.stringValue else { return failure(request, "MISSING_PARAMETER", "Flow input is required.") }
-                let flow = try ProtocolCodec.decoder.decode(RecordedFlow.self, from: artifacts.read(name: input, expectedExtension: "json", maximumBytes: 1_024 * 1_024))
-                guard flow.version == 1, flow.commands.count <= 200,
-                      flow.commands.allSatisfy({ replayableFlowCommands.contains($0.command) }) else {
-                    return failure(request, "INVALID_FLOW", "Flow contains unsupported commands.")
-                }
-                var completed = 0
-                for step in flow.commands {
-                    try CommandRequest(command: step.command, session: name, parameters: step.parameters).validate()
-                    let response = handle(CommandRequest(command: step.command, session: name, parameters: step.parameters))
-                    guard response.ok else { return failure(request, "FLOW_FAILED", "Step \(completed + 1) (\(step.command.rawValue)) failed: \(response.error?.message ?? "unknown error")") }
-                    completed += 1
-                }
-                result = .object(["completed": .number(Double(completed)), "input": .string(input)])
-            case .ping, .shutdown, .sessionCreate, .sessionList, .sessionClose, .artifactList:
-                return failure(request, "INVALID_COMMAND", "Command is not valid in this context.")
-            }
-            record(request.command, session: name, result: result)
-            if let step = flowStepIfSafe(command: request.command, parameters: request.parameters) {
-                withState { () -> Void in
-                    guard let steps = activeFlows[name], steps.count < 200 else { return }
-                    activeFlows[name] = steps + [step]
-                }
-            }
-            return .success(id: request.id, result: result)
-        } catch let error as HostError {
-            return .failure(
-                id: request.id, code: error.code.rawValue, message: error.message,
-                suggestion: error.suggestion
-            )
-        } catch let error as ProtocolValidationError {
-            if case .unsafeResourceType = error {
-                return failure(request, "UNSAFE_RESOURCE_TYPE", error.description,
-                               suggestion: "Executable files, installers, scripts, and disk images are blocked. Use normal web pages or media only.")
-            }
-            return failure(request, "INVALID_INPUT", error.description)
-        } catch let error as CDPError {
-            switch error {
-            case .timedOut:
-                let hostError = HostError(code: .timedOut, message: error.description)
-                return .failure(
-                    id: request.id, code: hostError.code.rawValue,
-                    message: hostError.message, suggestion: hostError.suggestion
-                )
-            default:
-                return .failure(
-                    id: request.id, code: HostErrorCode.operationFailed.rawValue,
-                    message: error.description
-                )
-            }
-        } catch let error as RecordingError {
-            let code: String
-            let suggestion: String?
-            switch error {
-            case .unavailable:
-                code = "RECORDER_UNAVAILABLE"
-                suggestion = "Install FFmpeg or set HEADLESS_FFMPEG_EXECUTABLE."
-            case .alreadyActive: code = "RECORDING_ACTIVE"; suggestion = nil
-            case .notActive: code = "RECORDING_NOT_ACTIVE"; suggestion = nil
-            default: code = "RECORDING_FAILED"; suggestion = nil
-            }
-            return .failure(
-                id: request.id, code: code, message: error.description,
-                suggestion: suggestion
-            )
-        } catch let error as CaptureFormatError {
-            return .failure(id: request.id, code: "INVALID_CAPTURE_FORMAT", message: error.description)
-        } catch let error as ArtifactError {
-            return .failure(id: request.id, code: "ARTIFACT_ERROR", message: error.description)
-        } catch {
-            return failure(request, "INTERNAL_ERROR", String(describing: error))
-        }
-    }
-
-    private func record(_ command: CommandName, session: String, result: JSONValue? = nil) {
-        var event: [String: JSONValue] = [
-            "time": .number(ProcessInfo.processInfo.systemUptime - traceStartedAt),
-            "command": .string(command.rawValue),
+    func pingDetails() -> [String: JSONValue] {
+        [
+            "browserExecutable": .string(browser.runtime.executableURL.path),
+            "browserRuntimeSource": .string(browser.runtime.source.rawValue),
+            "browserTransport": .string("inherited-devtools-pipe"),
         ]
-        if case .object(let object) = result, let url = object["url"]?.stringValue {
-            event["url"] = .string(String(decoding: url.utf8.prefix(2_048), as: UTF8.self))
+    }
+
+    func hostError(for error: Error) -> HostError? {
+        guard let error = error as? CDPError else { return nil }
+        switch error {
+        case .timedOut:
+            return HostError(code: .timedOut, message: error.description)
+        default:
+            return HostError(code: .operationFailed, message: error.description)
         }
-        withState { () -> Void in
-            var entries = trace[session] ?? []
-            entries.append(.object(event))
-            if entries.count > 256 { entries.removeFirst(entries.count - 256) }
-            trace[session] = entries
-        }
-    }
-
-    private func missingSession(_ request: CommandRequest, _ name: String) -> CommandResponse {
-        .failure(id: request.id, code: "SESSION_NOT_FOUND", message: "Session does not exist: \(name)",
-                 suggestion: "Run `headless session create \(name)`.")
-    }
-
-    private func failure(
-        _ request: CommandRequest, _ code: String, _ message: String, suggestion: String? = nil
-    ) -> CommandResponse {
-        .failure(id: request.id, code: code, message: message, suggestion: suggestion)
-    }
-
-    private func merge(_ first: JSONValue, with second: JSONValue) -> JSONValue {
-        guard case .object(var result) = first, case .object(let extra) = second else { return second }
-        result.merge(extra) { _, new in new }
-        return .object(result)
     }
 }
 
+final class ChromiumBrowserEngineSession: BrowserEngineSession {
+    unowned let engine: ChromiumBrowserEngine
+    let browserSession: LinuxBrowserSession
+
+    init(engine: ChromiumBrowserEngine, browserSession: LinuxBrowserSession) {
+        self.engine = engine
+        self.browserSession = browserSession
+    }
+
+    func hostVisit(_ url: URL) throws -> JSONValue { try browserSession.visit(url) }
+    func hostInspect(parameters: [String: JSONValue]) throws -> JSONValue {
+        try browserSession.inspect(parameters: parameters)
+    }
+    func hostClick(parameters: [String: JSONValue]) throws -> JSONValue {
+        try browserSession.click(parameters: parameters)
+    }
+    func hostFill(parameters: [String: JSONValue]) throws -> JSONValue {
+        try browserSession.fill(parameters: parameters)
+    }
+    func hostPress(parameters: [String: JSONValue]) throws -> JSONValue {
+        try browserSession.press(parameters: parameters)
+    }
+    func hostScroll(parameters: [String: JSONValue]) throws -> JSONValue {
+        try browserSession.scroll(parameters: parameters)
+    }
+    func hostWait(parameters: [String: JSONValue]) throws -> JSONValue {
+        try browserSession.wait(parameters: parameters)
+    }
+    func hostTour(parameters: [String: JSONValue]) throws -> JSONValue {
+        try browserSession.tour(parameters: parameters)
+    }
+    func hostBack() throws -> JSONValue { try browserSession.back() }
+    func hostReload() throws -> JSONValue { try browserSession.reload() }
+    func hostCaptureInfo() throws -> JSONValue {
+        .object([
+            "engine": .string("chromium"),
+            "headless": .bool(engine.browser.headless),
+            "browserPid": .number(Double(engine.browser.processIdentifier)),
+            "browserExecutable": .string(engine.browser.runtime.executableURL.path),
+            "browserRuntimeSource": .string(engine.browser.runtime.source.rawValue),
+            "browserTransport": .string("inherited-devtools-pipe"),
+            "targetId": .string(browserSession.targetID),
+            "page": try browserSession.state(),
+        ])
+    }
+    func hostScreenshot(
+        parameters: [String: JSONValue], format: ScreenshotFormat, copyToClipboard: Bool
+    ) throws -> BrowserScreenshot {
+        if copyToClipboard {
+            throw HostError(
+                code: .unsupportedCapability,
+                message: "Clipboard screenshots are only supported by the macOS WebKit engine."
+            )
+        }
+        return BrowserScreenshot(data: try browserSession.screenshot(parameters: parameters, format: format))
+    }
+    func hostRecordingFrame() throws -> Data { try browserSession.recordingFrame() }
+    func hostScreenshotSeriesPlan(mode: String) throws -> JSONValue {
+        try browserSession.screenshotSeriesPlan(mode: mode)
+    }
+    func hostScrollToCapturePoint(y: Double) throws -> JSONValue {
+        try browserSession.scrollToCapturePoint(y: y)
+    }
+    func hostQAReport() throws -> JSONValue { try browserSession.qaReport() }
+    func hostQAClear() throws -> JSONValue { browserSession.diagnostics.clear() }
+    func hostConsole(level: String, limit: Int) throws -> JSONValue {
+        browserSession.console(level: level, limit: limit)
+    }
+    func hostNetwork(failedOnly: Bool, status: Int?, limit: Int) throws -> JSONValue {
+        browserSession.network(failedOnly: failedOnly, status: status, limit: limit)
+    }
+    func hostNetworkDetail(requestID: String) throws -> JSONValue {
+        browserSession.networkDetail(requestID: requestID)
+    }
+    func hostStyles(parameters: [String: JSONValue]) throws -> JSONValue {
+        try browserSession.styles(parameters: parameters)
+    }
+    func hostCookies(includeValues: Bool) throws -> JSONValue {
+        try browserSession.cookies(includeValues: includeValues)
+    }
+    func hostStorage(scope: String, includeValues: Bool) throws -> JSONValue {
+        try browserSession.storage(scope: scope, includeValues: includeValues)
+    }
+    func hostPerformance() throws -> JSONValue { try browserSession.performance() }
+    func hostAnimations() throws -> JSONValue { try browserSession.animations() }
+    func hostEmulateNetwork(parameters: [String: JSONValue]) throws -> JSONValue {
+        try browserSession.emulateNetwork(parameters: parameters)
+    }
+    func hostSetNetworkMock(parameters: [String: JSONValue]) throws -> JSONValue {
+        try browserSession.setNetworkMock(parameters: parameters)
+    }
+    func hostClearNetworkMocks() throws -> JSONValue { try browserSession.clearNetworkMocks() }
+}
+
 do {
-            #if canImport(Glibc)
-            signal(SIGPIPE, SIG_IGN)
-            #endif
-            let host = try LinuxBrowserHost()
-            let server = LocalSocketServer()
-            let stopped = DispatchSemaphore(value: 0)
-            host.onShutdown = { stopped.signal() }
-            try server.start { request in host.handle(request) }
+    #if canImport(Glibc)
+    signal(SIGPIPE, SIG_IGN)
+    #endif
+    let engine = try ChromiumBrowserEngine()
+    let artifacts = try ArtifactStore()
+    let stopped = DispatchSemaphore(value: 0)
+    let core = HostCore(
+        engine: engine,
+        artifacts: artifacts,
+        defaultSession: try engine.createSession(),
+        shutdownHandler: { stopped.signal() }
+    )
+    let server = LocalSocketServer()
+    try server.start { request in core.handle(request) }
 
-            #if canImport(Glibc)
-            signal(SIGTERM, SIG_IGN)
-            signal(SIGINT, SIG_IGN)
-            let term = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
-            let interrupt = DispatchSource.makeSignalSource(signal: SIGINT, queue: .global())
-            term.setEventHandler { stopped.signal() }
-            interrupt.setEventHandler { stopped.signal() }
-            term.resume(); interrupt.resume()
-            #endif
+    #if canImport(Glibc)
+    signal(SIGTERM, SIG_IGN)
+    signal(SIGINT, SIG_IGN)
+    let term = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
+    let interrupt = DispatchSource.makeSignalSource(signal: SIGINT, queue: .global())
+    term.setEventHandler { stopped.signal() }
+    interrupt.setEventHandler { stopped.signal() }
+    term.resume()
+    interrupt.resume()
+    #endif
 
-            stopped.wait()
-            server.stop()
-            host.stop()
+    stopped.wait()
+    server.stop()
+    core.stop()
 } catch {
     fputs("headless-host: \(error)\n", stderr)
     exit(70)

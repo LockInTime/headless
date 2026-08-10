@@ -104,11 +104,10 @@ If a change brushes against any of these, stop and record a decision in
   without an architecture-decision entry. Match existing style (explicit
   validation, small structs, no force-unwraps in host paths — existing ones
   are backlog items §A2, don't add more).
-- A new protocol command currently must be added in *both* hosts
-  (`main.swift` and `LinuxHost/main.swift`), the validator
-  (`Protocol.swift`), the CLI (`CLI.swift`), help text, and `capabilities` —
-  until the Phase 2 HostCore refactor lands, keep all copies in sync and add
-  parse + E2E coverage on both platforms.
+- Add a new portable protocol command once in `HostCore`, plus the validator
+  (`Protocol.swift`), CLI (`CLI.swift`), help text, and capability declaration.
+  Add only engine-specific operations to both `BrowserEngineSession` adapters,
+  and retain parse + E2E coverage on both platforms.
 - The agent runtime JS lives in `Sources/HeadlessProtocol/AgentRuntime.swift`
   as a raw string; `Tests/agent-runtime.test.mjs` regex-extracts it — if you
   touch the string delimiters, fix the extractor.
