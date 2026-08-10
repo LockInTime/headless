@@ -107,10 +107,12 @@ id. `CommandResponse.unknownRequestIdentifier` is the one documented
 exception, for replies where the host could not read the request at all —
 those still have to reach the caller with their reason.
 
-**A8. CDP O(n²) buffering.** ([#19](https://github.com/LockInTime/headless/issues/19)) `receiveText` rescans the whole buffer and
+**A8. CDP O(n²) buffering.** ([#19](https://github.com/LockInTime/headless/issues/19)) ~~`receiveText` rescans the whole buffer and
 `removeFirst`s per 8 KiB read (`LinuxHost/CDP.swift:229-256`); a 30 MB
 base64 screenshot triggers thousands of full scans under a 128 MiB cap.
-Track a scan offset / use a ring buffer.
+Track a scan offset / use a ring buffer.~~ **Done:** a shared incremental NUL
+message buffer scans each appended region once and amortizes prefix compaction;
+protocol coverage feeds it a 30 MiB message in the host's 8 KiB read chunks.
 
 **A9. Misc hardening (smaller, same phase).** ([#20](https://github.com/LockInTime/headless/issues/20))
 - ~~`ChromiumChildProcess.stop()` can busy-wait forever post-SIGKILL

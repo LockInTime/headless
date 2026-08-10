@@ -1,3 +1,4 @@
+import HeadlessProtocol
 import Foundation
 #if canImport(Darwin)
 import Darwin
@@ -181,7 +182,7 @@ private final class RawDevToolsPipe: CDPTransport, @unchecked Sendable {
     private let inputDescriptor: Int32
     private let outputDescriptor: Int32
     private let stateLock = NSLock()
-    private var pending: [UInt8] = []
+    private var pending = NullTerminatedMessageBuffer()
     private var closed = false
     // Page.captureScreenshot returns base64 in a CDP response. This is an
     // internal browser pipe (not the 1 MiB agent socket), so it needs room for
@@ -228,15 +229,13 @@ private final class RawDevToolsPipe: CDPTransport, @unchecked Sendable {
 
     func receiveText(timeoutMilliseconds: Int32) throws -> String {
         while true {
-            if let terminator = pending.firstIndex(of: 0) {
-                let message = Array(pending[..<terminator])
-                pending.removeFirst(terminator + 1)
+            if let message = pending.popFirst() {
                 guard let text = String(bytes: message, encoding: .utf8) else {
                     throw CDPError.invalidResponse("non-UTF8 DevTools pipe message")
                 }
                 return text
             }
-            guard pending.count <= maximumMessageBytes else {
+            guard pending.bufferedByteCount <= maximumMessageBytes else {
                 throw CDPError.invalidResponse("DevTools pipe message too large")
             }
             try waitUntilReady(
@@ -251,6 +250,9 @@ private final class RawDevToolsPipe: CDPTransport, @unchecked Sendable {
                 throw CDPError.invalidResponse("DevTools pipe read: \(lastSystemError())")
             }
             guard count > 0 else { throw CDPError.invalidResponse("DevTools pipe closed") }
+            guard pending.bufferedByteCount <= maximumMessageBytes - count else {
+                throw CDPError.invalidResponse("DevTools pipe message too large")
+            }
             pending.append(contentsOf: buffer[..<count])
         }
     }

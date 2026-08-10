@@ -1511,6 +1511,34 @@ struct ProtocolTests {
         _ = requestFinished.wait(timeout: .now() + 2)
     }
 
+    static func nullTerminatedBufferScansIncrementally() throws {
+        var buffer = NullTerminatedMessageBuffer()
+        let chunk = [UInt8](repeating: 0x61, count: 8_192)
+        let chunkSlice = chunk[...]
+        let chunkCount = 30 * 1_024 * 1_024 / chunk.count
+
+        for _ in 0..<chunkCount {
+            buffer.append(contentsOf: chunkSlice)
+            try expect(
+                buffer.unscannedByteCount == chunk.count,
+                "only newly appended CDP bytes should remain unscanned"
+            )
+            try expect(buffer.popFirst() == nil, "unterminated CDP payload should remain buffered")
+            try expect(buffer.unscannedByteCount == 0, "the CDP scan cursor should advance to the buffer end")
+        }
+        try expect(
+            buffer.bufferedByteCount == 30 * 1_024 * 1_024,
+            "large chunked CDP payload should retain every byte"
+        )
+        buffer.append(contentsOf: [UInt8(0)][...])
+        try expect(buffer.popFirst()?.count == 30 * 1_024 * 1_024, "terminator should release the complete CDP payload")
+        try expect(buffer.bufferedByteCount == 0, "consumed CDP storage should compact")
+
+        buffer.append(contentsOf: Array("one\0two\0".utf8)[...])
+        try expect(buffer.popFirst() == Array("one".utf8), "first buffered CDP message changed")
+        try expect(buffer.popFirst() == Array("two".utf8), "second buffered CDP message changed")
+    }
+
     static func main() {
         if CommandLine.arguments.count == 3,
            CommandLine.arguments[1] == "--peer-denied-client" {
@@ -1571,6 +1599,7 @@ struct ProtocolTests {
             ("shutdown bypasses busy request", shutdownBypassesBusyRequest),
             ("oversized socket request", oversizedSocketRequestIsRejected),
             ("different peer uid", differentPeerUserIsRejected),
+            ("incremental NUL message buffering", nullTerminatedBufferScansIncrementally),
         ]
 
         var failures = 0
