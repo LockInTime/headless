@@ -26,6 +26,7 @@ RUN apt-get update \
 COPY --from=builder /src/.build/release/headless /usr/local/bin/headless
 COPY --from=builder /src/.build/release/headless-linux-host /usr/local/bin/headless-host
 COPY --from=builder /src/.build/release/headless-mcp /usr/local/bin/headless-mcp
+COPY --from=builder /src/.build/release/Headless_HeadlessProtocol.resources /usr/local/bin/Headless_HeadlessProtocol.resources
 RUN chmod 0755 /usr/local/bin/headless /usr/local/bin/headless-host /usr/local/bin/headless-mcp
 USER headless
 ENV HEADLESS_HOST_EXECUTABLE=/usr/local/bin/headless-host
@@ -44,6 +45,7 @@ COPY install-linux.sh /opt/headless/package/install-linux.sh
 COPY --from=builder /src/.build/release/headless /opt/headless/package/headless
 COPY --from=builder /src/.build/release/headless-linux-host /opt/headless/package/headless-host
 COPY --from=builder /src/.build/release/headless-mcp /opt/headless/package/headless-mcp
+COPY --from=builder /src/.build/release/Headless_HeadlessProtocol.resources /opt/headless/package/Headless_HeadlessProtocol.resources
 RUN chmod 0755 /opt/headless/linux-e2e.sh \
     /opt/headless/package/install-linux.sh \
     /opt/headless/package/headless \

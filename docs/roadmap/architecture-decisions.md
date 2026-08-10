@@ -208,6 +208,13 @@ one implementation of page-side semantics for every engine (it is what makes
   resources) so tooling/tests stop regex-extracting it from a Swift string
   literal (`Tests/agent-runtime.test.mjs`'s `/#"""…"""#/` coupling).
 
+**Status:** implemented 2026-08-10. The source is now the compiled
+`Resources/AgentRuntime.js`; WebKit installs it in `HeadlessAgent` at document
+start, while Chromium installs it with
+`Page.addScriptToEvaluateOnNewDocument`, caches the isolated context for the
+document, and invalidates or retries it across navigation races. Distribution
+scripts install the generated resource bundle alongside each host executable.
+
 ## 11. Session model: document shared-profile reality; isolation is a future opt-in
 
 **Decision:** sessions are windows (macOS) / tabs (Linux) sharing one

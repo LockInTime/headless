@@ -3,11 +3,9 @@ import {readFile} from 'node:fs/promises';
 import {JSDOM} from 'jsdom';
 
 const runtimeSource = await readFile(
-  new URL('../Sources/HeadlessProtocol/AgentRuntime.swift', import.meta.url),
+  new URL('../Sources/HeadlessProtocol/Resources/AgentRuntime.js', import.meta.url),
   'utf8',
 );
-const runtimeMatch = runtimeSource.match(/#"""\n([\s\S]*?)\n"""#/);
-assert(runtimeMatch, 'embedded agent runtime should be extractable');
 
 const fixture = await readFile(new URL('Fixtures/large-document.html', import.meta.url), 'utf8');
 const dom = new JSDOM(fixture, {
@@ -49,7 +47,7 @@ Object.defineProperties(window.document.documentElement, {
   scrollHeight: {value: 32000, configurable: true},
 });
 
-window.eval(runtimeMatch[1]);
+window.eval(runtimeSource);
 const agent = window.__headlessAgent;
 assert(agent, 'agent runtime should initialize');
 

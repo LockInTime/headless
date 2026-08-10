@@ -268,6 +268,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
     private var mainFrameID: String?
     private var lastSafeURL: String?
     private var navigationRecoveryPending = false
+    private var isolatedContextID: Int?
     private let mockLock = NSLock()
     private var networkMocks: [NetworkMock] = []
 
@@ -278,6 +279,11 @@ final class LinuxBrowserSession: @unchecked Sendable {
         _ = try command("Page.enable")
         _ = try command("Runtime.enable")
         _ = try command("Log.enable")
+        _ = try command("Page.addScriptToEvaluateOnNewDocument", parameters: [
+            "source": agentRuntimeJavaScript,
+            "worldName": "HeadlessAgent",
+            "runImmediately": true,
+        ])
         _ = try command("Network.enable", parameters: [
             "maxTotalBufferSize": 10_000_000,
             "maxResourceBufferSize": 1_000_000,
@@ -690,6 +696,11 @@ final class LinuxBrowserSession: @unchecked Sendable {
                 message: exception?["description"] as? String ?? details["text"] as? String ?? "JavaScript exception",
                 url: details["url"] as? String
             )
+        case "Runtime.executionContextsCleared":
+            clearIsolatedContext()
+        case "Runtime.executionContextDestroyed":
+            let identifier = (parameters["executionContextId"] as? NSNumber)?.intValue
+            clearIsolatedContext(matching: identifier)
         case "Log.entryAdded":
             let entry = parameters["entry"] as? [String: Any] ?? [:]
             diagnostics.append(kind: "console", level: entry["level"] as? String,
@@ -736,6 +747,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
         navigationLock.lock()
         if mainFrameID == nil { mainFrameID = frameID }
         guard mainFrameID == frameID else { navigationLock.unlock(); return }
+        if committed { isolatedContextID = nil }
         if let parsed = URL(string: url), agentMayNavigate(to: parsed) {
             if committed { lastSafeURL = url }
             navigationLock.unlock()
@@ -788,21 +800,33 @@ final class LinuxBrowserSession: @unchecked Sendable {
           const args = __input.args;
           const key = __input.key;
           const options = __input.options || {};
-          \(agentRuntimeJavaScript)
           \(agentEvaluationBody(body))
         })()
         """
-        let response = try command(
-            "Runtime.evaluate",
-            parameters: [
+        func evaluateParameters() throws -> [String: Any] {
+            [
                 "expression": expression,
                 "awaitPromise": true,
                 "returnByValue": true,
                 "userGesture": true,
                 "contextId": try isolatedExecutionContextID(),
-            ],
-            timeoutMilliseconds: timeoutMilliseconds
-        )
+            ]
+        }
+        let response: [String: Any]
+        do {
+            response = try command(
+                "Runtime.evaluate",
+                parameters: evaluateParameters(),
+                timeoutMilliseconds: timeoutMilliseconds
+            )
+        } catch let error as CDPError where isTransientNavigationContext(error) {
+            clearIsolatedContext()
+            response = try command(
+                "Runtime.evaluate",
+                parameters: evaluateParameters(),
+                timeoutMilliseconds: timeoutMilliseconds
+            )
+        }
         if let exception = response["exceptionDetails"] as? [String: Any] {
             throw CDPError.commandFailed(exception["text"] as? String ?? String(describing: exception))
         }
@@ -817,11 +841,14 @@ final class LinuxBrowserSession: @unchecked Sendable {
         )
     }
 
-    /// Evaluate agent helpers in a fresh isolated world. Page scripts cannot
-    /// discover or replace `__headlessAgent`, while the world still has DOM
-    /// access. Recreating the world also avoids stale context IDs after a
-    /// cross-document navigation.
+    /// Reuse one isolated world per document. Page scripts cannot discover or
+    /// replace `__headlessAgent`, while the world still has DOM access.
     private func isolatedExecutionContextID() throws -> Int {
+        navigationLock.lock()
+        let cached = isolatedContextID
+        navigationLock.unlock()
+        if let cached { return cached }
+
         let frameTree = try command("Page.getFrameTree")
         guard let tree = frameTree["frameTree"] as? [String: Any],
               let frame = tree["frame"] as? [String: Any],
@@ -836,7 +863,30 @@ final class LinuxBrowserSession: @unchecked Sendable {
         guard let contextID = result["executionContextId"] as? NSNumber else {
             throw CDPError.invalidResponse("Page.createIsolatedWorld did not return an execution context")
         }
-        return contextID.intValue
+        let identifier = contextID.intValue
+        let installed = try command("Runtime.evaluate", parameters: [
+            "expression": "typeof globalThis.__headlessAgent === 'object'",
+            "returnByValue": true,
+            "contextId": identifier,
+        ])
+        let installedValue = (installed["result"] as? [String: Any])?["value"] as? Bool ?? false
+        if !installedValue {
+            _ = try command("Runtime.evaluate", parameters: [
+                "expression": agentRuntimeJavaScript,
+                "returnByValue": true,
+                "contextId": identifier,
+            ])
+        }
+        navigationLock.lock()
+        isolatedContextID = identifier
+        navigationLock.unlock()
+        return identifier
+    }
+
+    private func clearIsolatedContext(matching identifier: Int? = nil) {
+        navigationLock.lock()
+        if identifier == nil || isolatedContextID == identifier { isolatedContextID = nil }
+        navigationLock.unlock()
     }
 
     private func targetArguments(_ parameters: [String: JSONValue]) throws -> [String: Any] {

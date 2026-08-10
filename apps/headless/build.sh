@@ -57,12 +57,20 @@ BIN_PATH="$(swift build "${SDK_ARGS[@]}" -c release --scratch-path "$SWIFT_SCRAT
 swift build "${SDK_ARGS[@]}" -c release --product headless-host --scratch-path "$SWIFT_SCRATCH"
 swift build "${SDK_ARGS[@]}" -c release --product headless --scratch-path "$SWIFT_SCRATCH"
 swift build "${SDK_ARGS[@]}" -c release --product headless-mcp --scratch-path "$SWIFT_SCRATCH"
+RESOURCE_BUNDLE="$BIN_PATH/Headless_HeadlessProtocol.bundle"
+if [[ ! -d "$RESOURCE_BUNDLE" ]]; then
+  echo "headless build: compiled HeadlessProtocol resource bundle was not found" >&2
+  exit 70
+fi
 cp "$BIN_PATH/headless-host" "$APP/Contents/MacOS/Headless"
 mkdir -p "$APP/Contents/Resources/bin"
 cp "$BIN_PATH/headless" "$APP/Contents/Resources/bin/headless"
 cp "$BIN_PATH/headless" build/bin/headless
 cp "$BIN_PATH/headless-mcp" "$APP/Contents/Resources/bin/headless-mcp"
 cp "$BIN_PATH/headless-mcp" build/bin/headless-mcp
+rm -rf "$APP/Headless_HeadlessProtocol.bundle"
+rm -rf "$APP/Contents/Resources/Headless_HeadlessProtocol.bundle"
+cp -R "$RESOURCE_BUNDLE" "$APP/Contents/Resources/Headless_HeadlessProtocol.bundle"
 
 cp "$ICON" "$APP/Contents/Resources/Headless.icns"
 cat > "$APP/Contents/Info.plist" <<PLIST

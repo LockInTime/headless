@@ -25,9 +25,9 @@ if [ "$(uname -s)" != "Linux" ]; then
   exit 69
 fi
 
-if [ -x "$SCRIPT_DIR/headless" ] && [ -x "$SCRIPT_DIR/headless-host" ] && [ -x "$SCRIPT_DIR/headless-mcp" ]; then
+if [ -x "$SCRIPT_DIR/headless" ] && [ -x "$SCRIPT_DIR/headless-host" ] && [ -x "$SCRIPT_DIR/headless-mcp" ] && [ -f "$SCRIPT_DIR/Headless_HeadlessProtocol.resources/AgentRuntime.js" ]; then
   SOURCE_DIR="$SCRIPT_DIR"
-elif [ -x "$SCRIPT_DIR/build/linux/headless" ] && [ -x "$SCRIPT_DIR/build/linux/headless-host" ] && [ -x "$SCRIPT_DIR/build/linux/headless-mcp" ]; then
+elif [ -x "$SCRIPT_DIR/build/linux/headless" ] && [ -x "$SCRIPT_DIR/build/linux/headless-host" ] && [ -x "$SCRIPT_DIR/build/linux/headless-mcp" ] && [ -f "$SCRIPT_DIR/build/linux/Headless_HeadlessProtocol.resources/AgentRuntime.js" ]; then
   SOURCE_DIR="$SCRIPT_DIR/build/linux"
 else
   echo "headless install: Linux binaries were not found; run ./build-linux.sh first" >&2
@@ -125,6 +125,9 @@ install -d -m 0755 "$BIN_DIR"
 install -m 0755 "$SOURCE_DIR/headless" "$BIN_DIR/headless"
 install -m 0755 "$SOURCE_DIR/headless-host" "$BIN_DIR/headless-host"
 install -m 0755 "$SOURCE_DIR/headless-mcp" "$BIN_DIR/headless-mcp"
+install -d -m 0755 "$BIN_DIR/Headless_HeadlessProtocol.resources"
+install -m 0644 "$SOURCE_DIR/Headless_HeadlessProtocol.resources/AgentRuntime.js" \
+  "$BIN_DIR/Headless_HeadlessProtocol.resources/AgentRuntime.js"
 
 echo "Headless installed in $BIN_DIR"
 echo "Browser runtime: $CHROMIUM (supported inherited DevTools pipe)"

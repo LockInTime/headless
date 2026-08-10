@@ -66,6 +66,9 @@ Cutting that release is tracked in
 
 ### Changed
 
+- Both engines now install the compiled agent-runtime resource once per
+  document; Chromium caches and safely invalidates its isolated context instead
+  of resending the runtime for every command.
 - Context-budget pruning now measures each candidate once, removes oversized
   entries regardless of array position, and byte-budgets text fallback.
 - Removed stale screenshot and JSON conversion paths, honored per-operation

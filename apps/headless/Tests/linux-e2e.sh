@@ -26,6 +26,7 @@ trap cleanup EXIT INT TERM
 /opt/headless/package/install-linux.sh --prefix "$INSTALL_ROOT" | grep -q 'Headless installed'
 test -x "$INSTALL_ROOT/bin/headless"
 test -x "$INSTALL_ROOT/bin/headless-host"
+test -r "$INSTALL_ROOT/bin/Headless_HeadlessProtocol.resources/AgentRuntime.js"
 if /opt/headless/package/install-linux.sh --prefix relative/path >/dev/null 2>&1; then
   echo "relative install prefix was not rejected" >&2
   exit 1
@@ -170,8 +171,16 @@ headless --session qa flow start | grep -q '"recording":true'
 headless --session qa visit http://127.0.0.1:41739/designers/dashboard/ | grep -q 'Designers Dashboard'
 headless --session qa click --role button --name Continue | grep -q '"clicked"'
 headless --session qa flow stop --output dashboard-flow.json | grep -q '"name":"dashboard-flow.json"'
-headless --session qa flow run dashboard-flow.json | grep -q '"completed":2'
-headless --session qa report create --output pr-report.json | grep -q '"name":"pr-report.json"'
+if ! FLOW_RUN="$(headless --session qa flow run dashboard-flow.json)"; then
+  echo "$FLOW_RUN" >&2
+  exit 1
+fi
+echo "$FLOW_RUN" | grep -q '"completed":2'
+if ! REPORT_CREATE="$(headless --session qa report create --output pr-report.json)"; then
+  echo "$REPORT_CREATE" >&2
+  exit 1
+fi
+echo "$REPORT_CREATE" | grep -q '"name":"pr-report.json"'
 grep -q 'headless-qa-report-v1' "$HEADLESS_ARTIFACT_DIR/pr-report.json"
 headless --session qa visit http://127.0.0.1:41739/designers/dashboard/ | grep -q 'Designers Dashboard'
 test -s "$HEADLESS_ARTIFACT_DIR/viewport.png"
