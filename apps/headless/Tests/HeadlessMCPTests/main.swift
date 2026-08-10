@@ -58,9 +58,11 @@ func run() throws {
         #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
         #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
         #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["status"]}}}"#,
+        #"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["stop"]}}}"#,
+        #"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["session","close","disposable"]}}}"#,
         "not-json",
         String(repeating: "x", count: headlessMaximumMessageBytes + 1),
-        #"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["start"]}}}"#,
+        #"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["start"]}}}"#,
     ]
 
     try process.run()
@@ -76,7 +78,7 @@ func run() throws {
         let value = try JSONSerialization.jsonObject(with: Data(line.utf8))
         return try object(value, "MCP response was not a JSON object")
     }
-    try expect(responses.count == 6, "expected six MCP responses, received \(responses.count)")
+    try expect(responses.count == 8, "expected eight MCP responses, received \(responses.count)")
 
     let initialize = try object(responses[0]["result"], "initialize result was absent")
     try expect(initialize["protocolVersion"] as? String == "2025-06-18", "initialize protocol version changed")
@@ -88,6 +90,14 @@ func run() throws {
         throw TestFailure(description: "tools/list did not expose exactly one tool")
     }
     try expect(tools[0]["name"] as? String == "headless", "tools/list exposed the wrong tool")
+    let description = tools[0]["description"] as? String ?? ""
+    try expect(!description.contains("safe Headless"), "destructive MCP tool was still described as safe")
+    try expect(description.contains("stop and session close are destructive"), "destructive-command guidance was absent")
+    let annotations = try object(tools[0]["annotations"], "MCP tool annotations were absent")
+    try expect(annotations["readOnlyHint"] as? Bool == false, "MCP tool was marked read-only")
+    try expect(annotations["destructiveHint"] as? Bool == true, "MCP tool was not marked destructive")
+    try expect(annotations["idempotentHint"] as? Bool == false, "MCP tool was marked idempotent")
+    try expect(annotations["openWorldHint"] as? Bool == true, "MCP tool was not marked open-world")
 
     let call = try object(responses[2]["result"], "tools/call result was absent")
     try expect(call["isError"] as? Bool == false, "browser tools/call unexpectedly failed")
@@ -103,13 +113,33 @@ func run() throws {
     let browserResult = try object(browserResponse["result"], "browser protocol result was absent")
     try expect(browserResult["ready"] as? Bool == true, "browser command did not reach the local host")
 
-    for index in 3...4 {
+    for (index, expectedCommand) in [(3, "shutdown"), (4, "session.close")] {
+        let destructiveCall = try object(responses[index]["result"], "destructive tools/call result was absent")
+        try expect(destructiveCall["isError"] as? Bool == false, "annotated destructive command was rejected")
+        guard let destructiveContent = destructiveCall["content"] as? [[String: Any]],
+              let destructiveText = destructiveContent.first?["text"] as? String else {
+            throw TestFailure(description: "destructive tools/call content was absent")
+        }
+        let destructiveResponse = try object(
+            JSONSerialization.jsonObject(with: Data(destructiveText.utf8)),
+            "destructive tools/call content was not a protocol response"
+        )
+        let destructiveResult = try object(
+            destructiveResponse["result"], "destructive browser protocol result was absent"
+        )
+        try expect(
+            destructiveResult["command"] as? String == expectedCommand,
+            "destructive command did not reach the local host"
+        )
+    }
+
+    for index in 5...6 {
         let parseError = try object(responses[index]["error"], "invalid input did not return JSON-RPC error")
         let code = try integer(parseError["code"], "parse error code was absent")
         try expect(code == -32700, "invalid input returned the wrong error code")
     }
 
-    let localCall = try object(responses[5]["result"], "local-command result was absent")
+    let localCall = try object(responses[7]["result"], "local-command result was absent")
     try expect(localCall["isError"] as? Bool == true, "local CLI command was accepted over MCP")
     guard let localContent = localCall["content"] as? [[String: Any]],
           let localText = localContent.first?["text"] as? String else {

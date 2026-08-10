@@ -277,6 +277,30 @@ the boundary explicit and testable.
 value containing a literal `--json` or `--session`. This changes only CLI
 parsing; the wire protocol and protocol version remain unchanged.
 
+## 17. MCP exposes the full remote-command surface with pessimistic annotations
+
+**Decision:** keep `stop` and `session close` callable through the single
+argv-based MCP tool. Describe the tool as state-mutating and explicitly set
+the MCP annotations `readOnlyHint: false`, `destructiveHint: true`,
+`idempotentHint: false`, and `openWorldHint: true`.
+
+**Status:** decided 2026-08-10 while resolving backlog §C2.
+
+**Rationale:** the MCP adapter deliberately mirrors the remote CLI surface.
+Special-casing two valid remote commands in the adapter would create policy
+drift and prevent an MCP operator from recovering a wedged host or cleaning up
+a session. The same tool already navigates, clicks, fills, and changes browser
+state, so describing it as universally "safe" was inaccurate. Because MCP
+annotations apply to the whole tool rather than individual argv variants, the
+tool must advertise the risk of its most destructive valid invocation.
+
+**Consequences:** trusted MCP clients can require confirmation for the tool,
+and callers can still invoke the complete browser-command surface. Annotations
+are risk metadata, not authorization; the private socket, peer-UID check,
+protocol validation, and host-enforced safety rules remain the security
+boundary. Local-only commands such as `start` remain rejected by the adapter.
+This changes MCP discovery metadata only and does not bump the wire protocol.
+
 ---
 
 ## Decision log
@@ -291,5 +315,6 @@ parsing; the wire protocol and protocol version remain unchanged.
 | 12 | Version unification on git tag | Planned (Phase 3) | 2026-08-04 |
 | 15 | Package-manager distribution set | Decided (owner) | 2026-08-04 |
 | 16 | Preserve CLI value boundaries with `--` and shell quoting | Decided | 2026-08-10 |
+| 17 | Keep full MCP surface; annotate its maximum risk | Decided | 2026-08-10 |
 
 New decisions append here with the same format.
