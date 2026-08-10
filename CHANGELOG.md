@@ -51,6 +51,11 @@ Cutting that release is tracked in
 - The website now runs on Next.js 16 with its native flat ESLint configuration;
   the legacy `FlatCompat` and `@eslint/eslintrc` path has been removed.
 
+### Fixed
+
+- `fill` preserves quoted whitespace and accepts literal `--json` or
+  `--session` values after the standard `--` end-of-options sentinel.
+
 ### Known gaps
 
 Tracked as [`backlog`](https://github.com/LockInTime/headless/labels/backlog)

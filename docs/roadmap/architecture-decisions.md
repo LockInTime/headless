@@ -258,6 +258,25 @@ Checksums on everything; keep release CI's script-reuse design (the workflow
 calls the same `build.sh`/`test.sh` a developer runs — preserve that
 property when adding PR CI).
 
+## 16. CLI values preserve shell argument boundaries (decided)
+
+**Decision:** global `--json` and `--session` options are recognized only
+before the first `--` sentinel. The sentinel is removed before command
+parsing. `fill` accepts its text as exactly one shell argument rather than
+joining multiple arguments with inserted spaces.
+
+**Status:** decided 2026-08-10 while resolving backlog §A6.
+
+**Rationale:** typed values are data and must reach the browser byte-for-byte
+as represented by the Swift string. Searching the whole argv for global flags
+could silently remove literal text, while joining tokens normalized tabs and
+repeated spaces. Standard shell quoting plus an end-of-options sentinel makes
+the boundary explicit and testable.
+
+**Consequences:** callers quote multi-word fill text and place `--` before a
+value containing a literal `--json` or `--session`. This changes only CLI
+parsing; the wire protocol and protocol version remain unchanged.
+
 ---
 
 ## Decision log
@@ -271,5 +290,6 @@ property when adding PR CI).
 | 8 | Real CDP input on Linux as capability upgrade | Planned (Phase 4) | 2026-08-04 |
 | 12 | Version unification on git tag | Planned (Phase 3) | 2026-08-04 |
 | 15 | Package-manager distribution set | Decided (owner) | 2026-08-04 |
+| 16 | Preserve CLI value boundaries with `--` and shell quoting | Decided | 2026-08-10 |
 
 New decisions append here with the same format.

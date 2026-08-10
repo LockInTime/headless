@@ -299,6 +299,29 @@ struct ProtocolTests {
         )
     }
 
+    static func cliFillPreservesLiteralValue() throws {
+        let value = "pass  --json\tto API"
+        let invocation = try CLIParser().parse([
+            "--session", "qa", "--json", "fill", "@e1", "--", value,
+        ])
+        try expect(invocation.jsonOutput, "global --json before the sentinel should parse")
+        try expect(invocation.request?.session == "qa", "global --session before the sentinel should parse")
+        try expect(invocation.request?.parameters["target"] == .string("@e1"), "fill target should parse")
+        try expect(invocation.request?.parameters["value"] == .string(value), "fill text should preserve whitespace and literal flags")
+
+        let literalFlag = try CLIParser().parse(["fill", "@e1", "--", "--json"])
+        try expect(!literalFlag.jsonOutput, "--json after the sentinel should not become a global option")
+        try expect(literalFlag.request?.parameters["value"] == .string("--json"), "a literal --json fill value should survive")
+
+        let literalSession = try CLIParser().parse(["fill", "@e1", "--", "--session"])
+        try expect(literalSession.request?.session == nil, "--session after the sentinel should not become a global option")
+        try expect(literalSession.request?.parameters["value"] == .string("--session"), "a literal --session fill value should survive")
+
+        try expectThrows("multi-word fill text must stay one shell argument") {
+            _ = try CLIParser().parse(["fill", "@e1", "two", "words"])
+        }
+    }
+
     static func cliSemanticClick() throws {
         let invocation = try CLIParser().parse(["click", "--role", "button", "--name", "Continue"])
         try expect(
@@ -871,6 +894,7 @@ struct ProtocolTests {
             ("command parameter validation", commandParameterValidation),
             ("strict request fields", rejectsUnexpectedRequestFields),
             ("CLI visit", cliVisit),
+            ("CLI fill literal value", cliFillPreservesLiteralValue),
             ("CLI semantic click", cliSemanticClick),
             ("CLI inspect context and task", cliInspectContextAndTask),
             ("CLI conflicting target", cliRejectsConflictingClickTarget),

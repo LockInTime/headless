@@ -27,7 +27,8 @@ headless --session NAME inspect --context actions --task "TASK"
 headless --session NAME inspect --context full --text
 headless --session NAME click REF
 headless --session NAME click --role ROLE --name NAME
-headless --session NAME fill REF TEXT
+headless --session NAME fill REF "TEXT"
+headless --session NAME fill REF -- "--json  stays literal"
 headless --session NAME press KEY
 headless --session NAME scroll up|down|top|bottom --amount PIXELS
 headless --session NAME back
@@ -43,6 +44,10 @@ bound the result; check `omitted` before assuming it describes the whole page.
 Use `click --role ... --name ...` for unique accessible controls. Use an `@eN`
 ref from the latest inspection when role/name is ambiguous. Inspect again after
 navigation or a large rerender.
+
+Pass fill text as one quoted shell argument so whitespace is preserved. Put
+`--` before a value that contains a literal global flag such as `--json` or
+`--session`; the sentinel itself is not typed into the page.
 
 Use `wait` with the strongest expected condition available:
 
