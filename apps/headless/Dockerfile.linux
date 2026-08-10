@@ -1,4 +1,4 @@
-FROM swift:6.1-bookworm AS builder
+FROM swift:6.3-bookworm AS builder
 WORKDIR /src
 COPY Package.swift ./
 COPY main.swift ./
