@@ -280,7 +280,9 @@ which currently passes for the wrong reason.
 **Progress:** MCP stdio coverage now exercises C3 end to end. The audited CLI
 command matrix is covered, and the unexpected-field test first proves its
 current-version control request decodes before adding the forbidden field.
-Recording, flow, artifact, runtime, transport, and host-specific gaps remain.
+Artifact read boundaries, non-regular-file rejection, flow replay safety, and
+visual-comparison invocation are now covered as well. Recording, runtime,
+transport, JavaScript-runtime, and host-specific gaps remain.
 
 **D3. Web CI:** ~~`next build` + eslint on PR (site can break invisibly today).~~
 **Done** — the `web` job in `ci.yml` runs `pnpm --filter @headless/web lint`
