@@ -287,7 +287,10 @@ screenshot-plan caps and 96 px deduplication, budget text fallback, and stale
 element-reference errors. Recording coverage now locks every format/quality
 argument mapping, strict executable discovery, consecutive-failure aborts, and
 bounded stop timeouts; capabilities and oversized socket requests are covered.
-Peer-credential and host navigation/download classification gaps remain.
+Linux CI also connects through a deliberately different uid and requires
+`PEER_DENIED`; Linux and macOS E2E assert `navigation-blocked` and
+`download-blocked` diagnostics respectively. **Done:** every gap named in D2
+now has direct regression coverage.
 
 **D3. Web CI:** ~~`next build` + eslint on PR (site can break invisibly today).~~
 **Done** — the `web` job in `ci.yml` runs `pnpm --filter @headless/web lint`

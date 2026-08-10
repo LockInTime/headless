@@ -706,6 +706,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
             decisionHandler(.cancel)
             return
         }
+        if navigationAction.shouldPerformDownload {
+            // Convert explicit download intent into WKDownload so the
+            // delegate below can classify and cancel it deterministically.
+            decisionHandler(.download)
+            return
+        }
         // Hand non-web schemes (mailto:, facetime:, app links…) to the system.
         if let url = navigationAction.request.url, let scheme = url.scheme?.lowercased(),
            !["http", "https", "file", "about", "data", "blob", "javascript"].contains(scheme) {
@@ -721,10 +727,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
         if let response = navigationResponse.response as? HTTPURLResponse {
             qaBridge.store.append(kind: "response", url: response.url?.absoluteString,
                                   method: "GET", status: Double(response.statusCode))
+            if response.value(forHTTPHeaderField: "Content-Disposition")?
+                .lowercased().contains("attachment") == true {
+                decisionHandler(.download)
+                return
+            }
         }
         if !navigationResponse.canShowMIMEType {
-            showToast("Can’t display this file type")
-            decisionHandler(.cancel)
+            // Unsupported navigation responses would otherwise become
+            // implicit downloads. Route them through the same fail-closed
+            // cancellation and diagnostic path.
+            decisionHandler(.download)
             return
         }
         decisionHandler(.allow)
