@@ -25,6 +25,119 @@ private func expectThrows(_ message: String, _ body: () throws -> Void) throws {
     }
 }
 
+private func connectRawUnixSocket(path: String) throws -> Int32 {
+    #if canImport(Darwin)
+    let descriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+    #else
+    let descriptor = Glibc.socket(AF_UNIX, Int32(SOCK_STREAM.rawValue), 0)
+    #endif
+    guard descriptor >= 0 else { throw TestFailure(description: "raw socket creation failed") }
+
+    #if canImport(Darwin)
+    var noSigPipe: Int32 = 1
+    guard setsockopt(
+        descriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe,
+        socklen_t(MemoryLayout<Int32>.size)
+    ) == 0 else {
+        Darwin.close(descriptor)
+        throw TestFailure(description: "raw socket SIGPIPE configuration failed")
+    }
+    #endif
+
+    var address = sockaddr_un()
+    let bytes = Array(path.utf8)
+    let capacity = MemoryLayout.size(ofValue: address.sun_path)
+    guard bytes.count < capacity else {
+        #if canImport(Darwin)
+        Darwin.close(descriptor)
+        #else
+        Glibc.close(descriptor)
+        #endif
+        throw TestFailure(description: "raw socket path was too long")
+    }
+    address.sun_family = sa_family_t(AF_UNIX)
+    #if canImport(Darwin)
+    address.sun_len = UInt8(MemoryLayout<sa_family_t>.size + bytes.count + 1)
+    #endif
+    withUnsafeMutablePointer(to: &address.sun_path) { pointer in
+        pointer.withMemoryRebound(to: UInt8.self, capacity: capacity) { buffer in
+            for (index, byte) in bytes.enumerated() { buffer[index] = byte }
+            buffer[bytes.count] = 0
+        }
+    }
+    let length = socklen_t(MemoryLayout<sa_family_t>.size + bytes.count + 1)
+    let connected = withUnsafePointer(to: &address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            #if canImport(Darwin)
+            Darwin.connect(descriptor, $0, length)
+            #else
+            Glibc.connect(descriptor, $0, length)
+            #endif
+        }
+    }
+    guard connected == 0 else {
+        #if canImport(Darwin)
+        Darwin.close(descriptor)
+        #else
+        Glibc.close(descriptor)
+        #endif
+        throw TestFailure(description: "raw socket connection failed")
+    }
+    return descriptor
+}
+
+private func closeRawSocket(_ descriptor: Int32) {
+    #if canImport(Darwin)
+    _ = Darwin.close(descriptor)
+    #else
+    _ = Glibc.close(descriptor)
+    #endif
+}
+
+private func writeRawSocket(_ data: Data, descriptor: Int32) throws -> Int {
+    try data.withUnsafeBytes { buffer in
+        guard let base = buffer.baseAddress else { return 0 }
+        var sent = 0
+        while sent < buffer.count {
+            #if canImport(Darwin)
+            let count = Darwin.send(descriptor, base.advanced(by: sent), buffer.count - sent, 0)
+            #else
+            let count = Glibc.send(
+                descriptor, base.advanced(by: sent), buffer.count - sent, Int32(MSG_NOSIGNAL)
+            )
+            #endif
+            if count < 0 {
+                if errno == EINTR { continue }
+                if sent > headlessMaximumMessageBytes { return sent }
+                throw TestFailure(description: "raw socket write failed before the size limit")
+            }
+            guard count > 0 else { return sent }
+            sent += count
+        }
+        return sent
+    }
+}
+
+private func readRawSocketLine(descriptor: Int32) throws -> Data {
+    var result = Data()
+    var buffer = [UInt8](repeating: 0, count: 8_192)
+    while result.count <= headlessMaximumMessageBytes {
+        #if canImport(Darwin)
+        let count = Darwin.read(descriptor, &buffer, buffer.count)
+        #else
+        let count = Glibc.read(descriptor, &buffer, buffer.count)
+        #endif
+        guard count > 0 else { throw TestFailure(description: "raw socket closed without a response") }
+        if let newline = buffer[..<count].firstIndex(of: 0x0A) {
+            result.append(contentsOf: buffer[..<newline])
+            result.append(0x0A)
+            return result
+        }
+        result.append(contentsOf: buffer[..<count])
+    }
+    throw TestFailure(description: "raw socket response exceeded the protocol limit")
+}
+
 @main
 struct ProtocolTests {
     typealias TestCase = (String, () throws -> Void)
@@ -795,6 +908,193 @@ struct ProtocolTests {
         }
     }
 
+    static func recordingArgumentsAndFailureBounds() throws {
+        let root = "/tmp/headless-recording-test-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: false)
+        let executable = root + "/ffmpeg"
+        let script = """
+        #!/bin/sh
+        set -eu
+        last=''
+        for argument in "$@"; do last="$argument"; done
+        printf '%s\n' "$@" > "$last.arguments"
+        cat >/dev/null
+        : > "$last"
+        """
+        try script.write(toFile: executable, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable)
+
+        let nonExecutable = root + "/not-executable"
+        try "not executable".write(toFile: nonExecutable, atomically: true, encoding: .utf8)
+        try expect(
+            BrowserRecording.ffmpegExecutable(
+                environment: ["HEADLESS_FFMPEG_EXECUTABLE": "relative/ffmpeg"],
+                systemCandidates: []
+            ) == nil,
+            "relative ffmpeg overrides should be rejected"
+        )
+        try expect(
+            BrowserRecording.ffmpegExecutable(
+                environment: ["HEADLESS_FFMPEG_EXECUTABLE": root], systemCandidates: []
+            ) == nil,
+            "ffmpeg directories should be rejected"
+        )
+        try expect(
+            BrowserRecording.ffmpegExecutable(
+                environment: ["HEADLESS_FFMPEG_EXECUTABLE": nonExecutable], systemCandidates: []
+            ) == nil,
+            "non-executable ffmpeg files should be rejected"
+        )
+        let resolved = BrowserRecording.ffmpegExecutable(
+            environment: ["HEADLESS_FFMPEG_EXECUTABLE": executable], systemCandidates: []
+        )
+        try expect(resolved?.path == executable, "a regular absolute ffmpeg override should resolve")
+
+        let previous = ProcessInfo.processInfo.environment["HEADLESS_FFMPEG_EXECUTABLE"]
+        setenv("HEADLESS_FFMPEG_EXECUTABLE", executable, 1)
+        defer {
+            if let previous { setenv("HEADLESS_FFMPEG_EXECUTABLE", previous, 1) }
+            else { unsetenv("HEADLESS_FFMPEG_EXECUTABLE") }
+        }
+
+        func argument(after flag: String, in arguments: [String]) -> String? {
+            guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
+            return arguments[index + 1]
+        }
+
+        for format in RecordingFormat.allCases {
+            for quality in RecordingQuality.allCases {
+                let output = URL(fileURLWithPath: root)
+                    .appendingPathComponent("\(format.rawValue)-\(quality.rawValue).\(format.fileExtension)")
+                let recording = try BrowserRecording(
+                    outputURL: output, fps: 7.5, format: format, quality: quality,
+                    captureFrame: { Data([0x89, 0x50, 0x4e, 0x47]) }
+                )
+                _ = try recording.stop(timeout: 2)
+                let text = try String(contentsOfFile: output.path + ".arguments", encoding: .utf8)
+                let arguments = text.split(separator: "\n").map(String.init)
+                try expect(argument(after: "-f", in: arguments) == "image2pipe", "recording input should be image2pipe")
+                try expect(argument(after: "-framerate", in: arguments) == "7.500", "recording FPS should retain precision")
+                try expect(arguments.last == output.path, "recording output should be the final ffmpeg argument")
+                switch format {
+                case .mp4, .mov:
+                    let expected = [RecordingQuality.fast: "6", .balanced: "4", .high: "2"][quality]
+                    try expect(argument(after: "-c:v", in: arguments) == "mpeg4", "MP4/MOV should use mpeg4")
+                    try expect(argument(after: "-q:v", in: arguments) == expected, "MP4/MOV quality mapping changed")
+                    try expect(argument(after: "-movflags", in: arguments) == "+faststart", "MP4/MOV should remain streamable")
+                case .webm:
+                    let expectedCRF = [RecordingQuality.fast: "40", .balanced: "34", .high: "28"][quality]
+                    let expectedDeadline = quality == .high ? "good" : "realtime"
+                    try expect(argument(after: "-c:v", in: arguments) == "libvpx-vp9", "WebM should use VP9")
+                    try expect(argument(after: "-crf", in: arguments) == expectedCRF, "WebM quality mapping changed")
+                    try expect(argument(after: "-deadline", in: arguments) == expectedDeadline, "WebM deadline mapping changed")
+                case .gif:
+                    let expectedScale = [
+                        RecordingQuality.fast: "scale=960:-1:flags=lanczos",
+                        .balanced: "scale=1280:-1:flags=lanczos",
+                        .high: "scale=-1:-1:flags=lanczos",
+                    ][quality]
+                    let filter = argument(after: "-vf", in: arguments)
+                    try expect(filter?.contains("fps=7.500") == true, "GIF filter should retain FPS")
+                    try expect(filter?.contains(expectedScale ?? "missing") == true, "GIF quality scale changed")
+                    try expect(argument(after: "-loop", in: arguments) == "0", "GIF should loop continuously")
+                }
+            }
+        }
+
+        enum SyntheticCaptureFailure: Error { case unavailable }
+        let failureLock = NSLock()
+        var failureCalls = 0
+        let failedOutput = URL(fileURLWithPath: root + "/capture-failure.mp4")
+        let failedRecording = try BrowserRecording(
+            outputURL: failedOutput, fps: 4, captureFrame: {
+                failureLock.lock(); failureCalls += 1; let call = failureCalls; failureLock.unlock()
+                if call == 1 { return Data([0x01]) }
+                throw SyntheticCaptureFailure.unavailable
+            }
+        )
+        let failureDeadline = Date().addingTimeInterval(5)
+        while Date() < failureDeadline {
+            guard case .object(let status) = failedRecording.status() else { break }
+            if status["active"] == .bool(false) { break }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        guard case .object(let failedStatus) = failedRecording.status() else {
+            throw TestFailure(description: "failed recording status")
+        }
+        try expect(failedStatus["active"] == .bool(false), "consecutive capture failures should abort recording")
+        try expect(failedStatus["droppedFrames"] == .number(12), "failure threshold should be max(10, fps × 3)")
+        do {
+            _ = try failedRecording.stop(timeout: 2)
+            throw TestFailure(description: "capture failure should surface from stop")
+        } catch RecordingError.captureFailed {
+            // Expected.
+        }
+
+        let loopEntered = DispatchSemaphore(value: 0)
+        let timeoutLock = NSLock()
+        var timeoutCalls = 0
+        let timeoutRecording = try BrowserRecording(
+            outputURL: URL(fileURLWithPath: root + "/timeout.mp4"), fps: 1,
+            captureFrame: {
+                timeoutLock.lock(); timeoutCalls += 1; let call = timeoutCalls; timeoutLock.unlock()
+                if call == 2 { loopEntered.signal() }
+                return Data([0x01])
+            }
+        )
+        try expect(loopEntered.wait(timeout: .now() + 1) == .success, "capture loop should start")
+        do {
+            _ = try timeoutRecording.stop(timeout: 0.01)
+            throw TestFailure(description: "a bounded stop should report timeout")
+        } catch RecordingError.timedOut {
+            // Expected.
+        }
+        Thread.sleep(forTimeInterval: 1.1)
+    }
+
+    static func capabilitiesMatchProtocolCommands() throws {
+        guard case .object(let document) = capabilitiesDocument,
+              case .array(let rawCommands)? = document["commands"],
+              case .object(let security)? = document["security"] else {
+            throw TestFailure(description: "capabilities document shape")
+        }
+        let commands = rawCommands.compactMap(\.stringValue)
+        let expected = CommandName.allCases.map(\.rawValue)
+        try expect(commands.count == expected.count, "capabilities should not omit or duplicate commands")
+        try expect(Set(commands) == Set(expected), "capabilities should match CommandName.allCases")
+        try expect(
+            security["maximumMessageBytes"] == .number(Double(headlessMaximumMessageBytes)),
+            "capabilities should publish the real frame bound"
+        )
+        try expect(security["tcpListener"] == .bool(false), "capabilities must not advertise TCP control")
+        try expect(security["arbitraryJavaScript"] == .bool(false), "capabilities must not advertise arbitrary JavaScript")
+    }
+
+    static func oversizedSocketRequestIsRejected() throws {
+        try LocalRuntime.preparePrivateDirectory()
+        let socketPath = LocalRuntime.directoryURL
+            .appendingPathComponent("oversized-\(UUID().uuidString).sock").path
+        let server = LocalSocketServer(socketPath: socketPath)
+        try server.start { request in
+            CommandResponse.success(id: request.id, result: .object(["unexpected": .bool(true)]))
+        }
+        defer { server.stop() }
+
+        let descriptor = try connectRawUnixSocket(path: socketPath)
+        defer { closeRawSocket(descriptor) }
+        var request = Data(repeating: 0x78, count: headlessMaximumMessageBytes + 8_192)
+        request.append(0x0A)
+        let sent = try writeRawSocket(request, descriptor: descriptor)
+        try expect(sent > headlessMaximumMessageBytes, "raw request should cross the protocol limit")
+        let response = try ProtocolCodec.decodeLine(
+            CommandResponse.self, from: readRawSocketLine(descriptor: descriptor)
+        )
+        try expect(!response.ok, "oversized socket request should fail")
+        try expect(response.error?.code == "INVALID_REQUEST", "oversized request should retain an explicit error code")
+        try expect(response.result == nil, "oversized request must not reach the command handler")
+    }
+
     static func screenshotSeriesHelpers() throws {
         let rawPlan = JSONValue.object([
             "initialY": .number(240),
@@ -1111,6 +1411,8 @@ struct ProtocolTests {
             ("artifact read boundaries", artifactReadsStayInsideBounds),
             ("flow recording safety", flowRecordingOmitsSensitiveCommands),
             ("visual comparison", visualComparisonInvokesBoundedTool),
+            ("recording arguments and bounds", recordingArgumentsAndFailureBounds),
+            ("capabilities match commands", capabilitiesMatchProtocolCommands),
             ("screenshot series helpers", screenshotSeriesHelpers),
             ("diagnostic summary", diagnosticSummary),
             ("diagnostic bounds and URL redaction", diagnosticsBoundAndRedacted),
@@ -1123,6 +1425,7 @@ struct ProtocolTests {
             ("live socket replacement protection", liveSocketCannotBeReplaced),
             ("private socket directory", serverRejectsSocketOutsidePrivateDirectory),
             ("shutdown bypasses busy request", shutdownBypassesBusyRequest),
+            ("oversized socket request", oversizedSocketRequestIsRejected),
         ]
 
         var failures = 0
