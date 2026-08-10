@@ -23,6 +23,9 @@ Cutting that release is tracked in
 
 ### Added
 
+- The single MCP tool now accurately declares its mutating, destructive,
+  non-idempotent, open-world behavior; integration tests lock the metadata and
+  deliberate `stop` / `session close` exposure.
 - An MCP stdio integration suite covering initialization, tool discovery,
   browser-command calls, malformed and oversized input, and rejection of local
   CLI commands.

@@ -215,9 +215,12 @@ via MCP. ~~Derive identically.~~ **Done:** both adapters now call the same
 `HeadlessProtocol.requestTimeout(for:)` helper. Coverage locks the ordinary,
 wait-derived, tour, screenshot-series, screenshot, and recording-stop cases.
 
-**C2. Destructive verbs over MCP.** ([#30](https://github.com/LockInTime/headless/issues/30)) `stop` (shutdown) and `session close` are
+**C2. Destructive verbs over MCP.** ([#30](https://github.com/LockInTime/headless/issues/30)) ~~`stop` (shutdown) and `session close` are
 callable though the tool description says "safe"; decide policy (deny, or
-annotate) and test it.
+annotate) and test it.~~ **Done:** architecture decision §17 keeps the complete
+remote CLI surface and pessimistically annotates the single tool as mutating,
+destructive, non-idempotent, and open-world. The stdio integration suite locks
+the metadata and proves both destructive commands still reach the local host.
 
 **C3. Zero MCP tests** ([#31](https://github.com/LockInTime/headless/issues/31)) — ~~the only coverage is inside `qa-videos.sh`. Add a
 stdio harness test: initialize / tools/list / tools/call / malformed line /

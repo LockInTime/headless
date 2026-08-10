@@ -23,7 +23,14 @@ private func toolResult(id: Any?, text: String, isError: Bool = false) {
 
 private let tool: [String: Any] = [
     "name": "headless",
-    "description": "Run a safe Headless CLI command against the already-running local browser host. Supply argv without the headless binary name.",
+    "description": "Run a Headless CLI browser command against the already-running local browser host. Commands may navigate or mutate page/session state; stop and session close are destructive. Supply argv without the headless binary name.",
+    "annotations": [
+        "title": "Headless browser command",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+    ],
     "inputSchema": [
         "type": "object", "additionalProperties": false,
         "properties": ["argv": ["type": "array", "items": ["type": "string"], "maxItems": 32]],
