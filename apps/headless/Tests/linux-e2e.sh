@@ -130,6 +130,10 @@ fi
 echo "$SUSPICIOUS_RESULT" | grep -q 'UNSAFE_RESOURCE_TYPE'
 headless --session qa click --role button --name 'Scripted non-web navigation' | grep -q '"clicked"'
 headless --session qa wait --url /designers/dashboard --settled --timeout 10000 | grep -q 'Designers Dashboard'
+BLOCKED_NAVIGATION_REPORT="$(headless --session qa qa report)"
+echo "$BLOCKED_NAVIGATION_REPORT" | grep -q '"kind":"navigation-blocked"'
+echo "$BLOCKED_NAVIGATION_REPORT" | grep -q 'about:blank'
+headless --session qa qa clear | grep -q '"cleared"'
 headless --session qa screenshot --output viewport.png | grep -q '"name":"viewport.png"'
 headless --session qa screenshot --full-page --output full-page.png | grep -q '"name":"full-page.png"'
 headless --session qa screenshot --role button --name Continue --output continue.png | grep -q '"name":"continue.png"'

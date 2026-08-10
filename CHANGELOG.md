@@ -36,6 +36,8 @@ Cutting that release is tracked in
 - Recording and transport regression coverage for every ffmpeg format/quality
   mapping, executable discovery, capture-failure and stop bounds, capabilities
   accuracy, and oversized Unix-socket requests.
+- Cross-uid Unix-socket rejection and host E2E classification checks for
+  blocked top-frame navigation and denied page-initiated downloads.
 - Progressive context pruning: `inspect --context summary|outline|text|actions|full`
   with `--task` ranking, `--within @rN` scoping, and `--limit` / `--budget` /
   `--depth` bounds. Every focused response reports `contextStats` and `omitted`.

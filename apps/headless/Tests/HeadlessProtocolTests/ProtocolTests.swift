@@ -1095,6 +1095,48 @@ struct ProtocolTests {
         try expect(response.result == nil, "oversized request must not reach the command handler")
     }
 
+    static func differentPeerUserIsRejected() throws {
+        #if os(Linux)
+        // The Linux CI container runs this suite as root, which lets the test
+        // launch one deliberately unprivileged peer. Normal developer runs
+        // still exercise every other transport boundary without requiring
+        // privilege escalation.
+        guard getuid() == 0 else { return }
+        let setpriv = "/usr/bin/setpriv"
+        try expect(FileManager.default.isExecutableFile(atPath: setpriv), "Linux CI should provide setpriv")
+        try LocalRuntime.preparePrivateDirectory()
+        let socketPath = LocalRuntime.directoryURL
+            .appendingPathComponent("peer-uid-\(UUID().uuidString).sock").path
+        let server = LocalSocketServer(socketPath: socketPath)
+        try server.start { request in CommandResponse.success(id: request.id) }
+        defer {
+            server.stop()
+            _ = Glibc.chmod(LocalRuntime.directoryURL.path, 0o700)
+        }
+        // The production modes are 0700/0600. Open them only inside this
+        // disposable test so a different uid can reach accept(), where the
+        // credential check must still fail closed.
+        try expect(Glibc.chmod(LocalRuntime.directoryURL.path, 0o777) == 0, "test runtime directory chmod failed")
+        try expect(Glibc.chmod(socketPath, 0o666) == 0, "test socket chmod failed")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: setpriv)
+        process.arguments = [
+            "--reuid=65534", "--regid=65534", "--clear-groups",
+            CommandLine.arguments[0], "--peer-denied-client", socketPath,
+        ]
+        process.standardOutput = FileHandle.nullDevice
+        let errors = Pipe()
+        process.standardError = errors
+        try process.run()
+        process.waitUntilExit()
+        let errorText = String(
+            decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self
+        )
+        try expect(process.terminationStatus == 0, "different-uid peer was not rejected: \(errorText)")
+        #endif
+    }
+
     static func screenshotSeriesHelpers() throws {
         let rawPlan = JSONValue.object([
             "initialY": .number(240),
@@ -1386,6 +1428,24 @@ struct ProtocolTests {
     }
 
     static func main() {
+        if CommandLine.arguments.count == 3,
+           CommandLine.arguments[1] == "--peer-denied-client" {
+            do {
+                let descriptor = try connectRawUnixSocket(path: CommandLine.arguments[2])
+                defer { closeRawSocket(descriptor) }
+                let response = try ProtocolCodec.decodeLine(
+                    CommandResponse.self, from: readRawSocketLine(descriptor: descriptor)
+                )
+                guard response.error?.code == "PEER_DENIED" else {
+                    fputs("expected PEER_DENIED\n", stderr)
+                    exit(1)
+                }
+                exit(0)
+            } catch {
+                fputs("peer client failed: \(error)\n", stderr)
+                exit(1)
+            }
+        }
         let tests: [TestCase] = [
             ("request round-trip", requestRoundTrip),
             ("unsafe navigation schemes", rejectsUnsafeNavigationSchemes),
@@ -1426,6 +1486,7 @@ struct ProtocolTests {
             ("private socket directory", serverRejectsSocketOutsidePrivateDirectory),
             ("shutdown bypasses busy request", shutdownBypassesBusyRequest),
             ("oversized socket request", oversizedSocketRequestIsRejected),
+            ("different peer uid", differentPeerUserIsRejected),
         ]
 
         var failures = 0

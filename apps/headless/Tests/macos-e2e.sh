@@ -207,6 +207,12 @@ fi
 echo "$SUSPICIOUS_RESULT" | grep -q 'UNSAFE_RESOURCE_TYPE'
 "$CLI" --session qa click --role button --name 'Scripted non-web navigation' | grep -q '"clicked"'
 "$CLI" --session qa wait --url /designers/dashboard --settled --timeout 10000 | grep -q 'Designers Dashboard'
+"$CLI" --session qa click --role link --name 'Download fixture' | grep -q '"clicked"'
+sleep 1
+BLOCKED_DOWNLOAD_REPORT="$("$CLI" --session qa qa report)"
+echo "$BLOCKED_DOWNLOAD_REPORT" | grep -q '"kind":"download-blocked"'
+echo "$BLOCKED_DOWNLOAD_REPORT" | grep -q '/download.txt'
+"$CLI" --session qa qa clear | grep -q '"cleared"'
 STEP="artifacts-visual"
 "$CLI" --session qa screenshot --output viewport.png | grep -q '"name":"viewport.png"'
 "$CLI" --session qa screenshot --full-page --output full-page.png | grep -q '"name":"full-page.png"'

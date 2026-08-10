@@ -25,6 +25,17 @@ const server = createServer(async (request, response) => {
     response.end(body);
     return;
   }
+  if (pathname === '/download.txt') {
+    const body = Buffer.from('download must remain blocked');
+    response.writeHead(200, {
+      'content-type': 'text/plain; charset=utf-8',
+      'content-length': body.length,
+      'content-disposition': 'attachment; filename="download.txt"',
+      'cache-control': 'no-store',
+    });
+    response.end(body);
+    return;
+  }
   const fixture = routes.get(pathname);
   if (!fixture) {
     response.writeHead(404, {'content-type': 'text/plain; charset=utf-8'});
