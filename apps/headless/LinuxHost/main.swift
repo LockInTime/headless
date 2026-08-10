@@ -9,6 +9,7 @@ final class ChromiumBrowserEngine: BrowserEngine {
 
     let name = "chromium"
     let platform = "linux"
+    let capabilities = BrowserEngineCapabilities.chromium
     let browser: ChromiumProcess
 
     init() throws {

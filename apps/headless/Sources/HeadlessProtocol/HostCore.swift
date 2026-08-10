@@ -75,6 +75,7 @@ public protocol BrowserEngine: AnyObject {
     associatedtype Session: BrowserEngineSession
     var name: String { get }
     var platform: String { get }
+    var capabilities: BrowserEngineCapabilities { get }
     func createSession() throws -> Session
     func closeSession(_ session: Session)
     func stop()
@@ -234,6 +235,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             "engine": .string(engine.name),
             "platform": .string(engine.platform),
             "protocolVersion": .string(headlessProtocolVersion),
+            "capabilities": engine.capabilities.document,
             "recordingAvailable": .bool(BrowserRecording.isAvailable()),
             "artifactDirectory": .string(artifacts.rootURL.path),
         ]

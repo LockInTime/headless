@@ -93,6 +93,13 @@ explicit (`UNSUPPORTED_CAPABILITY`); the point is that the *common* path is
 single-sourced and the divergent one is declared, generated into
 `capabilities`, and asserted by tests.
 
+**Capability-matrix consequence (implemented 2026-08-10):** each engine owns
+one exhaustive profile used by both `headless capabilities` and the active
+host's additive `ping.capabilities` field. Profiles partition every protocol
+command into supported and unsupported sets and declare behavioral differences
+that cannot be made identical without weakening an engine. This compatible
+response addition does not bump protocol 0.5.
+
 ## 4. Wire protocol: keep as-is, version bump only when necessary
 
 **Decision:** keep newline-delimited JSON over the private Unix socket,

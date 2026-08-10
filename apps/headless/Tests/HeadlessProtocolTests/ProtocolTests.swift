@@ -187,6 +187,7 @@ private final class TestBrowserEngine: BrowserEngine {
 
     let name = "fake"
     let platform = "test"
+    let capabilities = BrowserEngineCapabilities.chromium
     private(set) var createdSessions: [TestBrowserSession] = []
     private(set) var closedSessions: [TestBrowserSession] = []
     private(set) var stopped = false
@@ -1183,6 +1184,7 @@ struct ProtocolTests {
     static func capabilitiesMatchProtocolCommands() throws {
         guard case .object(let document) = capabilitiesDocument,
               case .array(let rawCommands)? = document["commands"],
+              case .object(let engines)? = document["engines"],
               case .object(let security)? = document["security"] else {
             throw TestFailure(description: "capabilities document shape")
         }
@@ -1190,6 +1192,60 @@ struct ProtocolTests {
         let expected = CommandName.allCases.map(\.rawValue)
         try expect(commands.count == expected.count, "capabilities should not omit or duplicate commands")
         try expect(Set(commands) == Set(expected), "capabilities should match CommandName.allCases")
+        try expect(
+            engines.count == BrowserEngineName.allCases.count,
+            "capabilities should contain exactly one profile for every engine"
+        )
+        for profile in BrowserEngineCapabilities.all {
+            guard case .object(let engine)? = engines[profile.engine.rawValue],
+                  case .array(let rawSupported)? = engine["commands"],
+                  case .array(let rawUnsupported)? = engine["unsupportedCommands"],
+                  case .object(let features)? = engine["features"] else {
+                throw TestFailure(description: "missing engine capability profile: \(profile.engine.rawValue)")
+            }
+            let supported = Set(rawSupported.compactMap(\.stringValue))
+            let unsupported = Set(rawUnsupported.compactMap(\.stringValue))
+            try expect(supported.isDisjoint(with: unsupported), "engine command sets must not overlap")
+            try expect(supported.union(unsupported) == Set(expected), "engine command sets must be exhaustive")
+            try expect(
+                features["tourTimeoutMs"] == .number(65_000),
+                "both engine profiles should declare the shared tour timeout"
+            )
+            try expect(
+                features["backWithoutHistory"] == .string("operation-failed"),
+                "both engines should fail consistently when back history is empty"
+            )
+        }
+        try expect(
+            BrowserEngineCapabilities.webkit.unsupportedCommands
+                == [.networkEmulate, .networkMockSet, .networkMockClear],
+            "WebKit unsupported commands should be explicit and exact"
+        )
+        try expect(
+            BrowserEngineCapabilities.chromium.unsupportedCommands.isEmpty,
+            "Chromium should implement every protocol command"
+        )
+        try expect(
+            document["currentEngine"] == .string(currentBrowserEngineCapabilities.engine.rawValue),
+            "capabilities should identify the engine for this binary"
+        )
+        guard case .array(let screenshotFormats)? = document["screenshotFormats"],
+              case .array(let recordingFormats)? = document["recordingFormats"],
+              case .array(let recordingQuality)? = document["recordingQuality"] else {
+            throw TestFailure(description: "generated capture capability shape")
+        }
+        try expect(
+            Set(screenshotFormats.compactMap(\.stringValue)) == ScreenshotFormat.artifactExtensions,
+            "screenshot capabilities should be generated from ScreenshotFormat"
+        )
+        try expect(
+            Set(recordingFormats.compactMap(\.stringValue)) == RecordingFormat.artifactExtensions,
+            "recording capabilities should be generated from RecordingFormat"
+        )
+        try expect(
+            Set(recordingQuality.compactMap(\.stringValue)) == Set(RecordingQuality.allCases.map(\.rawValue)),
+            "recording quality capabilities should be generated from RecordingQuality"
+        )
         try expect(
             security["maximumMessageBytes"] == .number(Double(headlessMaximumMessageBytes)),
             "capabilities should publish the real frame bound"
@@ -1764,6 +1820,7 @@ struct ProtocolTests {
         try expect(pingResult["engine"] == .string("fake"), "ping should identify the engine")
         try expect(pingResult["platform"] == .string("test"), "ping should identify the platform")
         try expect(pingResult["adapter"] == .string("test-adapter"), "engine ping details should be merged")
+        try expect(pingResult["capabilities"] != nil, "ping should publish the active engine profile")
 
         let created = core.handle(CommandRequest(
             command: .sessionCreate, parameters: ["name": .string("secondary")]

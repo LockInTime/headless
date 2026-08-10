@@ -23,6 +23,9 @@ Cutting that release is tracked in
 
 ### Added
 
+- A generated WebKit/Chromium capability matrix now declares exhaustive
+  command support and intentional engine differences; host ping responses
+  include the active engine profile.
 - The single MCP tool now accurately declares its mutating, destructive,
   non-idempotent, open-world behavior; integration tests lock the metadata and
   deliberate `stop` / `session close` exposure.
@@ -88,6 +91,8 @@ Cutting that release is tracked in
 
 ### Fixed
 
+- WebKit and Chromium now agree on empty-history `back` failures and enforce
+  the same bounded key input before dispatch.
 - Portable name characters, local-development hosts, scroll bounds, and
   network-emulation bounds now have one definition shared by CLI validation,
   protocol validation, and diagnostics; tests also lock the Swift/JavaScript

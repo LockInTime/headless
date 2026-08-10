@@ -412,6 +412,7 @@ final class WebKitBrowserEngine: BrowserEngine {
 
     let name = "webkit"
     let platform = "macos"
+    let capabilities = BrowserEngineCapabilities.webkit
     private let create: () throws -> BrowserWindowController
     private let close: (BrowserWindowController) -> Void
     private let stopEngine: () -> Void
@@ -456,7 +457,9 @@ extension BrowserWindowController: BrowserEngineSession {
         try agentTour(parameters: parameters)
     }
     func hostBack() throws -> JSONValue {
-        onMain { _ = self.webView.goBack() }
+        guard onMain({ self.webView.goBack() != nil }) else {
+            throw HostError(code: .operationFailed, message: "No back history")
+        }
         return try agentWait(parameters: ["settled": .bool(true)])
     }
     func hostReload() throws -> JSONValue {
