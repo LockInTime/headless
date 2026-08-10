@@ -19,6 +19,18 @@ public struct CLIInvocation: Equatable, Sendable {
     }
 }
 
+public func requestTimeout(for request: CommandRequest) -> TimeInterval {
+    if let milliseconds = request.parameters["timeoutMs"]?.numberValue {
+        return min(125, max(10, milliseconds / 1_000 + 5))
+    }
+    if request.command == .tour { return 125 }
+    if request.command == .recordStop { return 30 }
+    if request.command == .screenshot {
+        return request.parameters["series"]?.stringValue == nil ? 30 : 125
+    }
+    return 15
+}
+
 public enum CLIParseError: Error, Equatable, CustomStringConvertible {
     case missingCommand
     case unknownCommand(String)

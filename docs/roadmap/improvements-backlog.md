@@ -211,7 +211,9 @@ architecture decision §7.
 **C1. Timeout parity.** ([#29](https://github.com/LockInTime/headless/issues/29)) MCP uses flat 30 s except tour/series
 (`apps/headless/MCP/main.swift:70-72`); CLI derives from `--timeout`
 (`HeadlessCLI/main.swift:104-114`). `wait --timeout 90000` works in CLI, dies
-via MCP. Derive identically.
+via MCP. ~~Derive identically.~~ **Done:** both adapters now call the same
+`HeadlessProtocol.requestTimeout(for:)` helper. Coverage locks the ordinary,
+wait-derived, tour, screenshot-series, screenshot, and recording-stop cases.
 
 **C2. Destructive verbs over MCP.** ([#30](https://github.com/LockInTime/headless/issues/30)) `stop` (shutdown) and `session close` are
 callable though the tool description says "safe"; decide policy (deny, or
