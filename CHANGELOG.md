@@ -49,6 +49,11 @@ Cutting that release is tracked in
   committed bundle is checksum-verified in CI.
 - Repository moved to the `LockInTime` organisation; site links updated.
 
+### Fixed
+
+- `fill` preserves quoted whitespace and accepts literal `--json` or
+  `--session` values after the standard `--` end-of-options sentinel.
+
 ### Known gaps
 
 Tracked as [`backlog`](https://github.com/LockInTime/headless/labels/backlog)

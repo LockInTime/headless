@@ -44,9 +44,17 @@ public struct CLIParser {
 
     public func parse(_ rawArguments: [String]) throws -> CLIInvocation {
         var arguments = rawArguments
+        let literalArguments: [String]
+        if let sentinel = arguments.firstIndex(of: "--") {
+            literalArguments = Array(arguments[arguments.index(after: sentinel)...])
+            arguments.removeSubrange(sentinel...)
+        } else {
+            literalArguments = []
+        }
         let jsonOutput = removeFlag("--json", from: &arguments)
         let session = try removeOption("--session", from: &arguments)
         if let session { try validateIdentifier(session, field: "session") }
+        arguments.append(contentsOf: literalArguments)
         guard let command = arguments.first else { throw CLIParseError.missingCommand }
         arguments.removeFirst()
 
@@ -80,11 +88,9 @@ public struct CLIParser {
         case "click":
             return try parseTargeted(.click, arguments: arguments, session: session, jsonOutput: jsonOutput)
         case "fill":
-            guard arguments.count >= 2 else { throw CLIParseError.missingArgument("TARGET TEXT") }
-            let target = arguments[0]
-            let value = arguments.dropFirst().joined(separator: " ")
+            guard arguments.count == 2 else { throw CLIParseError.missingArgument("TARGET TEXT") }
             return remote(.fill, session: session, parameters: [
-                "target": .string(target), "value": .string(value),
+                "target": .string(arguments[0]), "value": .string(arguments[1]),
             ], jsonOutput: jsonOutput)
         case "press":
             guard arguments.count == 1 else { throw CLIParseError.missingArgument("KEY") }
@@ -612,7 +618,7 @@ Commands:
   inspect [--context summary|outline|text|actions|full] [--task TEXT]
           [--within @rN] [--limit N] [--budget TOKENS] [--depth N] [--text]
   click REF | click --role ROLE [--name NAME]
-  fill REF TEXT | press KEY
+  fill REF TEXT | fill REF -- TEXT_WITH_LITERAL_FLAGS | press KEY
   scroll [up|down|top|bottom] [--amount PX]
   back | reload
   wait [--settled] [--url PATTERN] [--text TEXT] [--timeout MS]
@@ -643,6 +649,7 @@ Commands:
 Global options:
   --session NAME   target a named browser session
   --json           emit one JSON object on stdout
+  --               stop parsing global options; quote multi-word fill values
 """
 
 public let capabilitiesDocument: JSONValue = .object([

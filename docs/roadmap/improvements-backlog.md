@@ -92,9 +92,11 @@ Documented in P1 under "Reference lifetime"; covered in
 stripping (`HP/CLI.swift:46-49`) happens before subcommand parsing, so
 `headless fill @e1 pass --json to API` silently drops `--json` from typed
 text; `fill` also joins args with single spaces destroying whitespace
-(`CLI.swift:83-88`). Add a `--` end-of-options sentinel, only strip globals
-before it, and pass the fill value as one argument. Test: fill value
-containing `--json`, tabs, double spaces.
+(`CLI.swift:83-88`). ~~Add a `--` end-of-options sentinel, only strip globals
+before it, and pass the fill value as one argument.~~ **Done:** global options
+are stripped only before the first `--`; `fill` now requires one quoted text
+argument and preserves its whitespace exactly. Protocol coverage includes
+literal `--json`/`--session`, tabs, double spaces, and the quoting boundary.
 
 **A7. Client never verifies response `id`.** ([#18](https://github.com/LockInTime/headless/issues/18)) Failure paths return
 `id:"unknown"` (`HP/Transport.swift:201,222`); `LocalSocketClient.send`
