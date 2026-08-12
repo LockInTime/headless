@@ -89,10 +89,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
+      - name: Generate and verify checksums
+        run: ./.github/scripts/release-checksums.sh "${{ needs.version.outputs.version }}" dist
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -115,4 +118,5 @@ jobs:
             dist/Headless-${{ needs.version.outputs.version }}-macos.zip
             dist/headless-${{ needs.version.outputs.version }}-linux-amd64.tar.gz
             dist/headless-${{ needs.version.outputs.version }}-linux-arm64.tar.gz
+            dist/SHA256SUMS
           fail_on_unmatched_files: true

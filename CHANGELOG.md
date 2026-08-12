@@ -23,6 +23,8 @@ Cutting that release is tracked in
 
 ### Added
 
+- Tagged releases now include a verified `SHA256SUMS` manifest covering every
+  downloadable macOS and Linux package.
 - A single cross-engine conformance scenario now runs against real WKWebView
   and Chromium hosts, locking shared response shapes and declared capability
   errors without mirrored platform assertions.
