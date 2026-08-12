@@ -13,7 +13,7 @@ done
 APP="Headless.app"
 ARCH="$(uname -m)"
 ICON="build/Headless.icns"
-VERSION="${HEADLESS_VERSION:-1.0.0}"
+VERSION="${HEADLESS_VERSION:-$(tr -d '[:space:]' < VERSION)}"
 mkdir -p build/module-cache build/swiftpm-module-cache build/bin
 
 # Select an SDK the installed Swift compiler can read. Apple occasionally ships

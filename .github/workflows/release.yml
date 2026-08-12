@@ -13,6 +13,9 @@ on:
       - "apps/headless/build-linux.sh"
       - "apps/headless/install-linux.sh"
       - "apps/headless/Package.swift"
+      - "apps/headless/Sources/HeadlessProtocol/ProductVersion.swift"
+      - "apps/headless/VERSION"
+      - "apps/headless/VersionSupport/**"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -31,26 +34,34 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       publish: ${{ steps.version.outputs.publish }}
     steps:
+      - uses: actions/checkout@v7
       - id: version
+        shell: bash
         env:
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          set -eu
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            case "$GITHUB_REF" in
-              refs/tags/v*) ;;
-              *) echo "release publishing requires a v* tag" >&2; exit 64 ;;
-            esac
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            if ! printf '%s\n' "$version" | grep -Eq -f apps/headless/VersionSupport/semver-pattern.txt; then
+              echo "Release tag must be a semantic version prefixed with v: $GITHUB_REF_NAME" >&2
+              exit 64
+            fi
+            expected="$(tr -d '[:space:]' < apps/headless/VERSION)"
+            if [[ "$version" != "$expected" ]]; then
+              echo "Release tag $version does not match apps/headless/VERSION $expected" >&2
+              exit 64
+            fi
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
-            if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$DRY_RUN" != "true" ]; then
+            if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$DRY_RUN" != "true" ]]; then
               echo "manual release runs must use dry_run=true; publish by pushing a v* tag" >&2
               exit 64
             fi
-            echo "version=0.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+            version="0.0.${GITHUB_RUN_NUMBER}"
             echo "publish=false" >> "$GITHUB_OUTPUT"
           fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
   macos:
     needs: version
@@ -64,6 +75,8 @@ jobs:
           HEADLESS_VERSION: ${{ needs.version.outputs.version }}
         run: ./apps/headless/build.sh
       - name: Unit tests
+        env:
+          HEADLESS_VERSION: ${{ needs.version.outputs.version }}
         run: ./apps/headless/test.sh
       - name: E2E
         run: zsh ./apps/headless/Tests/macos-e2e.sh
@@ -90,7 +103,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build
-        run: HEADLESS_LINUX_PLATFORM=linux/amd64 ./apps/headless/build-linux.sh
+        env:
+          HEADLESS_LINUX_PLATFORM: linux/amd64
+          HEADLESS_VERSION: ${{ needs.version.outputs.version }}
+        run: ./apps/headless/build-linux.sh
       - name: E2E
         run: ./apps/headless/Tests/linux-docker.sh
       - name: Package
@@ -117,7 +133,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build
-        run: HEADLESS_LINUX_PLATFORM=linux/arm64 ./apps/headless/build-linux.sh
+        env:
+          HEADLESS_LINUX_PLATFORM: linux/arm64
+          HEADLESS_VERSION: ${{ needs.version.outputs.version }}
+        run: ./apps/headless/build-linux.sh
       - name: E2E
         run: ./apps/headless/Tests/linux-docker.sh
       - name: Package
@@ -160,6 +179,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: Headless ${{ needs.version.outputs.version }}
+          generate_release_notes: true
           body: |
             ## Downloads
 

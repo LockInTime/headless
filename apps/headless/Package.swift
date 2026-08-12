@@ -1,6 +1,19 @@
 // swift-tools-version: 5.10
 
 import PackageDescription
+import Foundation
+
+let packageDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+let fallbackProductVersion = try String(
+    contentsOf: packageDirectory.appendingPathComponent("VERSION"), encoding: .utf8
+).trimmingCharacters(in: .whitespacesAndNewlines)
+let productVersion = ProcessInfo.processInfo.environment["HEADLESS_VERSION"] ?? fallbackProductVersion
+let semanticVersionPattern = try String(
+    contentsOf: packageDirectory.appendingPathComponent("VersionSupport/semver-pattern.txt"), encoding: .utf8
+).trimmingCharacters(in: .whitespacesAndNewlines)
+guard productVersion.range(of: semanticVersionPattern, options: .regularExpression) != nil else {
+    fatalError("HEADLESS_VERSION must be a semantic version, received: \(productVersion)")
+}
 
 let package = Package(
     name: "Headless",
@@ -16,7 +29,15 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "CHeadlessVersion",
+            path: "VersionSupport",
+            exclude: ["semver-pattern.txt"],
+            publicHeadersPath: "include",
+            cSettings: [.define("HEADLESS_PRODUCT_VERSION", to: "\"\(productVersion)\"")]
+        ),
+        .target(
             name: "HeadlessProtocol",
+            dependencies: ["CHeadlessVersion"],
             resources: [.process("Resources")]
         ),
         .executableTarget(
@@ -38,7 +59,7 @@ let package = Package(
             dependencies: ["HeadlessProtocol"],
             path: ".",
             exclude: [
-                "Package.swift", "Sources", "Tests", "tools", "build.sh",
+                "Package.swift", "Sources", "Tests", "tools", "VersionSupport", "VERSION", "build.sh",
                 "package.json", "headless.entitlements", "build", "docs", "test.sh",
                 "LinuxHost", "Dockerfile.linux", "Headless.app", "build-linux.sh", "install-linux.sh", "benchmark.sh", ".dockerignore",
                 "MCP", "node_modules",

@@ -234,6 +234,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             "pid": .number(Double(ProcessInfo.processInfo.processIdentifier)),
             "engine": .string(engine.name),
             "platform": .string(engine.platform),
+            "productVersion": .string(headlessProductVersion),
             "protocolVersion": .string(headlessProtocolVersion),
             "capabilities": engine.capabilities.document,
             "recordingAvailable": .bool(BrowserRecording.isAvailable()),
