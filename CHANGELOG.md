@@ -29,6 +29,9 @@ Cutting that release is tracked in
 - A generated WebKit/Chromium capability matrix now declares exhaustive
   command support and intentional engine differences; host ping responses
   include the active engine profile.
+- The comparison benchmark now emits a validated JSON results artifact with
+  raw samples and medians, and its refreshed Headless workflows include
+  task-aware action inspection.
 - The single MCP tool now accurately declares its mutating, destructive,
   non-idempotent, open-world behavior; integration tests lock the metadata and
   deliberate `stop` / `session close` exposure.
