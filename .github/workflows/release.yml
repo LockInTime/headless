@@ -12,6 +12,8 @@ on:
       - "apps/headless/build.sh"
       - "apps/headless/build-linux.sh"
       - "apps/headless/install-linux.sh"
+      - "apps/headless/install.sh"
+      - "apps/headless/Tests/linux-installer.sh"
       - "apps/headless/Package.swift"
       - "apps/headless/Sources/HeadlessProtocol/ProductVersion.swift"
       - "apps/headless/VERSION"
@@ -172,6 +174,8 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Add Linux bootstrap installer
+        run: cp apps/headless/install.sh dist/install.sh
       - name: Generate and verify checksums
         run: ./.github/scripts/release-checksums.sh "${{ needs.version.outputs.version }}" dist
       - name: Create GitHub Release
@@ -188,14 +192,16 @@ jobs:
             | `Headless-${{ needs.version.outputs.version }}-macos.zip` | macOS (ad-hoc signed `.app`) |
             | `headless-${{ needs.version.outputs.version }}-linux-amd64.tar.gz` | Linux x86_64 |
             | `headless-${{ needs.version.outputs.version }}-linux-arm64.tar.gz` | Linux arm64 |
+            | `install.sh` | Verified Linux bootstrap installer |
 
             ### Notes
 
             - **macOS:** Unzip and run `Headless.app`. Gatekeeper may warn (ad-hoc signature; notarization not included yet). CLI: `Headless.app/Contents/Resources/bin/headless`.
-            - **Linux tarball:** Does not bundle Chromium. Install with `./install-linux.sh` after ensuring non-Snap Chromium and FFmpeg are available. The Docker production image remains the self-contained runtime (not published by this release).
+            - **Linux:** `curl -fsSL https://github.com/LockInTime/headless/releases/latest/download/install.sh | sh`. The installer verifies the selected tarball against `SHA256SUMS`. Chromium and FFmpeg remain system dependencies.
           files: |
             dist/Headless-${{ needs.version.outputs.version }}-macos.zip
             dist/headless-${{ needs.version.outputs.version }}-linux-amd64.tar.gz
             dist/headless-${{ needs.version.outputs.version }}-linux-arm64.tar.gz
             dist/SHA256SUMS
+            dist/install.sh
           fail_on_unmatched_files: true

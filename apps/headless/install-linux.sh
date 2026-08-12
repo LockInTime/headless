@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 PREFIX="${HEADLESS_INSTALL_PREFIX:-$HOME/.local}"
 
 if [ "$#" -gt 0 ]; then
@@ -34,89 +34,29 @@ else
   exit 69
 fi
 
-CHROMIUM=""
-SNAP_CHROMIUM=""
-
-consider_chromium() {
-  candidate="$1"
-  case "$candidate" in
-    /snap|/snap/*|/var/lib/snapd/snap|/var/lib/snapd/snap/*|/usr/bin/snap)
-      SNAP_CHROMIUM="$candidate"
-      return 1
-      ;;
-  esac
-  [ -x "$candidate" ] && [ -f "$candidate" ] || return 1
-  resolved="$(readlink -f "$candidate" 2>/dev/null || true)"
-  [ -n "$resolved" ] || resolved="$candidate"
-  case "$resolved" in
-    /snap|/snap/*|/var/lib/snapd/snap|/var/lib/snapd/snap/*|/usr/bin/snap)
-      SNAP_CHROMIUM="$candidate"
-      return 1
-      ;;
-  esac
-  case "$(sed -n '1p' "$resolved" 2>/dev/null || true)" in
-    '#!'*)
-      if grep -Eq '/snap/bin/|/usr/bin/snap|snap run ' "$resolved"; then
-        SNAP_CHROMIUM="$candidate"
-        return 1
-      fi
-      ;;
-  esac
-  CHROMIUM="$resolved"
-  return 0
-}
-
-if [ "${HEADLESS_CHROMIUM_EXECUTABLE+x}" = x ]; then
-  case "$HEADLESS_CHROMIUM_EXECUTABLE" in
-    /*) ;;
-    *)
-      echo "headless install: HEADLESS_CHROMIUM_EXECUTABLE must be an absolute path" >&2
-      exit 69
-      ;;
-  esac
-  if ! consider_chromium "$HEADLESS_CHROMIUM_EXECUTABLE"; then
-    if [ -n "$SNAP_CHROMIUM" ]; then
-      echo "headless install: Ubuntu Snap Chromium is not supported with the inherited DevTools pipe: $SNAP_CHROMIUM" >&2
-    else
-      echo "headless install: HEADLESS_CHROMIUM_EXECUTABLE is not an executable regular file: $HEADLESS_CHROMIUM_EXECUTABLE" >&2
-    fi
-    echo "headless install: use the bundled Docker runtime or a native distribution Chromium binary" >&2
-    exit 69
-  fi
-else
-  for candidate in \
-    "$SCRIPT_DIR/runtime/chromium/chromium" \
-    /usr/lib/chromium/chromium \
-    /usr/lib64/chromium/chromium \
-    /usr/lib64/chromium-browser/chromium-browser \
-    /opt/google/chrome/chrome \
-    /opt/google/chrome/google-chrome \
-    /usr/bin/chromium \
-    /usr/bin/chromium-browser \
-    /usr/bin/google-chrome-stable \
-    /usr/bin/google-chrome
-  do
-    if consider_chromium "$candidate"; then break; fi
-  done
-  if [ -z "$CHROMIUM" ]; then
-    for command_name in chromium chromium-browser google-chrome-stable google-chrome; do
-      candidate="$(command -v "$command_name" 2>/dev/null || true)"
-      [ -n "$candidate" ] || continue
-      if consider_chromium "$candidate"; then break; fi
-    done
-  fi
-  if [ -z "$CHROMIUM" ]; then
-    if [ -n "$SNAP_CHROMIUM" ]; then
-      echo "headless install: Ubuntu Snap Chromium is not supported with the inherited DevTools pipe: $SNAP_CHROMIUM" >&2
-    else
-      echo "headless install: no supported Chromium runtime was found" >&2
-    fi
-    echo "headless install: use the bundled Docker runtime or install a native distribution Chromium binary" >&2
-    exit 69
-  fi
+if ! RUNTIME="$(HEADLESS_HOST_EXECUTABLE="$SOURCE_DIR/headless-host" "$SOURCE_DIR/headless" runtime 2>&1)"; then
+  echo "headless install: unsupported Chromium runtime" >&2
+  echo "$RUNTIME" >&2
+  exit 69
 fi
-if ! command -v ffmpeg >/dev/null 2>&1; then
-  echo "headless install: FFmpeg is required for recording; install ffmpeg with your system package manager" >&2
+
+FFMPEG=""
+if [ "${HEADLESS_FFMPEG_EXECUTABLE+x}" = x ]; then
+  case "$HEADLESS_FFMPEG_EXECUTABLE" in
+    /*) FFMPEG="$HEADLESS_FFMPEG_EXECUTABLE" ;;
+    *) echo "headless install: HEADLESS_FFMPEG_EXECUTABLE must be an absolute path" >&2; exit 69 ;;
+  esac
+else
+  for candidate in /usr/local/bin/ffmpeg /usr/bin/ffmpeg; do
+    if [ -x "$candidate" ] && [ -f "$candidate" ]; then
+      FFMPEG="$candidate"
+      break
+    fi
+  done
+fi
+if [ -z "$FFMPEG" ] || [ ! -x "$FFMPEG" ] || [ ! -f "$FFMPEG" ]; then
+  echo "headless install: FFmpeg was not found in an allowed absolute location" >&2
+  echo "headless install: install ffmpeg with the system package manager or set HEADLESS_FFMPEG_EXECUTABLE" >&2
   exit 69
 fi
 
@@ -130,6 +70,7 @@ install -m 0644 "$SOURCE_DIR/Headless_HeadlessProtocol.resources/AgentRuntime.js
   "$BIN_DIR/Headless_HeadlessProtocol.resources/AgentRuntime.js"
 
 echo "Headless installed in $BIN_DIR"
-echo "Browser runtime: $CHROMIUM (supported inherited DevTools pipe)"
+echo "Browser runtime verified: $RUNTIME"
+echo "Recording runtime: $FFMPEG"
 echo "Run: $BIN_DIR/headless capabilities"
 echo "Check: $BIN_DIR/headless runtime"

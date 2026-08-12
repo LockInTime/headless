@@ -13,7 +13,7 @@ COPY MCP ./MCP
 COPY Tests ./Tests
 COPY docs ./docs
 COPY tools ./tools
-COPY build.sh build-linux.sh install-linux.sh benchmark.sh test.sh package.json headless.entitlements Dockerfile.linux .dockerignore ./
+COPY build.sh build-linux.sh install.sh install-linux.sh benchmark.sh test.sh package.json headless.entitlements Dockerfile.linux .dockerignore ./
 RUN mkdir -p build Headless.app
 RUN HEADLESS_VERSION="${HEADLESS_BUILD_VERSION:-$(cat VERSION)}" \
     swift build -c release --static-swift-stdlib --product headless-protocol-tests \
