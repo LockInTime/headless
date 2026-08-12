@@ -272,12 +272,14 @@ uses a private local socket server to verify a real browser-command round trip.
 **C4. Machine-accurate `capabilities`** ([#32](https://github.com/LockInTime/headless/issues/32)) — generate from `CommandName.allCases`
 and the engine matrix (see B6) so agents can trust it.
 
-**C5. Harness onboarding [exists: skill content].** ([#33](https://github.com/LockInTime/headless/issues/33)) Root `AGENTS.md` +
-`CLAUDE.md` (added with this doc set); mirror the skill into `.claude/skills/`
-or symlink so Claude Code auto-discovers; ship `.mcp.json` example + per-
-client snippets (Claude Code, Cursor, Codex TOML — replacing the site's
-hardcoded `ssh hermes-vm` config, `apps/web/components/docs-markdown.ts:57-64`);
-flesh out `agents/openai.yaml` beyond its 4-line stub or remove it.
+**C5. Harness onboarding [exists: skill content].** ([#33](https://github.com/LockInTime/headless/issues/33)) ~~Root `AGENTS.md` +
+`CLAUDE.md`; mirror the skill into `.claude/skills/` so Claude Code
+auto-discovers it; ship project-scoped Claude Code, Cursor, and Codex MCP
+configs; replace the site's hardcoded personal SSH target; and complete the
+OpenAI skill metadata.~~ **Done:** the canonical skill is symlinked into
+Claude's discovery path, all three clients use one repository-relative stdio
+launcher, the setup guide includes native and Docker variants, and web lint
+checks the configs for drift.
 
 **C6. Input fidelity (Phase 4).** ([#34](https://github.com/LockInTime/headless/issues/34)) Real CDP input on Linux
 (`Input.dispatchKeyEvent`/`dispatchMouseEvent`) behind the same verbs; today
@@ -417,8 +419,10 @@ Owner-decided scope: package managers, no hosted service.
   reduced-motion rule; Recharts (~150 KB) for 4 static bars. Also
   `scan-frame.tsx` hardcodes pixel bounds tied to a committed github.com
   screenshot (drift + trademark question).
-- **F6. Fix the Cursor config snippet** ([#52](https://github.com/LockInTime/headless/issues/52)) — hardcodes `ssh hermes-vm`
-  (`components/docs-markdown.ts:57-64`), unusable by anyone else.
+- **F6. Fix the Cursor config snippet** ([#52](https://github.com/LockInTime/headless/issues/52)) — ~~hardcodes `ssh hermes-vm`
+  (`components/docs-markdown.ts:57-64`), unusable by anyone else.~~ **Done:**
+  the website serializes the checked-in project config that uses the portable
+  repository launcher.
 - **F7. Docs debt in-repo:** ([#53](https://github.com/LockInTime/headless/issues/53)) README states P1/P2 features but there is no
   single command reference doc; P1.md should document the `@eN` invalidation
   contract (A5) and the shared-profile session model (architecture §11);

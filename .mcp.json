@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "headless": {
+      "command": "./.agents/skills/headless-computer-use/scripts/headless-mcp.sh",
+      "args": [],
+      "env": {}
+    }
+  }
+}

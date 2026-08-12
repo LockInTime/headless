@@ -1,3 +1,5 @@
+import cursorConfig from "../../../.cursor/mcp.json";
+
 export const pageMarkdown = `# Headless documentation
 
 Headless gives an agent a persistent browser through a small, safe CLI. Use it to test a page, capture evidence, and inspect a failure.
@@ -54,11 +56,4 @@ Headless uses a private Unix socket, not a public DevTools port. Only HTTP(S) na
 - Linux: use the supplied Docker runtime or native Chromium. Ubuntu Snap Chromium is not supported for repeated navigation.
 - macOS: build with Xcode Command Line Tools and use the visible WKWebView host through the same CLI.`;
 
-export const cursorMcpConfig = `{
-  "mcpServers": {
-    "headless": {
-      "command": "ssh",
-      "args": ["hermes-vm", "headless-mcp"]
-    }
-  }
-}`;
+export const cursorMcpConfig = JSON.stringify(cursorConfig, null, 2);

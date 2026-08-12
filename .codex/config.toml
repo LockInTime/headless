@@ -1,0 +1,3 @@
+[mcp_servers.headless]
+command = "./.agents/skills/headless-computer-use/scripts/headless-mcp.sh"
+args = []
