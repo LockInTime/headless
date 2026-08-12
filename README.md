@@ -93,6 +93,14 @@ headless --session qa styles get --role button --name Continue --property displa
 headless artifacts list
 ```
 
+On macOS, agent startup opens visible browser windows behind the app currently
+in use. Change the persistent default with `headless config set
+startup-presentation foreground` or restore background startup with `headless
+config set startup-presentation background`; inspect it with `headless config
+get startup-presentation`. `headless start --foreground` and `headless start
+--background` are one-launch overrides. Settings and overrides apply only when
+launching a new host and do not reorder an already-running host.
+
 Inspection is progressively disclosed instead of forcing an entire page into an
 agent prompt. Start with `--context summary`, use `--context outline` to receive
 structural region references such as `@r4`, then inspect only that region with

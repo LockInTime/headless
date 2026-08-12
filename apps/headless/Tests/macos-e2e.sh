@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "${0:a:h}/.."
 
-for tool in node curl defaults lsof; do
+for tool in node curl defaults lsof osascript; do
   command -v "$tool" >/dev/null 2>&1 || { echo "macOS E2E tests require $tool" >&2; exit 69; }
 done
 
@@ -25,10 +25,16 @@ export HEADLESS_HOST_LOG="$HOST_LOG"
 STEP="boot"
 RESTORE_PID=""
 DEFAULTS_DOMAIN="com.headless.app"
+PRESENTATION_KEY="AgentStartupPresentation"
 DEFAULTS_HAD_LAST_URL=0
 DEFAULTS_LAST_URL=""
+DEFAULTS_HAD_PRESENTATION=0
+DEFAULTS_PRESENTATION=""
 if DEFAULTS_LAST_URL="$(defaults read "$DEFAULTS_DOMAIN" LastURL 2>/dev/null)"; then
   DEFAULTS_HAD_LAST_URL=1
+fi
+if DEFAULTS_PRESENTATION="$(defaults read "$DEFAULTS_DOMAIN" "$PRESENTATION_KEY" 2>/dev/null)"; then
+  DEFAULTS_HAD_PRESENTATION=1
 fi
 
 restore_last_url() {
@@ -36,6 +42,14 @@ restore_last_url() {
     defaults write "$DEFAULTS_DOMAIN" LastURL -string "$DEFAULTS_LAST_URL"
   else
     defaults delete "$DEFAULTS_DOMAIN" LastURL >/dev/null 2>&1 || true
+  fi
+}
+
+restore_startup_presentation() {
+  if [[ "$DEFAULTS_HAD_PRESENTATION" == 1 ]]; then
+    defaults write "$DEFAULTS_DOMAIN" "$PRESENTATION_KEY" -string "$DEFAULTS_PRESENTATION"
+  else
+    defaults delete "$DEFAULTS_DOMAIN" "$PRESENTATION_KEY" >/dev/null 2>&1 || true
   fi
 }
 
@@ -52,6 +66,11 @@ fail() {
 }
 trap 'fail' ERR
 
+frontmost_pid() {
+  osascript -l JavaScript \
+    -e 'ObjC.import("AppKit"); Number($.NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier)'
+}
+
 node Tests/fixture-server.mjs >"$LOG" 2>&1 &
 FIXTURE_PID=$!
 
@@ -62,6 +81,7 @@ cleanup() {
   fi
   kill "$FIXTURE_PID" >/dev/null 2>&1 || true
   restore_last_url
+  restore_startup_presentation
   rm -rf "$HEADLESS_ARTIFACT_DIR"
   rm -f "$LOG" "$HOST_LOG" "$RESTORE_LOG"
 }
@@ -120,6 +140,8 @@ restore_last_url
 echo "▸ unavailable restored URL fell back to the start page"
 
 STEP="start-host"
+"$CLI" config set startup-presentation background | grep -q '"startupPresentation":"background"'
+"$CLI" config get startup-presentation | grep -q '"startupPresentation":"background"'
 START_RESULT="$("$CLI" start)" || {
   print -r -u2 -- "headless start failed:"
   print -r -u2 -- "$START_RESULT"
@@ -133,6 +155,16 @@ echo "▸ host ready"
 STEP="tcp-check"
 HOST_PID="$(echo "$START_RESULT" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$HOST_PID"
+if [[ "$(frontmost_pid)" == "$HOST_PID" ]]; then
+  echo "default agent startup stole focus" >&2
+  fail
+fi
+RUNNING_START_RESULT="$("$CLI" start --foreground)"
+echo "$RUNNING_START_RESULT" | grep -q "\"pid\":$HOST_PID"
+if [[ "$(frontmost_pid)" == "$HOST_PID" ]]; then
+  echo "a launch-time foreground flag reordered an existing host" >&2
+  fail
+fi
 if lsof -nP -a -p "$HOST_PID" -iTCP -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; then
   echo "Headless host opened an unexpected TCP listener" >&2
   fail
@@ -144,6 +176,10 @@ HEADLESS_CONFORMANCE_BASE_URL="http://127.0.0.1:$PORT" \
   Tests/conformance.sh
 STEP="session-visit"
 "$CLI" session create qa | grep -q '"session":"qa"'
+if [[ "$(frontmost_pid)" == "$HOST_PID" ]]; then
+  echo "agent session creation stole focus" >&2
+  fail
+fi
 "$CLI" session list | grep -q '"qa"'
 "$CLI" --session qa visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'
 STEP="inspect-diagnostics"
@@ -340,5 +376,44 @@ if echo "$HOSTILE_DIAGNOSTICS" | grep -q 'hostile-claims-trusted'; then
   fail
 fi
 "$CLI" session close qa | grep -q '"closed":"qa"'
+
+STEP="configured-foreground-start"
+"$CLI" stop >/dev/null
+for _ in {1..100}; do
+  ! "$CLI" status >/dev/null 2>&1 && break
+  sleep 0.05
+done
+"$CLI" config set startup-presentation foreground | grep -q '"startupPresentation":"foreground"'
+"$CLI" config get startup-presentation | grep -q '"startupPresentation":"foreground"'
+FOREGROUND_RESULT="$("$CLI" start)"
+FOREGROUND_PID="$(echo "$FOREGROUND_RESULT" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+test -n "$FOREGROUND_PID"
+FOREGROUND_ACTIVE=0
+for _ in {1..100}; do
+  if [[ "$(frontmost_pid)" == "$FOREGROUND_PID" ]]; then
+    FOREGROUND_ACTIVE=1
+    break
+  fi
+  sleep 0.05
+done
+if [[ "$FOREGROUND_ACTIVE" != 1 ]]; then
+  echo "configured foreground startup did not activate Headless" >&2
+  fail
+fi
+"$CLI" stop >/dev/null
+for _ in {1..100}; do
+  ! "$CLI" status >/dev/null 2>&1 && break
+  sleep 0.05
+done
+
+STEP="background-override"
+BACKGROUND_RESULT="$("$CLI" start --background)"
+BACKGROUND_PID="$(echo "$BACKGROUND_RESULT" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+test -n "$BACKGROUND_PID"
+if [[ "$(frontmost_pid)" == "$BACKGROUND_PID" ]]; then
+  echo "background launch override did not override the configured foreground default" >&2
+  fail
+fi
+"$CLI" stop >/dev/null
 
 echo "macOS P2 end-to-end flow passed"

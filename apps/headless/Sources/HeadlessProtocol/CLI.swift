@@ -1,11 +1,18 @@
 import Foundation
 
+public enum AgentStartupPresentation: String, Equatable, Sendable {
+    case background
+    case foreground
+}
+
 public enum LocalCommand: Equatable, Sendable {
     case help
     case version
     case capabilities
     case runtime
-    case start
+    case start(presentation: AgentStartupPresentation?)
+    case getStartupPresentation
+    case setStartupPresentation(AgentStartupPresentation)
 }
 
 public struct CLIInvocation: Equatable, Sendable {
@@ -85,8 +92,30 @@ public struct CLIParser {
             try requireEmpty(arguments)
             return CLIInvocation(local: .runtime, jsonOutput: true)
         case "start":
-            try requireEmpty(arguments)
-            return CLIInvocation(local: .start, jsonOutput: jsonOutput)
+            switch arguments {
+            case []:
+                return CLIInvocation(local: .start(presentation: nil), jsonOutput: jsonOutput)
+            case ["--background"]:
+                return CLIInvocation(local: .start(presentation: .background), jsonOutput: jsonOutput)
+            case ["--foreground"]:
+                return CLIInvocation(local: .start(presentation: .foreground), jsonOutput: jsonOutput)
+            default:
+                throw CLIParseError.invalidOption(arguments.first ?? "start")
+            }
+        case "config":
+            switch arguments {
+            case ["get", "startup-presentation"]:
+                return CLIInvocation(local: .getStartupPresentation, jsonOutput: true)
+            case let values where values.count == 3
+                && values[0] == "set" && values[1] == "startup-presentation":
+                let value = values[2]
+                guard let presentation = AgentStartupPresentation(rawValue: value) else {
+                    throw CLIParseError.invalidOption(value)
+                }
+                return CLIInvocation(local: .setStartupPresentation(presentation), jsonOutput: true)
+            default:
+                throw CLIParseError.invalidOption(arguments.first ?? "config")
+            }
         case "status":
             try requireEmpty(arguments)
             return remote(.ping, session: session, jsonOutput: jsonOutput)
@@ -643,7 +672,9 @@ Core workflow:
 
 Commands:
   version | --version
-  start | status | stop | runtime
+  start [--background|--foreground] | status | stop | runtime
+  config get startup-presentation
+  config set startup-presentation background|foreground
   session create [NAME] | session list | session close NAME
   visit URL
   inspect [--context summary|outline|text|actions|full] [--task TEXT]

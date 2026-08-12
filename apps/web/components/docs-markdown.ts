@@ -15,6 +15,8 @@ headless --session qa visit localhost:3000/designers/dashboard
 headless --session qa inspect --context summary --task "click Continue"
 \`\`\`
 
+On macOS, agent startup leaves your current app in front. Use \`headless config set startup-presentation foreground\` to make the old foreground behavior persistent, or set it to \`background\` to restore the built-in default. Inspect it with \`headless config get startup-presentation\`. The \`headless start --foreground\` and \`--background\` flags override the setting for one new host; they do not reorder a running host.
+
 ## QA workflow
 
 Record the path you need, then stop and create a report.

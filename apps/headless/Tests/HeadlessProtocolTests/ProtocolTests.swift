@@ -722,7 +722,12 @@ struct ProtocolTests {
         }
 
         let localCommands: [([String], LocalCommand)] = [
-            (["start"], .start),
+            (["start"], .start(presentation: nil)),
+            (["start", "--background"], .start(presentation: .background)),
+            (["start", "--foreground"], .start(presentation: .foreground)),
+            (["config", "get", "startup-presentation"], .getStartupPresentation),
+            (["config", "set", "startup-presentation", "background"], .setStartupPresentation(.background)),
+            (["config", "set", "startup-presentation", "foreground"], .setStartupPresentation(.foreground)),
             (["help"], .help),
             (["--help"], .help),
             (["version"], .version),
@@ -735,6 +740,15 @@ struct ProtocolTests {
                 invocation.local == command && invocation.request == nil,
                 "\(arguments.joined(separator: " ")) should stay local"
             )
+        }
+        try expectThrows("start presentation flags must be exclusive") {
+            _ = try CLIParser().parse(["start", "--foreground", "--background"])
+        }
+        try expectThrows("start should reject unknown options") {
+            _ = try CLIParser().parse(["start", "--front"])
+        }
+        try expectThrows("startup presentation should reject unknown values") {
+            _ = try CLIParser().parse(["config", "set", "startup-presentation", "automatic"])
         }
 
         let sessionCreate = try CLIParser().parse(["session", "create", "qa"])
