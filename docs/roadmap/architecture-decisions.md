@@ -16,12 +16,13 @@ the CLI, the MCP server, and both hosts. No Rust/Go rewrite.
 it).
 
 **Rationale:**
+
 - The investment is already amortized: ~7.5k lines of working, tested Swift
   spanning both platforms, with zero third-party dependencies and a QA
   evidence trail proving behavior. A rewrite resets all of that for a benefit
   that is mostly hypothetical.
 - The macOS host is irreducibly Swift (Cocoa/WebKit). A Rust/Go core would
-  *add* a language boundary (FFI or IPC between the Swift app and the new
+  _add_ a language boundary (FFI or IPC between the Swift app and the new
   core) rather than remove one.
 - Swift on Linux is genuinely fine here and proven in this repo: static
   stdlib builds in Docker (`Dockerfile.linux`), stripped binaries, no runtime
@@ -34,6 +35,7 @@ it).
   contract docs matter more than language familiarity.
 
 **Costs accepted:**
+
 - Windows: Swift-on-Windows exists (the Browser Company ships it) but the
   toolchain is rougher than Rust/Go. Accepted because Windows is a stretch
   goal (roadmap Phase W), and Phase 2's engine split confines the port to
@@ -41,7 +43,7 @@ it).
 - Binary distribution stays per-platform build scripts rather than
   `cargo`/`goreleaser` conveniences. Phase 3 does this work once.
 
-**Revisit trigger:** if Windows-native is ever promoted to must-have *and* a
+**Revisit trigger:** if Windows-native is ever promoted to must-have _and_ a
 spike shows Swift-on-Windows cannot pass the Linux E2E scenario within ~2
 weeks of effort, revisit with a concrete proposal: keep the WKWebView app in
 Swift, move `HeadlessProtocol` + Chromium host to Rust, talk over the existing
@@ -77,7 +79,7 @@ imports data instead of transcribing it.
   replacing the `message.contains("ELEMENT_NOT_FOUND")` string matching on
   both hosts and in `AgentBridge.swift:416-418`;
 - single definitions for the constants currently written 2–4×: blocked/caution
-  extension sets (Swift *and* the JS copy get a cross-check test), screenshot
+  extension sets (Swift _and_ the JS copy get a cross-check test), screenshot
   bounds, artifact charset, local-address list, inspect/console/storage/scroll
   enums, numeric bounds (CLI and validator currently disagree — e.g. scroll
   amount `>0` vs `>=0.1`).
@@ -88,8 +90,8 @@ already happened (report `page` shape, capture-info shape, tour timeout, JPEG
 quality path, PDF raster-vs-vector). This refactor is the precondition for
 Windows and for keeping principle "one contract" true.
 
-**Non-goal:** merging the engines' *capabilities*. Divergent capability stays
-explicit (`UNSUPPORTED_CAPABILITY`); the point is that the *common* path is
+**Non-goal:** merging the engines' _capabilities_. Divergent capability stays
+explicit (`UNSUPPORTED_CAPABILITY`); the point is that the _common_ path is
 single-sourced and the divergent one is declared, generated into
 `capabilities`, and asserted by tests.
 
@@ -109,6 +111,7 @@ neutrality is what keeps both the Windows port and the (rejected-for-now)
 Rust option cheap.
 
 **Amendments planned (backlog §A5, §G3):**
+
 - Response-side bounding: `qa report` and `artifact.list` can exceed the 1 MiB
   frame today and surface a misleading `INVALID_REQUEST`. Add pagination
   (`--limit/--cursor`) or server-side truncation with `truncated: true`,
@@ -166,7 +169,7 @@ two engines" discipline that keeps the protocol honest.
 **Acknowledged limits (stay documented, not "fixed"):** diagnostics are
 best-effort (no full network event stream), no network emulation/mocking,
 raster PDF. If agent demand ever requires full-fidelity diagnostics on macOS,
-the answer is offering the Chromium engine on macOS as an *additional*
+the answer is offering the Chromium engine on macOS as an _additional_
 runtime behind the same CLI (the Linux host already builds on macOS-adjacent
 Foundation APIs) — not hacking WKWebView. That would be a new decision entry.
 
@@ -180,7 +183,7 @@ inspection remain in `WKContentWorld`.
 **Decision:** today `click`/`fill`/`press` are synthetic DOM events from the
 isolated world (`AgentRuntime.swift:492-537`) on both engines — no trusted-
 event semantics, no hover/drag, `press` only special-cases Enter/Space.
-Keep this as the *portable baseline*, and in Phase 4 add real input on the
+Keep this as the _portable baseline_, and in Phase 4 add real input on the
 Chromium engine via CDP `Input.dispatchKeyEvent`/`dispatchMouseEvent`, exposed
 as the same verbs (upgrade, not new commands), with WKWebView staying on the
 synthetic path as a declared capability difference.
@@ -204,6 +207,7 @@ Add palettegen to the GIF path (quality, cheap).
 **Decision:** keep the single shared `agentRuntimeJavaScript` string as the
 one implementation of page-side semantics for every engine (it is what makes
 "same contract" real). Fix the delivery mechanics (backlog §B7):
+
 - Linux re-creates the isolated world and re-sends ~30 KB of JS on **every**
   evaluate — 3 CDP round trips per command, polled at 20 Hz by `wait`
   (`BrowserProcess.swift:777-834`). Cache the world/context per navigation and
@@ -233,6 +237,8 @@ WKWebView engine would declare `UNSUPPORTED_CAPABILITY` or use non-persistent
 `WKWebsiteDataStore`. New decision entry required when scheduled.
 
 ## 12. Versioning: unify on the git tag (change, Phase 3)
+
+**Status:** implemented 2026-08-12.
 
 **Decision:** the git tag becomes the single version source: injected at build
 time (already works via `HEADLESS_VERSION`), reported by a new `headless
@@ -352,18 +358,18 @@ override, the 500-event bound, and truncation reporting.
 
 ## Decision log
 
-| # | Decision | Status | Date |
-| --- | --- | --- | --- |
-| 1 | Keep Swift core; Rust only via revisit trigger | Decided | 2026-08-04 |
-| 3 | Extract HostCore + BrowserEngine, typed errors | Implemented | 2026-08-10 |
-| 5 | Remote stays SSH-only; no cloud offering | Decided (owner) | 2026-08-04 |
-| 6 | Windows = stretch via Chromium engine; WSL2/Docker interim | Decided (owner) | 2026-08-04 |
-| 8 | Real CDP input on Linux as capability upgrade | Planned (Phase 4) | 2026-08-04 |
-| 12 | Version unification on git tag | Planned (Phase 3) | 2026-08-04 |
-| 14 | Run one conformance scenario against every engine | Implemented | 2026-08-10 |
-| 15 | Package-manager distribution set | Decided (owner) | 2026-08-04 |
-| 16 | Preserve CLI value boundaries with `--` and shell quoting | Decided | 2026-08-10 |
-| 17 | Keep full MCP surface; annotate its maximum risk | Decided | 2026-08-10 |
-| 18 | Treat WebKit page diagnostics as bounded untrusted evidence | Decided | 2026-08-10 |
+| #   | Decision                                                    | Status            | Date       |
+| --- | ----------------------------------------------------------- | ----------------- | ---------- |
+| 1   | Keep Swift core; Rust only via revisit trigger              | Decided           | 2026-08-04 |
+| 3   | Extract HostCore + BrowserEngine, typed errors              | Implemented       | 2026-08-10 |
+| 5   | Remote stays SSH-only; no cloud offering                    | Decided (owner)   | 2026-08-04 |
+| 6   | Windows = stretch via Chromium engine; WSL2/Docker interim  | Decided (owner)   | 2026-08-04 |
+| 8   | Real CDP input on Linux as capability upgrade               | Planned (Phase 4) | 2026-08-04 |
+| 12  | Version unification on git tag                              | Implemented       | 2026-08-04 |
+| 14  | Run one conformance scenario against every engine           | Implemented       | 2026-08-10 |
+| 15  | Package-manager distribution set                            | Decided (owner)   | 2026-08-04 |
+| 16  | Preserve CLI value boundaries with `--` and shell quoting   | Decided           | 2026-08-10 |
+| 17  | Keep full MCP surface; annotate its maximum risk            | Decided           | 2026-08-10 |
+| 18  | Treat WebKit page diagnostics as bounded untrusted evidence | Decided           | 2026-08-10 |
 
 New decisions append here with the same format.

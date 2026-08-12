@@ -24,8 +24,8 @@ func integer(_ value: Any?, _ message: String) throws -> Int {
 }
 
 func run() throws {
-    guard CommandLine.arguments.count == 2 else {
-        throw TestFailure(description: "usage: headless-mcp-tests /path/to/headless-mcp")
+    guard CommandLine.arguments.count == 3 else {
+        throw TestFailure(description: "usage: headless-mcp-tests /path/to/headless-mcp EXPECTED_VERSION")
     }
 
     try LocalRuntime.preparePrivateDirectory()
@@ -84,6 +84,7 @@ func run() throws {
     try expect(initialize["protocolVersion"] as? String == "2025-06-18", "initialize protocol version changed")
     let serverInfo = try object(initialize["serverInfo"], "initialize server info was absent")
     try expect(serverInfo["name"] as? String == "headless", "initialize server name changed")
+    try expect(serverInfo["version"] as? String == CommandLine.arguments[2], "MCP product version changed")
 
     let list = try object(responses[1]["result"], "tools/list result was absent")
     guard let tools = list["tools"] as? [[String: Any]], tools.count == 1 else {

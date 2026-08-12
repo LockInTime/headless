@@ -1,6 +1,10 @@
 FROM swift:6.3-bookworm AS builder
 WORKDIR /src
+ARG HEADLESS_VERSION
+ENV HEADLESS_BUILD_VERSION=${HEADLESS_VERSION}
 COPY Package.swift ./
+COPY VERSION ./
+COPY VersionSupport ./VersionSupport
 COPY main.swift ./
 COPY Host ./Host
 COPY Sources ./Sources
@@ -11,11 +15,15 @@ COPY docs ./docs
 COPY tools ./tools
 COPY build.sh build-linux.sh install-linux.sh benchmark.sh test.sh package.json headless.entitlements Dockerfile.linux .dockerignore ./
 RUN mkdir -p build Headless.app
-RUN swift build -c release --static-swift-stdlib --product headless-protocol-tests \
+RUN HEADLESS_VERSION="${HEADLESS_BUILD_VERSION:-$(cat VERSION)}" \
+    swift build -c release --static-swift-stdlib --product headless-protocol-tests \
     && ./.build/release/headless-protocol-tests
-RUN swift build -c release --static-swift-stdlib --product headless
-RUN swift build -c release --static-swift-stdlib --product headless-linux-host
-RUN swift build -c release --static-swift-stdlib --product headless-mcp
+RUN HEADLESS_VERSION="${HEADLESS_BUILD_VERSION:-$(cat VERSION)}" \
+    swift build -c release --static-swift-stdlib --product headless
+RUN HEADLESS_VERSION="${HEADLESS_BUILD_VERSION:-$(cat VERSION)}" \
+    swift build -c release --static-swift-stdlib --product headless-linux-host
+RUN HEADLESS_VERSION="${HEADLESS_BUILD_VERSION:-$(cat VERSION)}" \
+    swift build -c release --static-swift-stdlib --product headless-mcp
 RUN strip --strip-unneeded .build/release/headless .build/release/headless-linux-host .build/release/headless-mcp
 
 FROM debian:bookworm-slim AS runtime-base

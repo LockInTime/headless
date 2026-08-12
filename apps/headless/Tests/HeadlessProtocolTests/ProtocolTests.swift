@@ -725,6 +725,9 @@ struct ProtocolTests {
             (["start"], .start),
             (["help"], .help),
             (["--help"], .help),
+            (["version"], .version),
+            (["--version"], .version),
+            (["-V"], .version),
         ]
         for (arguments, command) in localCommands {
             let invocation = try CLIParser().parse(arguments)
@@ -1819,6 +1822,7 @@ struct ProtocolTests {
         }
         try expect(pingResult["engine"] == .string("fake"), "ping should identify the engine")
         try expect(pingResult["platform"] == .string("test"), "ping should identify the platform")
+        try expect(pingResult["productVersion"] == .string(headlessProductVersion), "ping should identify the product version")
         try expect(pingResult["adapter"] == .string("test-adapter"), "engine ping details should be merged")
         try expect(pingResult["capabilities"] != nil, "ping should publish the active engine profile")
 

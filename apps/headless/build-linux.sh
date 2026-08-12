@@ -9,10 +9,11 @@ command -v docker >/dev/null 2>&1 || {
 }
 
 IMAGE="headless-linux-build"
+VERSION="${HEADLESS_VERSION:-$(tr -d '[:space:]' < VERSION)}"
 if [ -n "${HEADLESS_LINUX_PLATFORM:-}" ]; then
-  docker build --platform "$HEADLESS_LINUX_PLATFORM" --target production -f Dockerfile.linux -t "$IMAGE" .
+  docker build --build-arg HEADLESS_VERSION="$VERSION" --platform "$HEADLESS_LINUX_PLATFORM" --target production -f Dockerfile.linux -t "$IMAGE" .
 else
-  docker build --target production -f Dockerfile.linux -t "$IMAGE" .
+  docker build --build-arg HEADLESS_VERSION="$VERSION" --target production -f Dockerfile.linux -t "$IMAGE" .
 fi
 mkdir -p build/linux
 CONTAINER="$(docker create "$IMAGE")"

@@ -8,9 +8,10 @@ Releases are tagged `vX.Y.Z` and published by
 
 Two versions travel independently, on purpose:
 
-- **Product version** — the git tag, flowing into the macOS `Info.plist` via
-  `HEADLESS_VERSION` and into release assets.
-- **Protocol version** — `headlessProtocolVersion` in `Protocol.swift`,
+- **Product version**: the git tag, embedded in every binary via
+  `HEADLESS_VERSION`, reported by the CLI, host, and MCP adapter, and used for
+  release assets.
+- **Protocol version**: `headlessProtocolVersion` in `Protocol.swift`,
   currently `0.5`. It changes only when the wire contract changes, and always
   with an entry in
   [`docs/roadmap/architecture-decisions.md`](docs/roadmap/architecture-decisions.md).
@@ -77,6 +78,10 @@ Cutting that release is tracked in
 
 ### Changed
 
+- Product versions now come from the release tag at build time and are
+  reported consistently by `headless --version`, host `ping`, MCP
+  `serverInfo`, package metadata, and the website. Release notes are generated
+  automatically for each tag while protocol versioning stays independent.
 - The release workflow can now exercise and verify every package without
   publishing, manually or on pull requests that change packaging inputs.
 - macOS WebKit and Linux Chromium now share one `HostCore` dispatcher and

@@ -107,6 +107,8 @@ do {
         switch local {
         case .help:
             print(agentHelp)
+        case .version:
+            print("headless \(headlessProductVersion)")
         case .capabilities:
             printJSON(capabilitiesDocument)
         case .runtime:
