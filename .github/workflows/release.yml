@@ -155,10 +155,13 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          options=()
-          if [[ "$PUBLISH" == true ]]; then options+=(--notarize); fi
-          ./.github/scripts/macos-package.sh \
-            apps/headless/Headless.app "$VERSION" apps/headless "${options[@]}"
+          if [[ "$PUBLISH" == true ]]; then
+            ./.github/scripts/macos-package.sh \
+              apps/headless/Headless.app "$VERSION" apps/headless --notarize
+          else
+            ./.github/scripts/macos-package.sh \
+              apps/headless/Headless.app "$VERSION" apps/headless
+          fi
       - name: Clean signing material
         if: always() && needs.version.outputs.publish == 'true'
         shell: bash
