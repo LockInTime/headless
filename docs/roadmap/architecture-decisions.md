@@ -381,6 +381,33 @@ configuration fails there with `UNSUPPORTED_CAPABILITY`. macOS E2E coverage
 asserts the real frontmost process for configured background and foreground
 startup, session creation, running-host no-op behavior, and launch overrides.
 
+## 20. Developer ID releases omit unprovisioned passkey entitlement
+
+**Decision:** direct macOS releases are universal Developer ID Application
+builds with hardened runtime, secure timestamps, notarization, and stapling.
+They omit `com.apple.developer.web-browser.public-key-credential` by default.
+The build accepts that restricted entitlement only when an Apple-approved
+provisioning profile and entitlement file are both supplied explicitly for
+`com.headless.app`.
+
+**Status:** implemented 2026-08-12 for Phase 3 distribution.
+
+**Rationale:** Apple's Developer ID capability set does not generally include
+the restricted web-browser passkey entitlement. Claiming it without matching
+provisioning approval can make macOS terminate the app and can fail
+notarization. Shipping a signed app that launches reliably is stronger than
+advertising a passkey path the distribution identity cannot support. The host
+already detects its own entitlement and hides WebAuthn when absent so sites can
+offer password, phone, or other fallback sign-in.
+
+**Consequences:** normal Homebrew and ZIP installs do not expose WKWebView
+passkeys. Apple approval can enable them later without changing the protocol:
+the release operator supplies both provisioning inputs and the existing runtime
+check detects the granted entitlement. Tagged builds fail rather than falling
+back to ad-hoc signing or skipping notarization. Pull-request dry runs still
+exercise the universal package path with an ad-hoc signature and no Apple
+credentials.
+
 ---
 
 ## Decision log
@@ -399,5 +426,6 @@ startup, session creation, running-host no-op behavior, and launch overrides.
 | 17  | Keep full MCP surface; annotate its maximum risk            | Decided           | 2026-08-10 |
 | 18  | Treat WebKit page diagnostics as bounded untrusted evidence | Decided           | 2026-08-10 |
 | 19  | Keep macOS agent startup behind the current app             | Implemented       | 2026-08-12 |
+| 20  | Omit passkeys unless Apple provisions Developer ID release  | Implemented       | 2026-08-12 |
 
 New decisions append here with the same format.
