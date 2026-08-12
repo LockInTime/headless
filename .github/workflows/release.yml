@@ -7,6 +7,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/release.yml"
+      - ".github/scripts/**"
       - "apps/headless/Dockerfile.linux"
       - "apps/headless/build.sh"
       - "apps/headless/build-linux.sh"
@@ -139,7 +140,10 @@ jobs:
 
   publish:
     needs: [version, macos, linux-amd64, linux-arm64]
-    if: needs.version.outputs.publish == 'true'
+    if: >-
+      github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      needs.version.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
