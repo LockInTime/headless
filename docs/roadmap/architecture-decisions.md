@@ -234,6 +234,8 @@ WKWebView engine would declare `UNSUPPORTED_CAPABILITY` or use non-persistent
 
 ## 12. Versioning: unify on the git tag (change, Phase 3)
 
+**Status:** implemented 2026-08-12.
+
 **Decision:** the git tag becomes the single version source: injected at build
 time (already works via `HEADLESS_VERSION`), reported by a new `headless
 --version`/`version` command and in `ping`, matched by `package.json`, MCP
@@ -359,7 +361,7 @@ override, the 500-event bound, and truncation reporting.
 | 5 | Remote stays SSH-only; no cloud offering | Decided (owner) | 2026-08-04 |
 | 6 | Windows = stretch via Chromium engine; WSL2/Docker interim | Decided (owner) | 2026-08-04 |
 | 8 | Real CDP input on Linux as capability upgrade | Planned (Phase 4) | 2026-08-04 |
-| 12 | Version unification on git tag | Planned (Phase 3) | 2026-08-04 |
+| 12 | Version unification on git tag | Implemented | 2026-08-04 |
 | 14 | Run one conformance scenario against every engine | Implemented | 2026-08-10 |
 | 15 | Package-manager distribution set | Decided (owner) | 2026-08-04 |
 | 16 | Preserve CLI value boundaries with `--` and shell quoting | Decided | 2026-08-10 |

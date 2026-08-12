@@ -371,7 +371,7 @@ Owner-decided scope: package managers, no hosted service.
 - **E4.** ([#42](https://github.com/LockInTime/headless/issues/42)) `SHA256SUMS` (+ consider cosign) for all release assets — the QA
   evidence bundle already ships sums; releases don't.
 - **E5.** ([#43](https://github.com/LockInTime/headless/issues/43)) npm wrapper package (binary download shim) for `npx` reach.
-- **E6.** ([#44](https://github.com/LockInTime/headless/issues/44)) Version unification + `headless --version` + CHANGELOG + release
+- **E6.** [x] ([#44](https://github.com/LockInTime/headless/issues/44)) Version unification + `headless --version` + CHANGELOG + release
   automation (architecture §12). `package.json` says 0.0.0, tags say 1.0.x,
   default `HEADLESS_VERSION` is 1.0.0.
 - **E7.** ([#45](https://github.com/LockInTime/headless/issues/45)) Cut a release: everything since v1.0.2 (capture formats, context

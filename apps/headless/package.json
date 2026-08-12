@@ -1,7 +1,7 @@
 {
   "name": "@headless/app",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.2",
   "scripts": {
     "build": "./build.sh",
     "build:linux": "./build-linux.sh",

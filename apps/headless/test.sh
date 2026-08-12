@@ -39,9 +39,22 @@ fi
 
 TEST_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/headless-tests.XXXXXX")"
 trap 'rm -rf "$TEST_SCRATCH"' EXIT
+EXPECTED_VERSION="${HEADLESS_VERSION:-$(tr -d '[:space:]' < VERSION)}"
+for manifest in package.json ../web/package.json ../../package.json; do
+  MANIFEST_VERSION="$(sed -n 's/^[[:space:]]*"version": "\([^"]*\)",*$/\1/p' "$manifest")"
+  [[ "$MANIFEST_VERSION" == "$(tr -d '[:space:]' < VERSION)" ]] || {
+    echo "headless tests: $manifest version does not match VERSION" >&2
+    exit 1
+  }
+done
 BIN_PATH="$(swift build "${SDK_ARGS[@]}" --scratch-path "$TEST_SCRATCH" --show-bin-path)"
 swift build "${SDK_ARGS[@]}" --product headless-protocol-tests --scratch-path "$TEST_SCRATCH"
+swift build "${SDK_ARGS[@]}" --product headless --scratch-path "$TEST_SCRATCH"
 swift build "${SDK_ARGS[@]}" --product headless-mcp --scratch-path "$TEST_SCRATCH"
 swift build "${SDK_ARGS[@]}" --product headless-mcp-tests --scratch-path "$TEST_SCRATCH"
 "$BIN_PATH/headless-protocol-tests"
-"$BIN_PATH/headless-mcp-tests" "$BIN_PATH/headless-mcp"
+[[ "$("$BIN_PATH/headless" --version)" == "headless $EXPECTED_VERSION" ]] || {
+  echo "headless tests: CLI product version does not match $EXPECTED_VERSION" >&2
+  exit 1
+}
+"$BIN_PATH/headless-mcp-tests" "$BIN_PATH/headless-mcp" "$EXPECTED_VERSION"

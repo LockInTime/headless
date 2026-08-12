@@ -14,8 +14,21 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
+      - uses: actions/checkout@v7
       - id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must be a semantic version prefixed with v: $GITHUB_REF_NAME" >&2
+            exit 64
+          fi
+          expected="$(tr -d '[:space:]' < apps/headless/VERSION)"
+          if [[ "$version" != "$expected" ]]; then
+            echo "Release tag $version does not match apps/headless/VERSION $expected" >&2
+            exit 64
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
   macos:
     needs: version
@@ -29,6 +42,8 @@ jobs:
           HEADLESS_VERSION: ${{ needs.version.outputs.version }}
         run: ./apps/headless/build.sh
       - name: Unit tests
+        env:
+          HEADLESS_VERSION: ${{ needs.version.outputs.version }}
         run: ./apps/headless/test.sh
       - name: E2E
         run: zsh ./apps/headless/Tests/macos-e2e.sh
@@ -49,7 +64,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build
-        run: HEADLESS_LINUX_PLATFORM=linux/amd64 ./apps/headless/build-linux.sh
+        env:
+          HEADLESS_LINUX_PLATFORM: linux/amd64
+          HEADLESS_VERSION: ${{ needs.version.outputs.version }}
+        run: ./apps/headless/build-linux.sh
       - name: E2E
         run: ./apps/headless/Tests/linux-docker.sh
       - name: Package
@@ -69,7 +87,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build
-        run: HEADLESS_LINUX_PLATFORM=linux/arm64 ./apps/headless/build-linux.sh
+        env:
+          HEADLESS_LINUX_PLATFORM: linux/arm64
+          HEADLESS_VERSION: ${{ needs.version.outputs.version }}
+        run: ./apps/headless/build-linux.sh
       - name: E2E
         run: ./apps/headless/Tests/linux-docker.sh
       - name: Package
@@ -98,6 +119,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: Headless ${{ needs.version.outputs.version }}
+          generate_release_notes: true
           body: |
             ## Downloads
 

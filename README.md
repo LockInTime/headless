@@ -210,6 +210,10 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
+The tag is embedded as the product version in every binary. Verify an install
+with `headless --version`; wire protocol compatibility is versioned
+independently. See [CHANGELOG.md](CHANGELOG.md) for release history.
+
 Assets: macOS `Headless.app` zip, Linux amd64/arm64 tarballs. See the Actions
 `Release` workflow and the release notes on each tag for install caveats
 (Gatekeeper; Linux Chromium/FFmpeg).
