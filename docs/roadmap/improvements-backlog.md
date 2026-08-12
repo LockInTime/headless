@@ -74,9 +74,9 @@ burning a core while silently refusing every agent.
 map is reset on each `snapshot()` (`HP/AgentRuntime.swift:376`), so a
 `--context summary` (max 8 elements) invalidates all refs from a prior
 `full`; the agent later gets a bare `ELEMENT_NOT_FOUND`. Meanwhile
-`currentRegions` is *never* reset and grows for the page lifetime. ~~Decide the
+`currentRegions` is _never_ reset and grows for the page lifetime. ~~Decide the
 contract (likely: refs from the latest inspection only — already the skill's
-teaching), then (a) make the error say *why* ("ref expired; re-inspect"),
+teaching), then (a) make the error say _why_ ("ref expired; re-inspect"),
 (b) reset regions consistently on navigation, (c) document in P1.md. Test:
 inspect-full → inspect-summary → click stale `@eN` asserts the new error.~~
 **Done.** The contract is now explicit and asymmetric on purpose: `@eN` is
@@ -115,6 +115,7 @@ message buffer scans each appended region once and amortizes prefix compaction;
 protocol coverage feeds it a 30 MiB message in the host's 8 KiB read chunks.
 
 **A9. Misc hardening (smaller, same phase).** ([#20](https://github.com/LockInTime/headless/issues/20))
+
 - ~~`ChromiumChildProcess.stop()` can busy-wait forever post-SIGKILL
   (`LinuxHost/BrowserProcess.swift:38`); bound it.~~
 - ~~`SO_PEERCRED` hard-coded as `17` + hand-rolled `ucred`
@@ -198,7 +199,7 @@ branch, and hid the backward-compatible no-op `--json` parser flag from help.
 
 **B5. `pruneToBudget` quality.** ([#25](https://github.com/LockInTime/headless/issues/25)) ~~Hand-rolled 2-pass fixed point
 (`HP/AgentRuntime.swift:348-352`), O(n²) re-encoding per trim, pop-largest-
-*last*-element heuristic misses large mid-array items
+_last_-element heuristic misses large mid-array items
 (`AgentRuntime.swift:367-369`), text-chop fallback untested. Rework with a
 size-estimating single pass; add unit tests in the jsdom suite.~~ **Done:**
 each candidate is measured once, largest entries are pruned regardless of
@@ -269,14 +270,16 @@ oversized line / local-command rejection (`MCP/main.swift:64-66`).~~ **Done:**
 uses a private local socket server to verify a real browser-command round trip.
 
 **C4. Machine-accurate `capabilities`** ([#32](https://github.com/LockInTime/headless/issues/32)) — generate from `CommandName.allCases`
-+ engine matrix (see B6) so agents can trust it.
+and the engine matrix (see B6) so agents can trust it.
 
-**C5. Harness onboarding [exists: skill content].** ([#33](https://github.com/LockInTime/headless/issues/33)) Root `AGENTS.md` +
-`CLAUDE.md` (added with this doc set); mirror the skill into `.claude/skills/`
-or symlink so Claude Code auto-discovers; ship `.mcp.json` example + per-
-client snippets (Claude Code, Cursor, Codex TOML — replacing the site's
-hardcoded `ssh hermes-vm` config, `apps/web/components/docs-markdown.ts:57-64`);
-flesh out `agents/openai.yaml` beyond its 4-line stub or remove it.
+**C5. Harness onboarding [exists: skill content].** ([#33](https://github.com/LockInTime/headless/issues/33)) ~~Root `AGENTS.md` +
+`CLAUDE.md`; mirror the skill into `.claude/skills/` so Claude Code
+auto-discovers it; ship project-scoped Claude Code, Cursor, and Codex MCP
+configs; replace the site's hardcoded personal SSH target; and complete the
+OpenAI skill metadata.~~ **Done:** the canonical skill is symlinked into
+Claude's discovery path, all three clients use one repository-relative stdio
+launcher, the setup guide includes native and Docker variants, and web lint
+checks the configs for drift.
 
 **C6. Input fidelity (Phase 4).** ([#34](https://github.com/LockInTime/headless/issues/34)) Real CDP input on Linux
 (`Input.dispatchKeyEvent`/`dispatchMouseEvent`) behind the same verbs; today
@@ -384,7 +387,7 @@ Owner-decided scope: package managers, no hosted service.
 
 ## §F — Website & docs (Phase 5)
 
-- **F1. Deploy pipeline is invisible to the repo** ([#47](https://github.com/LockInTime/headless/issues/47)) — the site *is* live at
+- **F1. Deploy pipeline is invisible to the repo** ([#47](https://github.com/LockInTime/headless/issues/47)) — the site _is_ live at
   `https://headless-web-pi.vercel.app` (set as the repo homepage) via Vercel's
   GitHub integration, but nothing in the tree records that: no `vercel.json`,
   no deploy docs, no preview-URL comment on PRs, and the temporary
@@ -414,8 +417,10 @@ Owner-decided scope: package managers, no hosted service.
   reduced-motion rule; Recharts (~150 KB) for 4 static bars. Also
   `scan-frame.tsx` hardcodes pixel bounds tied to a committed github.com
   screenshot (drift + trademark question).
-- **F6. Fix the Cursor config snippet** ([#52](https://github.com/LockInTime/headless/issues/52)) — hardcodes `ssh hermes-vm`
-  (`components/docs-markdown.ts:57-64`), unusable by anyone else.
+- **F6. Fix the Cursor config snippet** ([#52](https://github.com/LockInTime/headless/issues/52)) — ~~hardcodes `ssh hermes-vm`
+  (`components/docs-markdown.ts:57-64`), unusable by anyone else.~~ **Done:**
+  the website serializes the checked-in project config that uses the portable
+  repository launcher.
 - **F7. Docs debt in-repo:** ([#53](https://github.com/LockInTime/headless/issues/53)) README states P1/P2 features but there is no
   single command reference doc; P1.md should document the `@eN` invalidation
   contract (A5) and the shared-profile session model (architecture §11);

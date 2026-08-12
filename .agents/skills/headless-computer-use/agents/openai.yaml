@@ -2,3 +2,6 @@ interface:
   display_name: "Headless Computer Use"
   short_description: "Launch and automate Headless browser workflows"
   default_prompt: "Use $headless-computer-use to launch the repository browser and validate a web flow end to end."
+
+policy:
+  allow_implicit_invocation: true

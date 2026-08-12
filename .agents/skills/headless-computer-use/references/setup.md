@@ -119,15 +119,78 @@ a remote-debugging port to make it visible.
 
 ## Configure the stdio MCP adapter
 
-Start the browser host first. Configure an MCP client to launch the native
-`headless-mcp` executable over stdio:
+Start the browser host first. The repository includes project-scoped configs
+for the supported harnesses:
+
+- Claude Code reads `.mcp.json` and discovers the canonical skill through
+  `.claude/skills/headless-computer-use`.
+- Cursor reads `.cursor/mcp.json`.
+- Codex reads `.codex/config.toml` after the project is trusted.
+
+All three configs launch
+`.agents/skills/headless-computer-use/scripts/headless-mcp.sh`. The launcher
+selects a native repository build or an installed `headless-mcp` without
+opening a TCP listener. Build Headless before opening a fresh harness session:
+
+```sh
+./apps/headless/build.sh
+./apps/headless/build/bin/headless start
+```
+
+If the executable is installed elsewhere, set an absolute executable path for
+the harness process:
+
+```sh
+HEADLESS_MCP_EXECUTABLE=/absolute/path/to/headless-mcp
+```
+
+Use these snippets when configuring another checkout or a global client.
+
+### Claude Code
+
+Save as `.mcp.json` in the project root and approve the project server when
+Claude Code prompts:
+
+```json
+{
+  "mcpServers": {
+    "headless": {
+      "command": "./.agents/skills/headless-computer-use/scripts/headless-mcp.sh",
+      "args": [],
+      "env": {}
+    }
+  }
+}
+```
+
+### Cursor
+
+Save as `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "headless": {
+      "command": "./.agents/skills/headless-computer-use/scripts/headless-mcp.sh",
+      "args": [],
+      "env": {}
+    }
+  }
+}
+```
+
+### Codex
+
+Save as `.codex/config.toml`:
 
 ```toml
 [mcp_servers.headless]
-command = "/absolute/path/to/headless-mcp"
+command = "./.agents/skills/headless-computer-use/scripts/headless-mcp.sh"
+args = []
 ```
 
-For the Docker sandbox, configure the wrapper after `$SANDBOX start`:
+For the Docker sandbox, start the named container and point any stdio MCP
+client at the wrapper instead:
 
 ```toml
 [mcp_servers.headless]
@@ -139,7 +202,17 @@ The server exposes one `headless` tool. Supply the normal CLI arguments without
 the executable name:
 
 ```json
-{"argv":["--session","agent-qa","inspect","--context","actions","--task","find primary action"]}
+{
+  "argv": [
+    "--session",
+    "agent-qa",
+    "inspect",
+    "--context",
+    "actions",
+    "--task",
+    "find primary action"
+  ]
+}
 ```
 
 Keep MCP on stdio locally or invoke it through SSH. Do not expose the Unix socket,

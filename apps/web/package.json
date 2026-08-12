@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "node scripts/validate-harness-onboarding.mjs && eslint .",
     "brand": "node scripts/render-brand.mjs"
   },
   "dependencies": {
