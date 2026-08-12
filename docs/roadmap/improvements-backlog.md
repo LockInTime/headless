@@ -346,10 +346,11 @@ suites. It locks common JSON fields across lifecycle, navigation, inspection,
 diagnostics, capture, flows, reports, and errors, branching only through the
 declared capability matrix for intentional differences.
 
-**D5. Benchmark refresh discipline [exists: benchmark.sh].** ([#38](https://github.com/LockInTime/headless/issues/38)) Emit JSON
-results artifact; re-run with the task-aware flow (BENCHMARK.md:29-31 says
-current numbers predate `--task`); repeat-count medians instead of single
-samples.
+**D5. Benchmark refresh discipline [exists: benchmark.sh].** ([#38](https://github.com/LockInTime/headless/issues/38)) ~~Emit JSON
+results artifact; re-run with the task-aware flow; report repeat-count medians
+instead of single samples.~~ **Done:** the benchmark validates and preserves
+every sample in a provenance-bearing JSON document, reports per-metric medians,
+and the refreshed five-repeat snapshot includes task-aware action inspection.
 
 ## §E — Distribution (Phase 3)
 

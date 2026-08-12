@@ -23,6 +23,9 @@ Cutting that release is tracked in
 
 ### Added
 
+- The comparison benchmark now emits a validated JSON results artifact with
+  raw samples and medians, and its refreshed Headless workflows include
+  task-aware action inspection.
 - A single cross-engine conformance scenario now runs against real WKWebView
   and Chromium hosts, locking shared response shapes and declared capability
   errors without mirrored platform assertions.

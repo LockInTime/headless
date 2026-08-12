@@ -6,6 +6,7 @@ headless start >/dev/null
 headless session create bench >/dev/null
 headless --session bench visit "$BENCH_URL" >/dev/null
 headless --session bench record start --fps 5 >/dev/null
+headless --session bench inspect --context actions --task 'continue to designer details' --limit 8 --budget 700 >/dev/null
 headless --session bench tour --full-page --pace 5000 >/dev/null
 headless --session bench click --role button --name Continue >/dev/null
 headless --session bench wait --url /next --text 'Designer details' --settled --timeout 10000 >/dev/null
