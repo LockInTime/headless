@@ -1,6 +1,6 @@
 # Security policy
 
-Headless exists to give an AI agent a browser it *cannot* misuse. The safety
+Headless exists to give an AI agent a browser it _cannot_ misuse. The safety
 rules are enforced by the host process, not by prompting, so a vulnerability
 here is a vulnerability in the product's core promise. We take reports
 seriously.
@@ -28,18 +28,18 @@ we will agree a timeline with you.
 
 These are host-enforced contracts. Anything that defeats one is in scope:
 
-| Boundary | Expected behaviour |
-| --- | --- |
-| **No arbitrary code execution** | There is no JavaScript-evaluation verb and no shell verb. Reaching arbitrary in-page or host execution through the protocol is a vulnerability. |
-| **Navigation** | HTTP/HTTPS only. `file:`, `javascript:`, `data:`, credential-bearing URLs, and external application schemes must be refused at every layer. |
-| **Downloads** | Page-initiated downloads are denied. Executables, installers, scripts, libraries, and disk images are blocked by extension. |
-| **Control plane** | A `0600` Unix socket inside a `0700` per-user directory, with a peer-UID check. There is no TCP listener and no Chromium debug port. Any remote reachability is a vulnerability. |
-| **Artifacts** | Bare validated names, `O_EXCL` creation at `0600` inside a `0700` root, never overwritten. Path traversal or reading outside the store is a vulnerability. |
-| **Secrets** | Cookie and storage *values* require both `--values` and `HEADLESS_ALLOW_SENSITIVE_DIAGNOSTICS=1`. Authorization, cookie, token, and secret headers, plus URL credentials, are always redacted. Flow recordings never contain typed values. |
-| **Untrusted content** | Everything derived from a page is marked `untrustedContent` and is never executed as a command. A page that induces the host to act on its own text is a vulnerability. |
-| **Sandbox** | The Linux host refuses to run as root and never passes `--no-sandbox`. Snap Chromium is rejected before launch. |
+| Boundary                        | Expected behaviour                                                                                                                                                                                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **No arbitrary code execution** | There is no JavaScript-evaluation verb and no shell verb. Reaching arbitrary in-page or host execution through the protocol is a vulnerability.                                                                                            |
+| **Navigation**                  | HTTP/HTTPS only. `file:`, `javascript:`, `data:`, credential-bearing URLs, and external application schemes must be refused at every layer.                                                                                                |
+| **Downloads**                   | Page-initiated downloads are denied. Executables, installers, scripts, libraries, and disk images are blocked by extension.                                                                                                                |
+| **Control plane**               | A `0600` Unix socket inside a `0700` per-user directory, with a peer-UID check. There is no TCP listener and no Chromium debug port. Any remote reachability is a vulnerability.                                                           |
+| **Artifacts**                   | Bare validated names, `O_EXCL` creation at `0600` inside a `0700` root, never overwritten. Path traversal or reading outside the store is a vulnerability.                                                                                 |
+| **Secrets**                     | Cookie and storage _values_ require both `--values` and `HEADLESS_ALLOW_SENSITIVE_DIAGNOSTICS=1`. Authorization, cookie, token, and secret headers, plus URL credentials, are always redacted. Flow recordings never contain typed values. |
+| **Untrusted content**           | Everything derived from a page is marked `untrustedContent` and is never executed as a command. A page that induces the host to act on its own text is a vulnerability.                                                                    |
+| **Sandbox**                     | The Linux host refuses to run as root and never passes `--no-sandbox`. Snap Chromium is rejected before launch.                                                                                                                            |
 
-Prompt injection that merely *persuades an agent* to do something within these
+Prompt injection that merely _persuades an agent_ to do something within these
 boundaries is not a host vulnerability — but if page content can escape the
 `untrustedContent` marking or reach a privileged path, that is.
 
@@ -61,6 +61,9 @@ These are documented design boundaries, not defects:
   chrome, other applications, or audio.
 - **Network mocking is Linux-only.** macOS returns `UNSUPPORTED_CAPABILITY`
   rather than partially emulating traffic control.
+- **HTTP on macOS.** The ATS exception is limited to `WKWebView` so browser
+  pages can use HTTP when required. Native application networking retains the
+  default ATS protections.
 
 ## Supported versions
 

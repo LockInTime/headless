@@ -94,13 +94,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
   <key>NSAppTransportSecurity</key>
   <dict>
-    <key>NSAllowsArbitraryLoads</key><true/>
     <key>NSAllowsArbitraryLoadsInWebContent</key><true/>
   </dict>
   <key>NSHumanReadableCopyright</key><string>headless — the browser that isn’t there</string>
 </dict>
 </plist>
 PLIST
+Tests/macos-bundle-security.sh "$APP/Contents/Info.plist"
 
 # Passkeys require Apple's restricted web-browser.public-key-credential
 # entitlement backed by a provisioning profile; macOS SIGKILLs ad-hoc builds

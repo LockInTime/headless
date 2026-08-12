@@ -380,8 +380,10 @@ Owner-decided scope: package managers, no hosted service.
   default `HEADLESS_VERSION` is 1.0.0.
 - **E7.** ([#45](https://github.com/LockInTime/headless/issues/45)) Cut a release: everything since v1.0.2 (capture formats, context
   pruning) is unreleased.
-- **E8.** ([#46](https://github.com/LockInTime/headless/issues/46)) `NSAllowsArbitraryLoads` is blanket-true (`build.sh:86-90`); scope
-  it (localhost exception) if WKWebView allows.
+- **E8.** [x] ([#46](https://github.com/LockInTime/headless/issues/46)) ~~`NSAllowsArbitraryLoads` is blanket-true
+  (`build.sh:86-90`); scope it (localhost exception) if WKWebView allows.~~
+  **Done:** native app networking retains ATS while the HTTP compatibility
+  exception is limited to `WKWebView`; the bundle build asserts this boundary.
 
 ## §F — Website & docs (Phase 5)
 
