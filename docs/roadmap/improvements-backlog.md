@@ -74,9 +74,9 @@ burning a core while silently refusing every agent.
 map is reset on each `snapshot()` (`HP/AgentRuntime.swift:376`), so a
 `--context summary` (max 8 elements) invalidates all refs from a prior
 `full`; the agent later gets a bare `ELEMENT_NOT_FOUND`. Meanwhile
-`currentRegions` is *never* reset and grows for the page lifetime. ~~Decide the
+`currentRegions` is _never_ reset and grows for the page lifetime. ~~Decide the
 contract (likely: refs from the latest inspection only — already the skill's
-teaching), then (a) make the error say *why* ("ref expired; re-inspect"),
+teaching), then (a) make the error say _why_ ("ref expired; re-inspect"),
 (b) reset regions consistently on navigation, (c) document in P1.md. Test:
 inspect-full → inspect-summary → click stale `@eN` asserts the new error.~~
 **Done.** The contract is now explicit and asymmetric on purpose: `@eN` is
@@ -115,6 +115,7 @@ message buffer scans each appended region once and amortizes prefix compaction;
 protocol coverage feeds it a 30 MiB message in the host's 8 KiB read chunks.
 
 **A9. Misc hardening (smaller, same phase).** ([#20](https://github.com/LockInTime/headless/issues/20))
+
 - ~~`ChromiumChildProcess.stop()` can busy-wait forever post-SIGKILL
   (`LinuxHost/BrowserProcess.swift:38`); bound it.~~
 - ~~`SO_PEERCRED` hard-coded as `17` + hand-rolled `ucred`
@@ -198,7 +199,7 @@ branch, and hid the backward-compatible no-op `--json` parser flag from help.
 
 **B5. `pruneToBudget` quality.** ([#25](https://github.com/LockInTime/headless/issues/25)) ~~Hand-rolled 2-pass fixed point
 (`HP/AgentRuntime.swift:348-352`), O(n²) re-encoding per trim, pop-largest-
-*last*-element heuristic misses large mid-array items
+_last_-element heuristic misses large mid-array items
 (`AgentRuntime.swift:367-369`), text-chop fallback untested. Rework with a
 size-estimating single pass; add unit tests in the jsdom suite.~~ **Done:**
 each candidate is measured once, largest entries are pruned regardless of
@@ -269,7 +270,7 @@ oversized line / local-command rejection (`MCP/main.swift:64-66`).~~ **Done:**
 uses a private local socket server to verify a real browser-command round trip.
 
 **C4. Machine-accurate `capabilities`** ([#32](https://github.com/LockInTime/headless/issues/32)) — generate from `CommandName.allCases`
-+ engine matrix (see B6) so agents can trust it.
+and the engine matrix (see B6) so agents can trust it.
 
 **C5. Harness onboarding [exists: skill content].** ([#33](https://github.com/LockInTime/headless/issues/33)) Root `AGENTS.md` +
 `CLAUDE.md` (added with this doc set); mirror the skill into `.claude/skills/`
@@ -376,12 +377,14 @@ Owner-decided scope: package managers, no hosted service.
   default `HEADLESS_VERSION` is 1.0.0.
 - **E7.** ([#45](https://github.com/LockInTime/headless/issues/45)) Cut a release: everything since v1.0.2 (capture formats, context
   pruning) is unreleased.
-- **E8.** ([#46](https://github.com/LockInTime/headless/issues/46)) `NSAllowsArbitraryLoads` is blanket-true (`build.sh:86-90`); scope
-  it (localhost exception) if WKWebView allows.
+- **E8.** [x] ([#46](https://github.com/LockInTime/headless/issues/46)) ~~`NSAllowsArbitraryLoads` is blanket-true
+  (`build.sh:86-90`); scope it (localhost exception) if WKWebView allows.~~
+  **Done:** native app networking retains ATS while the HTTP compatibility
+  exception is limited to `WKWebView`; the bundle build asserts this boundary.
 
 ## §F — Website & docs (Phase 5)
 
-- **F1. Deploy pipeline is invisible to the repo** ([#47](https://github.com/LockInTime/headless/issues/47)) — the site *is* live at
+- **F1. Deploy pipeline is invisible to the repo** ([#47](https://github.com/LockInTime/headless/issues/47)) — the site _is_ live at
   `https://headless-web-pi.vercel.app` (set as the repo homepage) via Vercel's
   GitHub integration, but nothing in the tree records that: no `vercel.json`,
   no deploy docs, no preview-URL comment on PRs, and the temporary

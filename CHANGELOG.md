@@ -94,6 +94,8 @@ Cutting that release is tracked in
 
 ### Fixed
 
+- The macOS app no longer disables App Transport Security process-wide. Its
+  HTTP compatibility exception is limited to browser web content.
 - WebKit and Chromium now agree on empty-history `back` failures and enforce
   the same bounded key input before dispatch.
 - Portable name characters, local-development hosts, scroll bounds, and
