@@ -5,37 +5,42 @@ record through the `Continue` transition, and save a final screenshot.
 
 ## Current snapshot
 
-One fresh container was run for each case on 17 July 2026, on Apple Silicon
-with Docker Linux ARM64. These are point-in-time measurements, not medians;
-repeat the benchmark before using them to compare a change.
+Five fresh containers were run for each case on 12 August 2026, on Apple
+Silicon with Docker Linux ARM64. The table reports the median of each metric.
+These remain point-in-time measurements; repeat the benchmark before using
+them to compare a change. The generated
+[`results.json`](../../../packages/benchmark-results/results.json) preserves
+all 20 raw samples and the aggregation provenance.
 
 | Workflow | Estimated tokens | Wall time | CPU time | Peak memory |
 | --- | ---: | ---: | ---: | ---: |
-| Headless, cold | 194 | 5,002 ms | 1,478 ms | 279 MiB |
-| Headless, warm | 147 | 4,753 ms | 842 ms | 276 MiB |
-| Selenium with Python | 410 | 3,134 ms | 1,900 ms | 280 MiB |
-| Puppeteer | 499 | 2,850 ms | 2,441 ms | 319 MiB |
+| Headless, cold | 218 | 3,484 ms | 2,028 ms | 368 MiB |
+| Headless, warm | 174 | 3,248 ms | 1,379 ms | 366 MiB |
+| Selenium with Python | 410 | 2,880 ms | 2,010 ms | 363 MiB |
+| Puppeteer | 499 | 2,402 ms | 1,860 ms | 358 MiB |
 
 Estimated tokens are `ceil(workflow source bytes / 4)`. They compare the agent
 workflow surface, not billed LLM tokens, tool schemas, prompts, or responses.
 
-Headless has the smallest agent surface: the warm workflow uses about 64%
-fewer estimated tokens than Selenium and 71% fewer than Puppeteer. In this
-single sample it also had the lowest CPU time and memory peak. Puppeteer was
-fastest. The reusable P2 flow command reduces orchestration work for real
-agent-driven repeats, but this benchmark retains the comparable explicit CLI
-workflow rather than claiming an unmeasured flow speedup.
+Headless has the smallest measured agent surface: the warm workflow uses about
+58% fewer estimated tokens than Selenium and 65% fewer than Puppeteer. Its
+median CPU time is about 31% lower than Selenium and 26% lower than Puppeteer.
+Puppeteer is fastest and has the lowest median peak memory; Headless does not
+lead those dimensions. The reusable P2 flow command reduces orchestration work
+for real agent-driven repeats, but this benchmark retains the comparable
+explicit CLI workflow rather than claiming an unmeasured flow speedup.
 
-Task-aware inspection was added after this benchmark.
-`inspect --context actions --task "..."` prunes the page to visible controls
-and ranks them by the agent's current goal. Re-run the benchmark before quoting
-any new token number for that workflow.
+Both Headless cases now run
+`inspect --context actions --task "continue to designer details"` before the
+semantic click. The estimated-token count includes that task-aware inspection
+command. Selenium and Puppeteer retain their explicit selector-based action
+lookup.
 
 ## Method
 
-Each workflow uses Chromium 150 and FFmpeg 5.1 to produce the same two
+Each workflow uses Chromium 151 and FFmpeg 5.1 to produce the same two
 artifacts: an MP4 that tours both pages and a final viewport PNG. Selenium 4.8.3
-uses ChromeDriver 150; Puppeteer Core is 22.15.0. All waits use page load or an
+uses ChromeDriver 151; Puppeteer Core is 22.15.0. All waits use page load or an
 explicit URL condition. Every measured run gets a fresh container. The warm
 Headless case starts its host and session before timing; the cold case
 includes them.
@@ -48,6 +53,14 @@ Run the benchmark with:
 
 ```sh
 ./apps/headless/benchmark.sh 5
+```
+
+The default output is `packages/benchmark-results/results.json`. Pass a second
+argument to write a separate result document without replacing the canonical
+snapshot:
+
+```sh
+./apps/headless/benchmark.sh 5 /tmp/headless-benchmark.json
 ```
 
 ## VM compatibility result

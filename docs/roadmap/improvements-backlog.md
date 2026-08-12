@@ -347,10 +347,11 @@ suites. It locks common JSON fields across lifecycle, navigation, inspection,
 diagnostics, capture, flows, reports, and errors, branching only through the
 declared capability matrix for intentional differences.
 
-**D5. Benchmark refresh discipline [exists: benchmark.sh].** ([#38](https://github.com/LockInTime/headless/issues/38)) Emit JSON
-results artifact; re-run with the task-aware flow (BENCHMARK.md:29-31 says
-current numbers predate `--task`); repeat-count medians instead of single
-samples.
+**D5. Benchmark refresh discipline [exists: benchmark.sh].** ([#38](https://github.com/LockInTime/headless/issues/38)) ~~Emit JSON
+results artifact; re-run with the task-aware flow; report repeat-count medians
+instead of single samples.~~ **Done:** the benchmark validates and preserves
+every sample in a provenance-bearing JSON document, reports per-metric medians,
+and the refreshed five-repeat snapshot includes task-aware action inspection.
 
 ## §E — Distribution (Phase 3)
 
@@ -369,8 +370,10 @@ Owner-decided scope: package managers, no hosted service.
   `HP/ChromiumRuntime.swift:167-184`).
 - **E3.** ([#41](https://github.com/LockInTime/headless/issues/41)) Publish the Docker `production` image to GHCR on tag (release notes
   currently say "not published"); this is also the interim Windows story.
-- **E4.** ([#42](https://github.com/LockInTime/headless/issues/42)) `SHA256SUMS` (+ consider cosign) for all release assets — the QA
-  evidence bundle already ships sums; releases don't.
+- **E4.** ([#42](https://github.com/LockInTime/headless/issues/42)) ~~`SHA256SUMS` for all release assets — the QA evidence bundle already ships
+  sums; releases don't.~~ **Done:** the publish job requires all three named
+  regular package files, generates `SHA256SUMS` atomically, verifies it, and
+  attaches the manifest to the release. Cosign remains optional future work.
 - **E5.** ([#43](https://github.com/LockInTime/headless/issues/43)) npm wrapper package (binary download shim) for `npx` reach.
 - **E6.** ([#44](https://github.com/LockInTime/headless/issues/44)) Version unification + `headless --version` + CHANGELOG + release
   automation (architecture §12). `package.json` says 0.0.0, tags say 1.0.x,

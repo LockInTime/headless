@@ -4,6 +4,22 @@ on:
   push:
     tags:
       - "v*"
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - ".github/scripts/**"
+      - "apps/headless/Dockerfile.linux"
+      - "apps/headless/build.sh"
+      - "apps/headless/build-linux.sh"
+      - "apps/headless/install-linux.sh"
+      - "apps/headless/Package.swift"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and verify release packages without publishing
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -13,9 +29,28 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.version.outputs.publish }}
     steps:
       - id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -eu
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            case "$GITHUB_REF" in
+              refs/tags/v*) ;;
+              *) echo "release publishing requires a v* tag" >&2; exit 64 ;;
+            esac
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$DRY_RUN" != "true" ]; then
+              echo "manual release runs must use dry_run=true; publish by pushing a v* tag" >&2
+              exit 64
+            fi
+            echo "version=0.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
 
   macos:
     needs: version
@@ -36,8 +71,14 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
+          set -eu
           cd apps/headless
           ditto -c -k --keepParent Headless.app "Headless-${VERSION}-macos.zip"
+          test -s "Headless-${VERSION}-macos.zip"
+          unzip -t "Headless-${VERSION}-macos.zip"
+          unzip -Z1 "Headless-${VERSION}-macos.zip" | grep -qx 'Headless.app/Contents/MacOS/Headless'
+          unzip -Z1 "Headless-${VERSION}-macos.zip" | grep -qx 'Headless.app/Contents/Resources/bin/headless'
+          unzip -Z1 "Headless-${VERSION}-macos.zip" | grep -qx 'Headless.app/Contents/Resources/bin/headless-mcp'
       - uses: actions/upload-artifact@v7
         with:
           name: macos
@@ -56,8 +97,15 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
+          set -eu
           cp apps/headless/build/headless-linux-amd64.tar.gz \
             "apps/headless/build/headless-${VERSION}-linux-amd64.tar.gz"
+          archive="apps/headless/build/headless-${VERSION}-linux-amd64.tar.gz"
+          test -s "$archive"
+          tar -tzf "$archive" > archive-contents.txt
+          for expected in headless headless-host headless-mcp install-linux.sh Headless_HeadlessProtocol.resources/AgentRuntime.js; do
+            grep -qx "$expected" archive-contents.txt
+          done
       - uses: actions/upload-artifact@v7
         with:
           name: linux-amd64
@@ -76,8 +124,15 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
+          set -eu
           cp apps/headless/build/headless-linux-arm64.tar.gz \
             "apps/headless/build/headless-${VERSION}-linux-arm64.tar.gz"
+          archive="apps/headless/build/headless-${VERSION}-linux-arm64.tar.gz"
+          test -s "$archive"
+          tar -tzf "$archive" > archive-contents.txt
+          for expected in headless headless-host headless-mcp install-linux.sh Headless_HeadlessProtocol.resources/AgentRuntime.js; do
+            grep -qx "$expected" archive-contents.txt
+          done
       - uses: actions/upload-artifact@v7
         with:
           name: linux-arm64
@@ -85,14 +140,21 @@ jobs:
 
   publish:
     needs: [version, macos, linux-amd64, linux-arm64]
+    if: >-
+      github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      needs.version.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
+      - name: Generate and verify checksums
+        run: ./.github/scripts/release-checksums.sh "${{ needs.version.outputs.version }}" dist
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -115,4 +177,5 @@ jobs:
             dist/Headless-${{ needs.version.outputs.version }}-macos.zip
             dist/headless-${{ needs.version.outputs.version }}-linux-amd64.tar.gz
             dist/headless-${{ needs.version.outputs.version }}-linux-arm64.tar.gz
+            dist/SHA256SUMS
           fail_on_unmatched_files: true

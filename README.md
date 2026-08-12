@@ -210,9 +210,22 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-Assets: macOS `Headless.app` zip, Linux amd64/arm64 tarballs. See the Actions
-`Release` workflow and the release notes on each tag for install caveats
-(Gatekeeper; Linux Chromium/FFmpeg).
+Assets: macOS `Headless.app` zip, Linux amd64/arm64 tarballs, and
+`SHA256SUMS`. Download the manifest beside the selected package and verify it
+before installing:
+
+```sh
+sha256sum --ignore-missing -c SHA256SUMS              # Linux
+shasum -a 256 --ignore-missing -c SHA256SUMS          # macOS
+```
+
+See the Actions `Release` workflow and the release notes on each tag for
+install caveats (Gatekeeper; Linux Chromium/FFmpeg).
+
+The `Release` workflow can also be run manually with `dry_run` enabled. That
+builds, verifies, and uploads all three workflow artifacts without creating a
+GitHub Release. Pull requests that change release packaging run the same dry
+run automatically.
 
 ## Tests
 
