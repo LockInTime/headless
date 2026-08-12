@@ -78,6 +78,9 @@ Cutting that release is tracked in
 
 ### Changed
 
+- macOS agent startup now opens browser windows without activating Headless or
+  covering the user's current app. The startup presentation can be configured
+  persistently or overridden for one launch.
 - Product versions now come from the release tag at build time and are
   reported consistently by `headless --version`, host `ping`, MCP
   `serverInfo`, package metadata, and the website. Release notes are generated

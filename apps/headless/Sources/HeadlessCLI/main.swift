@@ -16,6 +16,52 @@ private func printResponse(_ response: CommandResponse) throws {
     FileHandle.standardOutput.write(try ProtocolCodec.encodeLine(response))
 }
 
+private enum StartupPresentationPreference {
+    static let builtInDefault = AgentStartupPresentation.background
+    private static let domain = "com.headless.app"
+    private static let key = "AgentStartupPresentation"
+
+    static var configured: AgentStartupPresentation? {
+        guard let defaults = UserDefaults(suiteName: domain),
+              let value = defaults.string(forKey: key) else { return nil }
+        return AgentStartupPresentation(rawValue: value)
+    }
+
+    static var effective: AgentStartupPresentation {
+        configured ?? builtInDefault
+    }
+
+    static func requireSupportedPlatform() throws {
+        #if !os(macOS)
+        throw StartupPresentationPreferenceError.unsupported
+        #endif
+    }
+
+    static func set(_ presentation: AgentStartupPresentation) throws {
+        guard let defaults = UserDefaults(suiteName: domain) else {
+            throw StartupPresentationPreferenceError.unavailable
+        }
+        defaults.set(presentation.rawValue, forKey: key)
+        guard defaults.synchronize() else {
+            throw StartupPresentationPreferenceError.writeFailed
+        }
+    }
+}
+
+private enum StartupPresentationPreferenceError: Error, Equatable, CustomStringConvertible {
+    case unsupported
+    case unavailable
+    case writeFailed
+
+    var description: String {
+        switch self {
+        case .unsupported: return "Startup presentation preferences are supported only on macOS."
+        case .unavailable: return "Could not open the Headless preferences domain."
+        case .writeFailed: return "Could not persist the startup presentation preference."
+        }
+    }
+}
+
 private struct HostLauncher {
     let client = LocalSocketClient()
 
@@ -23,7 +69,10 @@ private struct HostLauncher {
         try? client.send(CommandRequest(command: .ping), timeout: 0.5)
     }
 
-    func start() throws -> CommandResponse {
+    func start(presentation: AgentStartupPresentation? = nil) throws -> CommandResponse {
+        #if !os(macOS)
+        if presentation != nil { throw StartupPresentationPreferenceError.unsupported }
+        #endif
         if let response = ping(), response.ok { return response }
         #if os(Linux)
         // Report an unsupported browser directly to the operator instead of
@@ -36,6 +85,12 @@ private struct HostLauncher {
         process.arguments = []
         var environment = ProcessInfo.processInfo.environment
         environment["HEADLESS_AGENT_HOST"] = "1"
+        #if os(macOS)
+        let effectivePresentation = presentation ?? StartupPresentationPreference.effective
+        #else
+        let effectivePresentation = AgentStartupPresentation.background
+        #endif
+        environment["HEADLESS_START_FOREGROUND"] = effectivePresentation == .foreground ? "1" : "0"
         process.environment = environment
         process.standardInput = FileHandle.nullDevice
         if let hostLog = environment["HEADLESS_HOST_LOG"], hostLog.hasPrefix("/") {
@@ -120,8 +175,23 @@ do {
                 "supported": .bool(true), "transport": .string("native-webkit"),
             ]))
             #endif
-        case .start:
-            try printResponse(try HostLauncher().start())
+        case .start(let presentation):
+            try printResponse(try HostLauncher().start(presentation: presentation))
+        case .getStartupPresentation:
+            try StartupPresentationPreference.requireSupportedPlatform()
+            let configured = StartupPresentationPreference.configured
+            printJSON(.object([
+                "builtInDefault": .string(StartupPresentationPreference.builtInDefault.rawValue),
+                "configured": configured.map { .string($0.rawValue) } ?? .null,
+                "startupPresentation": .string(StartupPresentationPreference.effective.rawValue),
+            ]))
+        case .setStartupPresentation(let presentation):
+            try StartupPresentationPreference.requireSupportedPlatform()
+            try StartupPresentationPreference.set(presentation)
+            printJSON(.object([
+                "startupPresentation": .string(presentation.rawValue),
+                "takesEffect": .string("next-host-start"),
+            ]))
         }
     } else if let request = invocation.request {
         let launcher = HostLauncher()
@@ -161,6 +231,14 @@ do {
     let response = CommandResponse.failure(
         id: "unknown", code: "UNSUPPORTED_BROWSER_RUNTIME", message: error.description,
         suggestion: "Run `headless runtime` after installing a supported Chromium runtime."
+    )
+    try? printResponse(response)
+    exit(69)
+} catch let error as StartupPresentationPreferenceError {
+    let response = CommandResponse.failure(
+        id: "unknown",
+        code: error == .unsupported ? "UNSUPPORTED_CAPABILITY" : "CONFIGURATION_FAILED",
+        message: error.description
     )
     try? printResponse(response)
     exit(69)

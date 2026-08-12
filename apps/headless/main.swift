@@ -37,6 +37,16 @@ let hasPasskeyEntitlement: Bool = {
 /// browsed page (including a local file) into the agent's default session.
 let isAgentHost = ProcessInfo.processInfo.environment["HEADLESS_AGENT_HOST"] == "1"
 
+private enum WindowPresentation {
+    case foreground
+    case background
+}
+
+private let agentWindowPresentation: WindowPresentation =
+    isAgentHost && ProcessInfo.processInfo.environment["HEADLESS_START_FOREGROUND"] != "1"
+        ? .background
+        : .foreground
+
 // MARK: - URL smarts
 
 func smartURL(_ input: String) -> URL? {
@@ -842,14 +852,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             restoredStartupURL: restoredStartupURL,
             size: launchOptions.size,
             snap: launchOptions.snap,
-            isPrimary: true
+            isPrimary: true,
+            presentation: agentWindowPresentation
         )
         let engine = WebKitBrowserEngine(
             create: { [weak self] in
                 guard let self else {
                     throw HostError(code: .operationFailed, message: "Headless host is stopping.")
                 }
-                return onAgentMain { self.openWindow(url: nil) }
+                return onAgentMain {
+                    self.openWindow(url: nil, presentation: agentWindowPresentation)
+                }
             },
             close: { controller in onAgentMain { controller.close() } }
         )
@@ -869,8 +882,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             fputs("headless: agent socket failed: \(error)\n", stderr)
         }
-        NSApp.activate(ignoringOtherApps: true)
-
         if launchOptions.snap != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
                 fputs("headless: --snap timed out\n", stderr)
@@ -880,12 +891,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @discardableResult
-    func openWindow(
+    private func openWindow(
         url: URL?,
         restoredStartupURL: URL? = nil,
         size: NSSize? = nil,
         snap: SnapJob? = nil,
-        isPrimary: Bool = false
+        isPrimary: Bool = false,
+        presentation: WindowPresentation = .foreground
     ) -> BrowserWindowController {
         let controller = BrowserWindowController(
             url: url,
@@ -900,8 +912,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.hostCore?.sessionDidClose(controller)
         }
         controllers.append(controller)
-        controller.showWindow(nil)
-        controller.window?.makeKeyAndOrderFront(nil)
+        switch presentation {
+        case .foreground:
+            controller.showWindow(nil)
+            controller.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        case .background:
+            controller.window?.orderBack(nil)
+        }
         return controller
     }
 

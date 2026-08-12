@@ -52,7 +52,23 @@ if RELATIVE_RUNTIME="$(HEADLESS_CHROMIUM_EXECUTABLE=relative/chromium headless r
 fi
 echo "$RELATIVE_RUNTIME" | grep -q 'must be absolute'
 
+if PRESENTATION_CONFIG="$(headless config get startup-presentation 2>&1)"; then
+  echo "macOS startup presentation configuration was accepted on Linux" >&2
+  exit 1
+fi
+echo "$PRESENTATION_CONFIG" | grep -q 'UNSUPPORTED_CAPABILITY'
+if PRESENTATION_START="$(headless start --foreground 2>&1)"; then
+  echo "macOS startup presentation override was accepted on Linux" >&2
+  exit 1
+fi
+echo "$PRESENTATION_START" | grep -q 'UNSUPPORTED_CAPABILITY'
+
 headless start | grep -q '"ready":true'
+if RUNNING_PRESENTATION_START="$(headless start --foreground 2>&1)"; then
+  echo "macOS startup presentation override was accepted by a running Linux host" >&2
+  exit 1
+fi
+echo "$RUNNING_PRESENTATION_START" | grep -q 'UNSUPPORTED_CAPABILITY'
 
 # The fixture server is the only TCP listener. Chromium control must stay on
 # its inherited DevTools pipe rather than exposing a loopback debugging port.

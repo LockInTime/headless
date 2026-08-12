@@ -354,6 +354,33 @@ navigation and download events use the same conservative marker because they
 can contain page-selected URLs. A hostile-page macOS E2E test locks source
 override, the 500-event bound, and truncation reporting.
 
+## 19. macOS agent startup does not steal focus by default
+
+**Decision:** windows created by CLI-launched macOS agent hosts are visible but
+ordered behind the user's current application. `headless start --foreground`
+and `--background` override presentation for a newly launched host. Users can
+change the persistent default with the validated `headless config set
+startup-presentation foreground|background` command and inspect it with
+`headless config get startup-presentation`. Presentation choices never reorder
+a host that is already running. Direct GUI launches retain normal foreground
+behavior.
+
+**Status:** implemented 2026-08-12.
+
+**Rationale:** persistent agent automation should not interrupt the user's
+keyboard and visual focus merely because a host or session starts. Keeping the
+window visible preserves observability, screenshots, recording, and WebKit
+rendering without making background automation disruptive. Making foreground
+activation explicit still supports interactive demonstrations and debugging.
+
+**Consequences:** automatic startup and `headless start` use the configured
+presentation on macOS, falling back to background. Session windows created by
+that host follow the same policy. Launch flags take precedence over the saved
+setting. Linux behavior and the wire protocol are unchanged; presentation
+configuration fails there with `UNSUPPORTED_CAPABILITY`. macOS E2E coverage
+asserts the real frontmost process for configured background and foreground
+startup, session creation, running-host no-op behavior, and launch overrides.
+
 ---
 
 ## Decision log
@@ -371,5 +398,6 @@ override, the 500-event bound, and truncation reporting.
 | 16  | Preserve CLI value boundaries with `--` and shell quoting   | Decided           | 2026-08-10 |
 | 17  | Keep full MCP surface; annotate its maximum risk            | Decided           | 2026-08-10 |
 | 18  | Treat WebKit page diagnostics as bounded untrusted evidence | Decided           | 2026-08-10 |
+| 19  | Keep macOS agent startup behind the current app             | Implemented       | 2026-08-12 |
 
 New decisions append here with the same format.

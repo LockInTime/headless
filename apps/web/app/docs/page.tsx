@@ -37,6 +37,7 @@ export default function DocsPage() {
             <h2>Start a session.</h2>
             <p>Start the host, create a session, then visit the app. The session stays isolated until you close it.</p>
             <CommandBlock>{`headless start\nheadless session create qa\nheadless --session qa visit localhost:3000/designers/dashboard\nheadless --session qa inspect --context summary --task "click Continue"`}</CommandBlock>
+            <p>On macOS, agent startup leaves your current app in front. Use <code>headless config set startup-presentation foreground</code> to make the old foreground behavior persistent, or set it to <code>background</code> to restore the built-in default. Inspect it with <code>headless config get startup-presentation</code>. The <code>headless start --foreground</code> and <code>--background</code> flags override the setting for one new host; they do not reorder a running host.</p>
           </section>
 
           <section id="workflow">
