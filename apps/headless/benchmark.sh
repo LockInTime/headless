@@ -12,9 +12,7 @@ case "$REPEATS" in *[!0-9]*|'') echo "usage: ./benchmark.sh [positive-repeat-cou
 test "$REPEATS" -gt 0 || { echo "repeat count must be positive" >&2; exit 64; }
 test "$REPEATS" -le 100 || { echo "repeat count must not exceed 100" >&2; exit 64; }
 
-for tool in docker node; do
-  command -v "$tool" >/dev/null 2>&1 || { echo "$tool is required" >&2; exit 69; }
-done
+command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 69; }
 
 OUTPUT_DIRECTORY="$(dirname "$OUTPUT")"
 mkdir -p "$OUTPUT_DIRECTORY"
@@ -25,7 +23,9 @@ cleanup() {
   rm -f "$RAW_RESULTS"
   docker image rm "$IMAGE" >/dev/null 2>&1 || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 docker build --quiet --target benchmark -f Dockerfile.linux -t "$IMAGE" . >/dev/null
 for case_name in headless headless-warm selenium puppeteer; do
@@ -39,5 +39,16 @@ done
 
 PLATFORM="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$IMAGE")"
 GENERATED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-node Tests/Benchmarks/summarize.mjs "$RAW_RESULTS" "$OUTPUT" "$REPEATS" "$GENERATED_AT" "$PLATFORM"
+docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  --mount "type=bind,src=$RAW_RESULTS,dst=/tmp/headless-benchmark.ndjson,readonly" \
+  --mount "type=bind,src=$OUTPUT_DIRECTORY,dst=/output" \
+  --entrypoint node \
+  "$IMAGE" \
+  /opt/headless/benchmarks/summarize.mjs \
+  /tmp/headless-benchmark.ndjson \
+  "/output/$(basename "$OUTPUT")" \
+  "$REPEATS" \
+  "$GENERATED_AT" \
+  "$PLATFORM"
 echo "Benchmark results: $OUTPUT"
