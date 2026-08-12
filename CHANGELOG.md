@@ -24,6 +24,8 @@ Cutting that release is tracked in
 
 ### Added
 
+- A checksum-verifying Linux bootstrap installer now selects the correct
+  amd64/arm64 release package and delegates to the shared runtime preflight.
 - Tagged releases now include a verified `SHA256SUMS` manifest covering every
   downloadable macOS and Linux package.
 - A single cross-engine conformance scenario now runs against real WKWebView

@@ -36,7 +36,8 @@ if SNAP_INSTALL="$(HEADLESS_CHROMIUM_EXECUTABLE=/snap/bin/chromium \
   echo "Snap Chromium was accepted by the installer" >&2
   exit 1
 fi
-echo "$SNAP_INSTALL" | grep -q 'Snap Chromium is not supported'
+echo "$SNAP_INSTALL" | grep -q 'UNSUPPORTED_BROWSER_RUNTIME'
+echo "$SNAP_INSTALL" | grep -q 'Snap Chromium is not reliable'
 
 headless runtime | grep -q '"executable":"/usr/lib/chromium/chromium"'
 headless runtime | grep -q '"transport":"inherited-devtools-pipe"'

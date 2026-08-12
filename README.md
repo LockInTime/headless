@@ -181,6 +181,22 @@ and a compatible SDK before compiling.
 ### Linux
 
 ```sh
+curl -fsSL https://github.com/LockInTime/headless/releases/latest/download/install.sh | sh
+```
+
+The release bootstrap supports Linux `amd64` and `arm64`, downloads the matching
+tarball, verifies it against the release's `SHA256SUMS`, rejects unexpected
+archive contents, and delegates to the packaged runtime preflight. Install a
+specific release or prefix with:
+
+```sh
+curl -fsSL https://github.com/LockInTime/headless/releases/latest/download/install.sh \
+  | HEADLESS_VERSION=1.1.0 sh -s -- --prefix /opt/headless
+```
+
+To build locally instead:
+
+```sh
 ./apps/headless/build-linux.sh
 apps/headless/build/linux/install-linux.sh
 ```
@@ -196,7 +212,9 @@ distribution. Ubuntu's `/snap/bin/chromium` launcher resolves to
 Chromium's inherited DevTools pipe. If automatic detection is unsuitable, set
 `HEADLESS_CHROMIUM_EXECUTABLE` to an absolute, executable, non-Snap binary.
 Invalid overrides fail closed instead of silently selecting a different
-browser. Verify the exact selection before starting the host:
+browser. FFmpeg is likewise selected only from its explicit absolute override
+or the runtime allow-list, never an arbitrary PATH entry. Verify the exact
+browser selection before starting the host:
 
 ```sh
 headless runtime
@@ -222,9 +240,10 @@ The tag is embedded as the product version in every binary. Verify an install
 with `headless --version`; wire protocol compatibility is versioned
 independently. See [CHANGELOG.md](CHANGELOG.md) for release history.
 
-Assets: macOS `Headless.app` zip, Linux amd64/arm64 tarballs, and
-`SHA256SUMS`. Download the manifest beside the selected package and verify it
-before installing:
+Assets: macOS `Headless.app` zip, Linux amd64/arm64 tarballs, the Linux
+`install.sh` bootstrap, and `SHA256SUMS`. The bootstrap verifies the selected
+Linux package automatically. For manual installation, download the manifest
+beside the selected package and verify it before installing:
 
 ```sh
 sha256sum --ignore-missing -c SHA256SUMS              # Linux

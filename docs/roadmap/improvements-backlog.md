@@ -363,13 +363,14 @@ Owner-decided scope: package managers, no hosted service.
   `build.sh:96-114`); universal binary (today `uname -m` on an arm64 runner);
   Homebrew tap/cask. Resolve the `com.headless.app` provisioning question for
   the passkey entitlement (`.hermes` plan flagged it; `build.sh:97-109`).
-- **E2.** ([#40](https://github.com/LockInTime/headless/issues/40)) Linux `curl | sh` installer wrapping the existing tarball +
-  preflight (`install-linux.sh` already does runtime checks — reuse);
-  align its ffmpeg policy with the runtime's allow-list (installer accepts any
-  PATH ffmpeg, `install-linux.sh:118`, runtime doesn't,
-  `HP/Recording.swift:225-227`); single-source the Snap-detection logic
-  currently duplicated in shell (`install-linux.sh:40-67` vs
-  `HP/ChromiumRuntime.swift:167-184`).
+- **E2.** [x] ([#40](https://github.com/LockInTime/headless/issues/40)) ~~Linux `curl | sh` installer wrapping the existing tarball +
+  preflight; align its FFmpeg policy with the runtime allow-list; single-source
+  Snap detection.~~ **Done:** the release bootstrap resolves amd64/arm64,
+  verifies the versioned tarball against `SHA256SUMS`, rejects archive-shape
+  drift, and delegates to the packaged installer. That installer now calls the
+  product's Chromium runtime resolver and restricts FFmpeg to the recording
+  allow-list or a validated absolute override. Offline tests cover latest and
+  pinned versions, checksums, archive contents, architecture, and overrides.
 - **E3.** ([#41](https://github.com/LockInTime/headless/issues/41)) Publish the Docker `production` image to GHCR on tag (release notes
   currently say "not published"); this is also the interim Windows story.
 - **E4.** ([#42](https://github.com/LockInTime/headless/issues/42)) ~~`SHA256SUMS` for all release assets — the QA evidence bundle already ships

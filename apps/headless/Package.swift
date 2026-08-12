@@ -61,7 +61,7 @@ let package = Package(
             exclude: [
                 "Package.swift", "Sources", "Tests", "tools", "VersionSupport", "VERSION", "build.sh",
                 "package.json", "headless.entitlements", "build", "docs", "test.sh",
-                "LinuxHost", "Dockerfile.linux", "Headless.app", "build-linux.sh", "install-linux.sh", "benchmark.sh", ".dockerignore",
+                "LinuxHost", "Dockerfile.linux", "Headless.app", "build-linux.sh", "install.sh", "install-linux.sh", "benchmark.sh", ".dockerignore",
                 "MCP", "node_modules",
             ],
             sources: ["main.swift", "Host/AgentBridge.swift", "Host/QADiagnosticsBridge.swift"],
