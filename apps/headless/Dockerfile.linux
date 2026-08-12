@@ -27,6 +27,9 @@ RUN HEADLESS_VERSION="${HEADLESS_BUILD_VERSION:-$(cat VERSION)}" \
 RUN strip --strip-unneeded .build/release/headless .build/release/headless-linux-host .build/release/headless-mcp
 
 FROM debian:bookworm-slim AS runtime-base
+LABEL org.opencontainers.image.source="https://github.com/LockInTime/headless" \
+      org.opencontainers.image.description="Persistent safety-enforced browser control for AI agents" \
+      org.opencontainers.image.licenses="MIT"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates chromium chromium-sandbox ffmpeg \
     && rm -rf /var/lib/apt/lists/* \

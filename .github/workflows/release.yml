@@ -29,6 +29,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CONTAINER_IMAGE: ghcr.io/lockintime/headless
+
 jobs:
   version:
     runs-on: ubuntu-latest
@@ -159,8 +162,85 @@ jobs:
           name: linux-arm64
           path: apps/headless/build/headless-${{ needs.version.outputs.version }}-linux-arm64.tar.gz
 
+  container:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build native production image for verification
+        run: >-
+          docker build
+          --build-arg HEADLESS_VERSION=${{ needs.version.outputs.version }}
+          --target production
+          --tag headless-release-smoke:${{ github.run_id }}
+          --file apps/headless/Dockerfile.linux
+          apps/headless
+      - name: Smoke test native production image
+        run: >-
+          ./.github/scripts/container-smoke.sh
+          headless-release-smoke:${{ github.run_id }}
+          ${{ needs.version.outputs.version }}
+      - name: Generate container metadata
+        id: metadata
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.CONTAINER_IMAGE }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=Headless
+            org.opencontainers.image.description=Persistent safety-enforced browser control for AI agents
+            org.opencontainers.image.source=https://github.com/LockInTime/headless
+            org.opencontainers.image.licenses=MIT
+      - name: Log in to GHCR
+        if: needs.version.outputs.publish == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build multi-platform production image
+        id: publish
+        uses: docker/build-push-action@v7
+        with:
+          context: apps/headless
+          file: apps/headless/Dockerfile.linux
+          target: production
+          platforms: linux/amd64,linux/arm64
+          build-args: HEADLESS_VERSION=${{ needs.version.outputs.version }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          push: ${{ needs.version.outputs.publish == 'true' }}
+          provenance: mode=max
+          sbom: true
+      - name: Verify published manifest and native image
+        if: needs.version.outputs.publish == 'true'
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "$CONTAINER_IMAGE@$DIGEST"
+          docker logout ghcr.io
+          for attempt in {1..12}; do
+            if docker pull "$CONTAINER_IMAGE@$DIGEST"; then break; fi
+            if [[ "$attempt" == 12 ]]; then
+              echo "Published container is not anonymously readable" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          ./.github/scripts/container-smoke.sh "$CONTAINER_IMAGE@$DIGEST" "${{ needs.version.outputs.version }}"
+
   publish:
-    needs: [version, macos, linux-amd64, linux-arm64]
+    needs: [version, macos, linux-amd64, linux-arm64, container]
     if: >-
       github.event_name == 'push' &&
       startsWith(github.ref, 'refs/tags/v') &&
@@ -193,11 +273,13 @@ jobs:
             | `headless-${{ needs.version.outputs.version }}-linux-amd64.tar.gz` | Linux x86_64 |
             | `headless-${{ needs.version.outputs.version }}-linux-arm64.tar.gz` | Linux arm64 |
             | `install.sh` | Verified Linux bootstrap installer |
+            | `${{ env.CONTAINER_IMAGE }}:${{ needs.version.outputs.version }}` | Linux amd64/arm64 container |
 
             ### Notes
 
             - **macOS:** Unzip and run `Headless.app`. Gatekeeper may warn (ad-hoc signature; notarization not included yet). CLI: `Headless.app/Contents/Resources/bin/headless`.
             - **Linux:** `curl -fsSL https://github.com/LockInTime/headless/releases/latest/download/install.sh | sh`. The installer verifies the selected tarball against `SHA256SUMS`. Chromium and FFmpeg remain system dependencies.
+            - **Container:** `docker pull ${{ env.CONTAINER_IMAGE }}:${{ needs.version.outputs.version }}`. The image includes Chromium and FFmpeg and runs as uid 10001.
           files: |
             dist/Headless-${{ needs.version.outputs.version }}-macos.zip
             dist/headless-${{ needs.version.outputs.version }}-linux-amd64.tar.gz

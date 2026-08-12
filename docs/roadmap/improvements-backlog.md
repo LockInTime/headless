@@ -371,8 +371,12 @@ Owner-decided scope: package managers, no hosted service.
   product's Chromium runtime resolver and restricts FFmpeg to the recording
   allow-list or a validated absolute override. Offline tests cover latest and
   pinned versions, checksums, archive contents, architecture, and overrides.
-- **E3.** ([#41](https://github.com/LockInTime/headless/issues/41)) Publish the Docker `production` image to GHCR on tag (release notes
-  currently say "not published"); this is also the interim Windows story.
+- **E3.** [x] ([#41](https://github.com/LockInTime/headless/issues/41)) ~~Publish the Docker `production` image to GHCR on tag; this is also the
+  interim Windows story.~~ **Done:** packaging PRs build and smoke-test the
+  non-root production target with no exposed ports. Version tags publish an
+  amd64/arm64 GHCR manifest with SemVer, source-tag, commit-SHA, and `latest`
+  references plus OCI provenance and an SBOM, then pull by digest and rerun the
+  smoke suite before the GitHub Release is created.
 - **E4.** ([#42](https://github.com/LockInTime/headless/issues/42)) ~~`SHA256SUMS` for all release assets — the QA evidence bundle already ships
   sums; releases don't.~~ **Done:** the publish job requires all three named
   regular package files, generates `SHA256SUMS` atomically, verifies it, and

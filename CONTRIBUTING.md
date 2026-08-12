@@ -5,7 +5,7 @@ drive real browsers through it, and the host — not the prompt — is what stop
 them doing something harmful. That shapes how we review changes, so please
 read this before your first PR.
 
-Contributors are humans *and* coding agents. If you are an agent, your rules
+Contributors are humans _and_ coding agents. If you are an agent, your rules
 live in [`AGENTS.md`](AGENTS.md); everything below applies to you too.
 
 ## Before you start
@@ -58,7 +58,7 @@ Platform notes:
   runtime JS, or artifact code. Add the `macos-e2e` label to the PR if you
   touched `main.swift`, `Host/`, or capture code — that triggers the heavier
   WKWebView suite in CI.
-- New behaviour ships with a test. New *safety* behaviour ships with a test
+- New behaviour ships with a test. New _safety_ behaviour ships with a test
   that fails without the fix.
 - A protocol command still has to be added in both hosts, the validator, the
   CLI, the help text, and `capabilities` until the HostCore refactor
@@ -71,6 +71,17 @@ CI runs on every PR: static checks, the agent-runtime suite, the protocol
 suite on Linux and macOS, the web lint/build, and the Linux Docker E2E. All of
 it uses the same scripts you ran locally, so a green laptop should mean a
 green PR.
+
+## Release operations
+
+Tagged releases publish `ghcr.io/lockintime/headless` with the repository's
+`GITHUB_TOKEN`. GitHub creates a new organization container package as private
+unless the organization is configured otherwise. After the first image is
+created, a package administrator must change its visibility to **Public** in
+the package settings and rerun the failed container job. The workflow logs out
+of GHCR and requires an anonymous pull by digest before it creates the GitHub
+Release, so a private image fails closed instead of producing a broken public
+release.
 
 ## Style
 
