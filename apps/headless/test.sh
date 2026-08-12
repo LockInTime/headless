@@ -42,6 +42,12 @@ fi
 TEST_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/headless-tests.XXXXXX")"
 trap 'rm -rf "$TEST_SCRATCH"' EXIT
 EXPECTED_VERSION="${HEADLESS_VERSION:-$(tr -d '[:space:]' < VERSION)}"
+for INVALID_VERSION in 01.2.3 1.02.3 1.2.03 1.2.3-01 1.2.3-.beta 1.2.3-beta. 1.2.3+build..1; do
+  if HEADLESS_VERSION="$INVALID_VERSION" swift package dump-package >/dev/null 2>&1; then
+    echo "headless tests: invalid product version was accepted: $INVALID_VERSION" >&2
+    exit 1
+  fi
+done
 for manifest in package.json ../web/package.json ../../package.json; do
   MANIFEST_VERSION="$(sed -n 's/^[[:space:]]*"version": "\([^"]*\)",*$/\1/p' "$manifest")"
   [[ "$MANIFEST_VERSION" == "$(tr -d '[:space:]' < VERSION)" ]] || {

@@ -8,7 +8,9 @@ let fallbackProductVersion = try String(
     contentsOf: packageDirectory.appendingPathComponent("VERSION"), encoding: .utf8
 ).trimmingCharacters(in: .whitespacesAndNewlines)
 let productVersion = ProcessInfo.processInfo.environment["HEADLESS_VERSION"] ?? fallbackProductVersion
-let semanticVersionPattern = #"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"#
+let semanticVersionPattern = try String(
+    contentsOf: packageDirectory.appendingPathComponent("VersionSupport/semver-pattern.txt"), encoding: .utf8
+).trimmingCharacters(in: .whitespacesAndNewlines)
 guard productVersion.range(of: semanticVersionPattern, options: .regularExpression) != nil else {
     fatalError("HEADLESS_VERSION must be a semantic version, received: \(productVersion)")
 }
@@ -29,6 +31,7 @@ let package = Package(
         .target(
             name: "CHeadlessVersion",
             path: "VersionSupport",
+            exclude: ["semver-pattern.txt"],
             publicHeadersPath: "include",
             cSettings: [.define("HEADLESS_PRODUCT_VERSION", to: "\"\(productVersion)\"")]
         ),
