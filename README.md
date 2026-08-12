@@ -206,6 +206,18 @@ installer that checks Chromium and FFmpeg before copying the binaries. The
 Docker image is the supported self-contained Linux runtime and uses Debian's
 Chromium binary at `/usr/lib/chromium/chromium`.
 
+Tagged releases publish a non-root amd64/arm64 image with Chromium and FFmpeg:
+
+```sh
+docker pull ghcr.io/lockintime/headless:1.1.0
+docker run --rm ghcr.io/lockintime/headless:1.1.0 headless capabilities
+```
+
+Version and commit-SHA tags provide stable release references, while a digest
+is the immutable deployment reference; `latest` tracks the newest release. The
+image exposes no ports. Browser control remains on the private Unix socket
+inside the container.
+
 For a native Linux install, use a real Chromium binary supplied by the Linux
 distribution. Ubuntu's `/snap/bin/chromium` launcher resolves to
 `/usr/bin/snap`; it is rejected because repeated navigation is unreliable over
@@ -241,9 +253,10 @@ with `headless --version`; wire protocol compatibility is versioned
 independently. See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 Assets: macOS `Headless.app` zip, Linux amd64/arm64 tarballs, the Linux
-`install.sh` bootstrap, and `SHA256SUMS`. The bootstrap verifies the selected
-Linux package automatically. For manual installation, download the manifest
-beside the selected package and verify it before installing:
+`install.sh` bootstrap, a multi-platform GHCR image, and `SHA256SUMS`. The
+bootstrap verifies the selected Linux package automatically. For manual
+installation, download the manifest beside the selected package and verify it
+before installing:
 
 ```sh
 sha256sum --ignore-missing -c SHA256SUMS              # Linux

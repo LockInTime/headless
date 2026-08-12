@@ -24,6 +24,8 @@ Cutting that release is tracked in
 
 ### Added
 
+- Tagged releases now publish a smoke-tested, non-root amd64/arm64 production
+  image to GHCR with SemVer and commit-SHA tags, provenance, and an SBOM.
 - A checksum-verifying Linux bootstrap installer now selects the correct
   amd64/arm64 release package and delegates to the shared runtime preflight.
 - Tagged releases now include a verified `SHA256SUMS` manifest covering every
