@@ -13,7 +13,7 @@ done
 APP="Headless.app"
 ARCH="$(uname -m)"
 ICON="build/Headless.icns"
-VERSION="${HEADLESS_VERSION:-1.0.0}"
+VERSION="${HEADLESS_VERSION:-$(tr -d '[:space:]' < VERSION)}"
 mkdir -p build/module-cache build/swiftpm-module-cache build/bin
 
 # Select an SDK the installed Swift compiler can read. Apple occasionally ships
@@ -94,13 +94,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
   <key>NSAppTransportSecurity</key>
   <dict>
-    <key>NSAllowsArbitraryLoads</key><true/>
     <key>NSAllowsArbitraryLoadsInWebContent</key><true/>
   </dict>
   <key>NSHumanReadableCopyright</key><string>headless — the browser that isn’t there</string>
 </dict>
 </plist>
 PLIST
+Tests/macos-bundle-security.sh "$APP/Contents/Info.plist"
 
 # Passkeys require Apple's restricted web-browser.public-key-credential
 # entitlement backed by a provisioning profile; macOS SIGKILLs ad-hoc builds
