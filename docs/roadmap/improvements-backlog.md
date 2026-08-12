@@ -74,9 +74,9 @@ burning a core while silently refusing every agent.
 map is reset on each `snapshot()` (`HP/AgentRuntime.swift:376`), so a
 `--context summary` (max 8 elements) invalidates all refs from a prior
 `full`; the agent later gets a bare `ELEMENT_NOT_FOUND`. Meanwhile
-`currentRegions` is *never* reset and grows for the page lifetime. ~~Decide the
+`currentRegions` is _never_ reset and grows for the page lifetime. ~~Decide the
 contract (likely: refs from the latest inspection only — already the skill's
-teaching), then (a) make the error say *why* ("ref expired; re-inspect"),
+teaching), then (a) make the error say _why_ ("ref expired; re-inspect"),
 (b) reset regions consistently on navigation, (c) document in P1.md. Test:
 inspect-full → inspect-summary → click stale `@eN` asserts the new error.~~
 **Done.** The contract is now explicit and asymmetric on purpose: `@eN` is
@@ -115,6 +115,7 @@ message buffer scans each appended region once and amortizes prefix compaction;
 protocol coverage feeds it a 30 MiB message in the host's 8 KiB read chunks.
 
 **A9. Misc hardening (smaller, same phase).** ([#20](https://github.com/LockInTime/headless/issues/20))
+
 - ~~`ChromiumChildProcess.stop()` can busy-wait forever post-SIGKILL
   (`LinuxHost/BrowserProcess.swift:38`); bound it.~~
 - ~~`SO_PEERCRED` hard-coded as `17` + hand-rolled `ucred`
@@ -198,7 +199,7 @@ branch, and hid the backward-compatible no-op `--json` parser flag from help.
 
 **B5. `pruneToBudget` quality.** ([#25](https://github.com/LockInTime/headless/issues/25)) ~~Hand-rolled 2-pass fixed point
 (`HP/AgentRuntime.swift:348-352`), O(n²) re-encoding per trim, pop-largest-
-*last*-element heuristic misses large mid-array items
+_last_-element heuristic misses large mid-array items
 (`AgentRuntime.swift:367-369`), text-chop fallback untested. Rework with a
 size-estimating single pass; add unit tests in the jsdom suite.~~ **Done:**
 each candidate is measured once, largest entries are pruned regardless of
@@ -269,7 +270,7 @@ oversized line / local-command rejection (`MCP/main.swift:64-66`).~~ **Done:**
 uses a private local socket server to verify a real browser-command round trip.
 
 **C4. Machine-accurate `capabilities`** ([#32](https://github.com/LockInTime/headless/issues/32)) — generate from `CommandName.allCases`
-+ engine matrix (see B6) so agents can trust it.
+and the engine matrix (see B6) so agents can trust it.
 
 **C5. Harness onboarding [exists: skill content].** ([#33](https://github.com/LockInTime/headless/issues/33)) Root `AGENTS.md` +
 `CLAUDE.md` (added with this doc set); mirror the skill into `.claude/skills/`
@@ -346,10 +347,11 @@ suites. It locks common JSON fields across lifecycle, navigation, inspection,
 diagnostics, capture, flows, reports, and errors, branching only through the
 declared capability matrix for intentional differences.
 
-**D5. Benchmark refresh discipline [exists: benchmark.sh].** ([#38](https://github.com/LockInTime/headless/issues/38)) Emit JSON
-results artifact; re-run with the task-aware flow (BENCHMARK.md:29-31 says
-current numbers predate `--task`); repeat-count medians instead of single
-samples.
+**D5. Benchmark refresh discipline [exists: benchmark.sh].** ([#38](https://github.com/LockInTime/headless/issues/38)) ~~Emit JSON
+results artifact; re-run with the task-aware flow; report repeat-count medians
+instead of single samples.~~ **Done:** the benchmark validates and preserves
+every sample in a provenance-bearing JSON document, reports per-metric medians,
+and the refreshed five-repeat snapshot includes task-aware action inspection.
 
 ## §E — Distribution (Phase 3)
 
@@ -368,8 +370,10 @@ Owner-decided scope: package managers, no hosted service.
   `HP/ChromiumRuntime.swift:167-184`).
 - **E3.** ([#41](https://github.com/LockInTime/headless/issues/41)) Publish the Docker `production` image to GHCR on tag (release notes
   currently say "not published"); this is also the interim Windows story.
-- **E4.** ([#42](https://github.com/LockInTime/headless/issues/42)) `SHA256SUMS` (+ consider cosign) for all release assets — the QA
-  evidence bundle already ships sums; releases don't.
+- **E4.** ([#42](https://github.com/LockInTime/headless/issues/42)) ~~`SHA256SUMS` for all release assets — the QA evidence bundle already ships
+  sums; releases don't.~~ **Done:** the publish job requires all three named
+  regular package files, generates `SHA256SUMS` atomically, verifies it, and
+  attaches the manifest to the release. Cosign remains optional future work.
 - **E5.** ([#43](https://github.com/LockInTime/headless/issues/43)) npm wrapper package (binary download shim) for `npx` reach.
 - **E6.** [x] ([#44](https://github.com/LockInTime/headless/issues/44)) Version unification + `headless --version` + CHANGELOG + release
   automation (architecture §12). `package.json` says 0.0.0, tags say 1.0.x,
@@ -381,7 +385,7 @@ Owner-decided scope: package managers, no hosted service.
 
 ## §F — Website & docs (Phase 5)
 
-- **F1. Deploy pipeline is invisible to the repo** ([#47](https://github.com/LockInTime/headless/issues/47)) — the site *is* live at
+- **F1. Deploy pipeline is invisible to the repo** ([#47](https://github.com/LockInTime/headless/issues/47)) — the site _is_ live at
   `https://headless-web-pi.vercel.app` (set as the repo homepage) via Vercel's
   GitHub integration, but nothing in the tree records that: no `vercel.json`,
   no deploy docs, no preview-URL comment on PRs, and the temporary

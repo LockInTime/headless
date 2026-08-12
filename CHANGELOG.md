@@ -24,12 +24,17 @@ Cutting that release is tracked in
 
 ### Added
 
+- Tagged releases now include a verified `SHA256SUMS` manifest covering every
+  downloadable macOS and Linux package.
 - A single cross-engine conformance scenario now runs against real WKWebView
   and Chromium hosts, locking shared response shapes and declared capability
   errors without mirrored platform assertions.
 - A generated WebKit/Chromium capability matrix now declares exhaustive
   command support and intentional engine differences; host ping responses
   include the active engine profile.
+- The comparison benchmark now emits a validated JSON results artifact with
+  raw samples and medians, and its refreshed Headless workflows include
+  task-aware action inspection.
 - The single MCP tool now accurately declares its mutating, destructive,
   non-idempotent, open-world behavior; integration tests lock the metadata and
   deliberate `stop` / `session close` exposure.
@@ -77,6 +82,8 @@ Cutting that release is tracked in
   reported consistently by `headless --version`, host `ping`, MCP
   `serverInfo`, package metadata, and the website. Release notes are generated
   automatically for each tag while protocol versioning stays independent.
+- The release workflow can now exercise and verify every package without
+  publishing, manually or on pull requests that change packaging inputs.
 - macOS WebKit and Linux Chromium now share one `HostCore` dispatcher and
   lifecycle implementation behind small engine adapters, eliminating the two
   divergent copies of flow, capture, recording, report, trace, and error logic.

@@ -9,7 +9,7 @@
     "test": "./test.sh",
     "test:e2e:mac": "./Tests/macos-e2e.sh",
     "test:e2e:linux": "./Tests/linux-docker.sh",
-    "test:runtime": "node Tests/agent-runtime.test.mjs"
+    "test:runtime": "node Tests/agent-runtime.test.mjs && node Tests/benchmark-summary.test.mjs"
   },
   "devDependencies": {
     "jsdom": "30.0.1"

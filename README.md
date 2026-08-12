@@ -41,15 +41,15 @@ P2 uses the same CLI everywhere Headless runs:
 Three common agent browser paths, scored **1–5** as qualitative capability
 judgments (not lab benchmarks):
 
-| Dimension | Coordinate CU (regular browser) | Scripted (PW / Puppeteer / Selenium) | Headless |
-| --- | :---: | :---: | :---: |
-| Targeting precision | 2 | 4 | 5 |
-| Safety / blast radius | 2 | 3 | 5 |
-| Evidence (shots, video, QA) | 3 | 3 | 5 |
-| Agent surface (tokens / glue) | 2 | 3 | 5 |
-| Setup friction | 3 | 3 | 4 |
-| Platform coverage (host OS) | 5 | 5 | 4 |
-| Desktop / OS reach | 5 | 1 | 1 |
+| Dimension                     | Coordinate CU (regular browser) | Scripted (PW / Puppeteer / Selenium) | Headless |
+| ----------------------------- | :-----------------------------: | :----------------------------------: | :------: |
+| Targeting precision           |                2                |                  4                   |    5     |
+| Safety / blast radius         |                2                |                  3                   |    5     |
+| Evidence (shots, video, QA)   |                3                |                  3                   |    5     |
+| Agent surface (tokens / glue) |                2                |                  3                   |    5     |
+| Setup friction                |                3                |                  3                   |    4     |
+| Platform coverage (host OS)   |                5                |                  5                   |    4     |
+| Desktop / OS reach            |                5                |                  1                   |    1     |
 
 - **Coordinate CU** — strong when the agent needs the whole desktop; weaker on
   precise web targeting (pixels drift), larger screenshot/prompt cost, and a
@@ -214,9 +214,22 @@ The tag is embedded as the product version in every binary. Verify an install
 with `headless --version`; wire protocol compatibility is versioned
 independently. See [CHANGELOG.md](CHANGELOG.md) for release history.
 
-Assets: macOS `Headless.app` zip, Linux amd64/arm64 tarballs. See the Actions
-`Release` workflow and the release notes on each tag for install caveats
-(Gatekeeper; Linux Chromium/FFmpeg).
+Assets: macOS `Headless.app` zip, Linux amd64/arm64 tarballs, and
+`SHA256SUMS`. Download the manifest beside the selected package and verify it
+before installing:
+
+```sh
+sha256sum --ignore-missing -c SHA256SUMS              # Linux
+shasum -a 256 --ignore-missing -c SHA256SUMS          # macOS
+```
+
+See the Actions `Release` workflow and the release notes on each tag for
+install caveats (Gatekeeper; Linux Chromium/FFmpeg).
+
+The `Release` workflow can also be run manually with `dry_run` enabled. That
+builds, verifies, and uploads all three workflow artifacts without creating a
+GitHub Release. Pull requests that change release packaging run the same dry
+run automatically.
 
 ## Tests
 

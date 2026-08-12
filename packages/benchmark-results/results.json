@@ -1,0 +1,250 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-12T13:50:38Z",
+  "provenance": {
+    "generator": "apps/headless/benchmark.sh",
+    "method": "apps/headless/docs/BENCHMARK.md",
+    "platform": "linux/arm64",
+    "repeats": 5,
+    "aggregation": "median",
+    "taskAwareInspection": true
+  },
+  "cases": [
+    {
+      "case": "headless",
+      "label": "Headless, cold",
+      "samples": [
+        {
+          "iteration": 1,
+          "wallMs": 3930,
+          "cpuMs": 2187,
+          "memoryPeakBytes": 752189440,
+          "artifactBytes": 102472,
+          "workflowBytes": 870,
+          "estimatedTokens": 218
+        },
+        {
+          "iteration": 2,
+          "wallMs": 3484,
+          "cpuMs": 2028,
+          "memoryPeakBytes": 380952576,
+          "artifactBytes": 99135,
+          "workflowBytes": 870,
+          "estimatedTokens": 218
+        },
+        {
+          "iteration": 3,
+          "wallMs": 3473,
+          "cpuMs": 2036,
+          "memoryPeakBytes": 386068480,
+          "artifactBytes": 137356,
+          "workflowBytes": 870,
+          "estimatedTokens": 218
+        },
+        {
+          "iteration": 4,
+          "wallMs": 3492,
+          "cpuMs": 1908,
+          "memoryPeakBytes": 388087808,
+          "artifactBytes": 132276,
+          "workflowBytes": 870,
+          "estimatedTokens": 218
+        },
+        {
+          "iteration": 5,
+          "wallMs": 3479,
+          "cpuMs": 1972,
+          "memoryPeakBytes": 381677568,
+          "artifactBytes": 101808,
+          "workflowBytes": 870,
+          "estimatedTokens": 218
+        }
+      ],
+      "median": {
+        "wallMs": 3484,
+        "cpuMs": 2028,
+        "memoryPeakBytes": 386068480,
+        "artifactBytes": 102472,
+        "workflowBytes": 870,
+        "estimatedTokens": 218
+      }
+    },
+    {
+      "case": "headless-warm",
+      "label": "Headless, warm",
+      "samples": [
+        {
+          "iteration": 1,
+          "wallMs": 3248,
+          "cpuMs": 1379,
+          "memoryPeakBytes": 390807552,
+          "artifactBytes": 141710,
+          "workflowBytes": 693,
+          "estimatedTokens": 174
+        },
+        {
+          "iteration": 2,
+          "wallMs": 3237,
+          "cpuMs": 1349,
+          "memoryPeakBytes": 383737856,
+          "artifactBytes": 142986,
+          "workflowBytes": 693,
+          "estimatedTokens": 174
+        },
+        {
+          "iteration": 3,
+          "wallMs": 3233,
+          "cpuMs": 1414,
+          "memoryPeakBytes": 383971328,
+          "artifactBytes": 101808,
+          "workflowBytes": 693,
+          "estimatedTokens": 174
+        },
+        {
+          "iteration": 4,
+          "wallMs": 3256,
+          "cpuMs": 1376,
+          "memoryPeakBytes": 383102976,
+          "artifactBytes": 103840,
+          "workflowBytes": 693,
+          "estimatedTokens": 174
+        },
+        {
+          "iteration": 5,
+          "wallMs": 3277,
+          "cpuMs": 1455,
+          "memoryPeakBytes": 389758976,
+          "artifactBytes": 136998,
+          "workflowBytes": 693,
+          "estimatedTokens": 174
+        }
+      ],
+      "median": {
+        "wallMs": 3248,
+        "cpuMs": 1379,
+        "memoryPeakBytes": 383971328,
+        "artifactBytes": 136998,
+        "workflowBytes": 693,
+        "estimatedTokens": 174
+      }
+    },
+    {
+      "case": "selenium",
+      "label": "Selenium with Python",
+      "samples": [
+        {
+          "iteration": 1,
+          "wallMs": 2865,
+          "cpuMs": 1959,
+          "memoryPeakBytes": 380690432,
+          "artifactBytes": 173975,
+          "workflowBytes": 1638,
+          "estimatedTokens": 410
+        },
+        {
+          "iteration": 2,
+          "wallMs": 2813,
+          "cpuMs": 1893,
+          "memoryPeakBytes": 383242240,
+          "artifactBytes": 173975,
+          "workflowBytes": 1638,
+          "estimatedTokens": 410
+        },
+        {
+          "iteration": 3,
+          "wallMs": 2924,
+          "cpuMs": 2117,
+          "memoryPeakBytes": 380301312,
+          "artifactBytes": 173975,
+          "workflowBytes": 1638,
+          "estimatedTokens": 410
+        },
+        {
+          "iteration": 4,
+          "wallMs": 2897,
+          "cpuMs": 2078,
+          "memoryPeakBytes": 385925120,
+          "artifactBytes": 173975,
+          "workflowBytes": 1638,
+          "estimatedTokens": 410
+        },
+        {
+          "iteration": 5,
+          "wallMs": 2880,
+          "cpuMs": 2010,
+          "memoryPeakBytes": 378208256,
+          "artifactBytes": 173975,
+          "workflowBytes": 1638,
+          "estimatedTokens": 410
+        }
+      ],
+      "median": {
+        "wallMs": 2880,
+        "cpuMs": 2010,
+        "memoryPeakBytes": 380690432,
+        "artifactBytes": 173975,
+        "workflowBytes": 1638,
+        "estimatedTokens": 410
+      }
+    },
+    {
+      "case": "puppeteer",
+      "label": "Puppeteer",
+      "samples": [
+        {
+          "iteration": 1,
+          "wallMs": 2486,
+          "cpuMs": 1942,
+          "memoryPeakBytes": 377262080,
+          "artifactBytes": 178320,
+          "workflowBytes": 1996,
+          "estimatedTokens": 499
+        },
+        {
+          "iteration": 2,
+          "wallMs": 2437,
+          "cpuMs": 1942,
+          "memoryPeakBytes": 375758848,
+          "artifactBytes": 178320,
+          "workflowBytes": 1996,
+          "estimatedTokens": 499
+        },
+        {
+          "iteration": 3,
+          "wallMs": 2362,
+          "cpuMs": 1827,
+          "memoryPeakBytes": 375615488,
+          "artifactBytes": 178320,
+          "workflowBytes": 1996,
+          "estimatedTokens": 499
+        },
+        {
+          "iteration": 4,
+          "wallMs": 2402,
+          "cpuMs": 1860,
+          "memoryPeakBytes": 376266752,
+          "artifactBytes": 178320,
+          "workflowBytes": 1996,
+          "estimatedTokens": 499
+        },
+        {
+          "iteration": 5,
+          "wallMs": 2398,
+          "cpuMs": 1849,
+          "memoryPeakBytes": 374726656,
+          "artifactBytes": 178320,
+          "workflowBytes": 1996,
+          "estimatedTokens": 499
+        }
+      ],
+      "median": {
+        "wallMs": 2402,
+        "cpuMs": 1860,
+        "memoryPeakBytes": 375758848,
+        "artifactBytes": 178320,
+        "workflowBytes": 1996,
+        "estimatedTokens": 499
+      }
+    }
+  ]
+}

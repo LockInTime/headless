@@ -2,6 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+./Tests/release-checksums.sh
+
 for tool in swift swiftc; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     if [[ "$(uname -s)" == "Darwin" ]]; then
