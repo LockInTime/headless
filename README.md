@@ -214,6 +214,11 @@ Assets: macOS `Headless.app` zip, Linux amd64/arm64 tarballs. See the Actions
 `Release` workflow and the release notes on each tag for install caveats
 (Gatekeeper; Linux Chromium/FFmpeg).
 
+The `Release` workflow can also be run manually with `dry_run` enabled. That
+builds, verifies, and uploads all three workflow artifacts without creating a
+GitHub Release. Pull requests that change release packaging run the same dry
+run automatically.
+
 ## Tests
 
 ```sh

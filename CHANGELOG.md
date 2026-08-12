@@ -72,6 +72,8 @@ Cutting that release is tracked in
 
 ### Changed
 
+- The release workflow can now exercise and verify every package without
+  publishing, manually or on pull requests that change packaging inputs.
 - macOS WebKit and Linux Chromium now share one `HostCore` dispatcher and
   lifecycle implementation behind small engine adapters, eliminating the two
   divergent copies of flow, capture, recording, report, trace, and error logic.
