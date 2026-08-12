@@ -17,6 +17,11 @@ printf 'Linux arm64 package\n' > "$TEST_ROOT/$ARM64"
 
 "$SCRIPT" "$VERSION" "$TEST_ROOT" >/dev/null
 test "$(wc -l < "$TEST_ROOT/SHA256SUMS" | tr -d ' ')" -eq 3
+if [ "$(uname -s)" = "Darwin" ]; then
+  test "$(stat -f %Lp "$TEST_ROOT/SHA256SUMS")" = "644"
+else
+  test "$(stat -c %a "$TEST_ROOT/SHA256SUMS")" = "644"
+fi
 awk '{print $2}' "$TEST_ROOT/SHA256SUMS" > "$TEST_ROOT/names"
 printf '%s\n' "$MACOS" "$AMD64" "$ARM64" > "$TEST_ROOT/expected-names"
 cmp -s "$TEST_ROOT/names" "$TEST_ROOT/expected-names"
@@ -44,7 +49,8 @@ if "$SCRIPT" "$VERSION" "$TEST_ROOT" >/dev/null 2>&1; then
   exit 1
 fi
 
-for invalid_version in '../1.2.3' '.1.2.3' '1.2.3/' '1..2'; do
+for invalid_version in '' '../1.2.3' '.1.2.3' '1.2.3/' '1..2' '1.2.3.' \
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; do
   if "$SCRIPT" "$invalid_version" "$TEST_ROOT" >/dev/null 2>&1; then
     echo "release checksum test: invalid version accepted: $invalid_version" >&2
     exit 1
