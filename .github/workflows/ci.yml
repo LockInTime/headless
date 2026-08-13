@@ -71,6 +71,23 @@ jobs:
       - name: Context pruning suite
         run: pnpm test:runtime
 
+  npm-launcher:
+    name: npm launcher
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @lockintime/headless
+      - run: pnpm --filter @lockintime/headless test
+      - name: Verify published package contents
+        working-directory: packages/headless-npm
+        run: npm pack --dry-run
+
   protocol:
     name: Protocol suite
     runs-on: ubuntu-latest

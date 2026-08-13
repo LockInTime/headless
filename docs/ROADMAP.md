@@ -110,9 +110,10 @@ Honest snapshot, so newcomers know what is real:
 - ~~No CI on pull requests or `main`~~ — PR CI landed (`.github/workflows/ci.yml`,
   backlog §D1/§D3). Correctness fixes in §A are still outstanding, and the
   macOS E2E is nightly/label-gated rather than a per-PR gate.
-- The npm wrapper and distro-native Linux packages remain unimplemented.
-  Homebrew, notarized ZIP, Linux bootstrap, checksums, and GHCR automation are
-  implemented but are not user-visible until the next tag.
+- The verified npm launcher, Homebrew cask, notarized universal macOS ZIP,
+  Linux bootstrap, release checksums, and GHCR publication paths are
+  implemented but remain unreleased. Distro-native Linux packages remain
+  unimplemented.
 - The latest features (capture formats, context pruning) are **unreleased** —
   no tag since v1.0.2 (2026-07-19).
 - No `CLAUDE.md`/`AGENTS.md`; the skill is not auto-discovered by Claude Code.
