@@ -1,7 +1,7 @@
 {
   "name": "headless",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.1.0",
   "scripts": {
     "build": "pnpm --filter @headless/app build && pnpm --filter @headless/web build",
     "build:linux": "pnpm --filter @headless/app build:linux",
