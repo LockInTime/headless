@@ -262,7 +262,10 @@ private struct ChromiumInputTarget {
               let name = object["name"]?.stringValue,
               let x = object["x"]?.numberValue,
               let y = object["y"]?.numberValue,
-              x.isFinite, y.isFinite else {
+              x.isFinite, y.isFinite,
+              x >= 0, y >= 0,
+              x <= ProtocolBounds.screenshotDimension,
+              y <= ProtocolBounds.screenshotDimension else {
             throw CDPError.invalidResponse("trusted input target")
         }
         self.reference = reference
