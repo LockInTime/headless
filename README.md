@@ -218,6 +218,21 @@ installer that checks Chromium and FFmpeg before copying the binaries. The
 Docker image is the supported self-contained Linux runtime and uses Debian's
 Chromium binary at `/usr/lib/chromium/chromium`.
 
+### npm / npx
+
+JavaScript-based agent harnesses can run the verified launcher without a
+global install:
+
+```sh
+npx @lockintime/headless help
+npx -p @lockintime/headless headless-mcp
+```
+
+The launcher selects the matching macOS or Linux release, verifies it against
+the release `SHA256SUMS`, validates its archive and embedded product version,
+and caches it privately for subsequent commands. Its download origin is fixed
+to this repository.
+
 Tagged releases publish a non-root amd64/arm64 image with Chromium and FFmpeg:
 
 ```sh

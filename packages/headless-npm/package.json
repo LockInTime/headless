@@ -1,0 +1,34 @@
+{
+  "name": "@lockintime/headless",
+  "version": "1.0.2",
+  "description": "Verified npm launcher for the Headless agent browser",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LockInTime/headless.git",
+    "directory": "packages/headless-npm"
+  },
+  "homepage": "https://github.com/LockInTime/headless",
+  "bugs": "https://github.com/LockInTime/headless/issues",
+  "type": "module",
+  "bin": {
+    "headless": "bin/headless.mjs",
+    "headless-mcp": "bin/headless-mcp.mjs"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "prepack": "npm test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

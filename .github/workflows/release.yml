@@ -20,6 +20,8 @@ on:
       - "apps/headless/Sources/HeadlessProtocol/ProductVersion.swift"
       - "apps/headless/VERSION"
       - "apps/headless/VersionSupport/**"
+      - "packages/headless-npm/**"
+      - "pnpm-lock.yaml"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -59,6 +61,11 @@ jobs:
               echo "Release tag $version does not match apps/headless/VERSION $expected" >&2
               exit 64
             fi
+            npm_version="$(node -p "require('./packages/headless-npm/package.json').version")"
+            if [[ "$version" != "$npm_version" ]]; then
+              echo "Release tag $version does not match npm launcher $npm_version" >&2
+              exit 64
+            fi
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$DRY_RUN" != "true" ]]; then
@@ -69,6 +76,22 @@ jobs:
             echo "publish=false" >> "$GITHUB_OUTPUT"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  npm-launcher:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @lockintime/headless
+      - run: pnpm --filter @lockintime/headless test
+      - name: Verify published package contents
+        working-directory: packages/headless-npm
+        run: npm pack --dry-run
 
   macos:
     needs: version
@@ -314,7 +337,7 @@ jobs:
           ./.github/scripts/container-smoke.sh "$CONTAINER_IMAGE@$DIGEST" "${{ needs.version.outputs.version }}"
 
   publish:
-    needs: [version, macos, linux-amd64, linux-arm64, container]
+    needs: [version, npm-launcher, macos, linux-amd64, linux-arm64, container]
     if: >-
       github.event_name == 'push' &&
       startsWith(github.ref, 'refs/tags/v') &&
@@ -354,6 +377,7 @@ jobs:
             - **macOS:** Unzip and run `Headless.app`, or install with `brew install --cask LockInTime/headless/headless` after the tap sync completes. The app is universal, Developer ID signed, notarized, and stapled. CLI: `Headless.app/Contents/Resources/bin/headless`.
             - **Linux:** `curl -fsSL https://github.com/LockInTime/headless/releases/latest/download/install.sh | sh`. The installer verifies the selected tarball against `SHA256SUMS`. Chromium and FFmpeg remain system dependencies.
             - **Container:** `docker pull ${{ env.CONTAINER_IMAGE }}:${{ needs.version.outputs.version }}`. The image includes Chromium and FFmpeg and runs as uid 10001.
+            - **npm:** `npx @lockintime/headless help`. The launcher verifies the matching GitHub release asset and provides both `headless` and `headless-mcp` shims.
           files: |
             dist/Headless-${{ needs.version.outputs.version }}-macos.zip
             dist/headless-${{ needs.version.outputs.version }}-linux-amd64.tar.gz
@@ -361,3 +385,31 @@ jobs:
             dist/SHA256SUMS
             dist/install.sh
           fail_on_unmatched_files: true
+
+  publish-npm:
+    needs: [version, publish]
+    if: >-
+      github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Publish verified launcher
+        working-directory: packages/headless-npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "$NODE_AUTH_TOKEN" ]] || {
+            echo "NPM_TOKEN is required to publish @lockintime/headless" >&2
+            exit 64
+          }
+          npm publish --access public --provenance

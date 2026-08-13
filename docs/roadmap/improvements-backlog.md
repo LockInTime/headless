@@ -389,7 +389,11 @@ Owner-decided scope: package managers, no hosted service.
   sums; releases don't.~~ **Done:** the publish job requires all three named
   regular package files, generates `SHA256SUMS` atomically, verifies it, and
   attaches the manifest to the release. Cosign remains optional future work.
-- **E5.** ([#43](https://github.com/LockInTime/headless/issues/43)) npm wrapper package (binary download shim) for `npx` reach.
+- **E5.** [x] ([#43](https://github.com/LockInTime/headless/issues/43)) ~~npm wrapper package (binary download shim) for `npx` reach.~~
+  **Done:** `@lockintime/headless` exposes the CLI and MCP adapter, downloads
+  only its matching official release, verifies the exact `SHA256SUMS` entry,
+  rejects unsafe archives, validates the embedded version, and reuses a
+  private per-user cache. CI locks the installer and packed npm contents.
 - **E6.** [x] ([#44](https://github.com/LockInTime/headless/issues/44)) Version unification + `headless --version` + CHANGELOG + release
   automation (architecture §12). `package.json` says 0.0.0, tags say 1.0.x,
   default `HEADLESS_VERSION` is 1.0.0.
