@@ -1247,6 +1247,20 @@ struct ProtocolTests {
             BrowserEngineCapabilities.chromium.unsupportedCommands.isEmpty,
             "Chromium should implement every protocol command"
         )
+        guard case .object(let webkitDocument) = BrowserEngineCapabilities.webkit.document,
+              case .object(let webkitFeatures)? = webkitDocument["features"],
+              case .object(let chromiumDocument) = BrowserEngineCapabilities.chromium.document,
+              case .object(let chromiumFeatures)? = chromiumDocument["features"] else {
+            throw TestFailure(description: "engine feature capability shape")
+        }
+        try expect(
+            webkitFeatures["inputDispatch"] == .string("synthetic-dom"),
+            "WebKit should declare its portable synthetic input path"
+        )
+        try expect(
+            chromiumFeatures["inputDispatch"] == .string("trusted-cdp"),
+            "Chromium should declare trusted CDP input"
+        )
         try expect(
             document["currentEngine"] == .string(currentBrowserEngineCapabilities.engine.rawValue),
             "capabilities should identify the engine for this binary"

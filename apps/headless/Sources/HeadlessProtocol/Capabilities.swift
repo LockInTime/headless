@@ -23,6 +23,7 @@ public struct BrowserEngineCapabilities: Sendable {
     public let qaDiagnosticSource: String
     public let qaDiagnosticSynchronization: String
     public let screenshotClipboard: Bool
+    public let inputDispatch: String
 
     public var supportedCommands: [CommandName] {
         CommandName.allCases.filter { !unsupportedCommands.contains($0) }
@@ -64,7 +65,7 @@ public struct BrowserEngineCapabilities: Sendable {
                 ),
                 "screenshotClipboard": .bool(screenshotClipboard),
                 "tourTimeoutMs": .number(65_000),
-                "inputDispatch": .string("synthetic-dom"),
+                "inputDispatch": .string(inputDispatch),
             ]),
         ])
     }
@@ -83,7 +84,8 @@ public struct BrowserEngineCapabilities: Sendable {
         recordingDuringNavigation: "continuous",
         qaDiagnosticSource: "webkit-page-bridge",
         qaDiagnosticSynchronization: "best-effort-page-world-observer",
-        screenshotClipboard: true
+        screenshotClipboard: true,
+        inputDispatch: "synthetic-dom"
     )
 
     public static let chromium = BrowserEngineCapabilities(
@@ -103,7 +105,8 @@ public struct BrowserEngineCapabilities: Sendable {
         recordingDuringNavigation: "pause-and-retry",
         qaDiagnosticSource: "chromium-cdp",
         qaDiagnosticSynchronization: "runtime-round-trip-flush",
-        screenshotClipboard: false
+        screenshotClipboard: false,
+        inputDispatch: "trusted-cdp"
     )
 
     public static func profile(for engine: BrowserEngineName) -> BrowserEngineCapabilities {

@@ -252,10 +252,10 @@ Make Headless the obvious choice inside every harness:
   `.claude/skills/` so Claude Code finds it natively.
 - Capabilities doc generated from `CommandName.allCases` and asserted in tests
   so agents can trust `headless capabilities` (backlog §C4).
-- Close the highest-value command gaps found in real agent use: real key
-  input (CDP `Input.dispatchKeyEvent` on Linux), `--` end-of-options sentinel
-  so `fill` can type literal `--json`, response pagination for large reports
-  (backlog §G).
+- Close the highest-value command gaps found in real agent use: trusted CDP
+  mouse/key/text input is implemented on Linux; `--` end-of-options support is
+  implemented so `fill` can type literal `--json`; response pagination for
+  large reports remains (backlog §G).
 
 *Exit test:* a fresh Claude Code, Cursor, and Codex session can each discover
 and drive Headless with zero manual prompting beyond repo checkout.

@@ -285,10 +285,12 @@ Claude's discovery path, all three clients use one repository-relative stdio
 launcher, the setup guide includes native and Docker variants, and web lint
 checks the configs for drift.
 
-**C6. Input fidelity (Phase 4).** ([#34](https://github.com/LockInTime/headless/issues/34)) Real CDP input on Linux
-(`Input.dispatchKeyEvent`/`dispatchMouseEvent`) behind the same verbs; today
-both engines dispatch synthetic DOM events and `press` special-cases only
-Enter/Space (`HP/AgentRuntime.swift:492-537`). Declared divergence per B6.
+**C6. Input fidelity (Phase 4).** ([#34](https://github.com/LockInTime/headless/issues/34)) ~~Real CDP input on Linux
+(`Input.dispatchKeyEvent`/`dispatchMouseEvent`) behind the same verbs.~~
+**Done:** Chromium resolves safe semantic targets in the isolated world, then
+uses trusted CDP mouse, key, and text input. Linux E2E proves page handlers see
+`isTrusted`; WebKit keeps its synthetic path and the capability matrix declares
+the difference.
 
 **C7. Considered-and-worth-designing (not committed):** ([#35](https://github.com/LockInTime/headless/issues/35)) hover/drag verbs;
 `select` for dropdowns; scoped `evaluate` never (see what-is-excellent §3);

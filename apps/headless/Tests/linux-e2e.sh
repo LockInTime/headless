@@ -5,11 +5,12 @@ export HEADLESS_ARTIFACT_DIR="/tmp/headless-artifacts-e2e-$$"
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
-mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/api"
+mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/api"
 cp /opt/headless/fixtures/dashboard.html "$FIXTURE_ROOT/designers/dashboard/index.html"
 cp /opt/headless/fixtures/next.html "$FIXTURE_ROOT/next/index.html"
 cp /opt/headless/fixtures/hostile.html "$FIXTURE_ROOT/hostile/index.html"
 cp /opt/headless/fixtures/large-document.html "$FIXTURE_ROOT/large-document/index.html"
+cp /opt/headless/fixtures/trusted-input.html "$FIXTURE_ROOT/trusted-input/index.html"
 cp /opt/headless/fixtures/api-diagnostic.json "$FIXTURE_ROOT/api/diagnostic"
 busybox httpd -f -p 127.0.0.1:41739 -h "$FIXTURE_ROOT" &
 FIXTURE_PID=$!
@@ -131,6 +132,16 @@ headless --session qa qa clear | grep -q '"cleared"'
 headless --session qa qa report | grep -q '"events":0'
 headless --session qa fill @e1 'Ada Lovelace' | grep -q '"valueLength":12'
 headless --session qa press Escape | grep -q '"pressed":"Escape"'
+headless --session qa visit http://127.0.0.1:41739/trusted-input/ | grep -q 'Trusted input fixture'
+headless --session qa inspect --interactive | grep -q '"name":"Trusted input"'
+headless --session qa fill @e1 'CDP value' | grep -q '"valueLength":9'
+headless --session qa press Enter | grep -q '"pressed":"Enter"'
+headless --session qa click --role button --name 'Trusted click' | grep -q '"clicked"'
+TRUSTED_INPUT="$(headless --session qa inspect --text)"
+echo "$TRUSTED_INPUT" | grep -q 'input:true'
+echo "$TRUSTED_INPUT" | grep -q 'key:Enter:true'
+echo "$TRUSTED_INPUT" | grep -q 'click:true'
+headless --session qa visit http://127.0.0.1:41739/designers/dashboard/ | grep -q 'Designers Dashboard'
 if EXTERNAL_RESULT="$(headless --session qa click --role link --name 'External application')"; then
   echo "external application link was not blocked" >&2
   exit 1
