@@ -178,15 +178,20 @@ is documented as detectable and forgeable; the host fixes its provenance,
 bounds it per document, and marks its evidence untrusted. Agent actions and
 inspection remain in `WKContentWorld`.
 
-## 8. In-page action model: synthetic events now, real input later (Linux)
+## 8. In-page action model: trusted CDP input on Linux
 
-**Decision:** today `click`/`fill`/`press` are synthetic DOM events from the
-isolated world (`AgentRuntime.swift:492-537`) on both engines — no trusted-
-event semantics, no hover/drag, `press` only special-cases Enter/Space.
-Keep this as the _portable baseline_, and in Phase 4 add real input on the
-Chromium engine via CDP `Input.dispatchKeyEvent`/`dispatchMouseEvent`, exposed
-as the same verbs (upgrade, not new commands), with WKWebView staying on the
-synthetic path as a declared capability difference.
+**Decision:** `click`/`fill`/`press` keep one portable command contract. On
+Linux, the isolated agent world resolves the semantic target, applies the
+existing link-safety policy, focuses it, and returns a bounded visible point;
+the host then acts through CDP `Input.dispatchMouseEvent`,
+`Input.dispatchKeyEvent`, and `Input.insertText`. Page handlers consequently
+receive trusted browser input. Fill values travel directly in the validated
+CDP command and are never returned or added to flows.
+
+WKWebView retains the synthetic isolated-world implementation because it has
+no equivalent safe host input API. `capabilities` declares `trusted-cdp` for
+Chromium and `synthetic-dom` for WebKit. This is an engine fidelity difference,
+not a second set of verbs.
 
 **Rationale:** synthetic events fail on real-world widgets (rich editors,
 canvas apps, key-repeat handlers); Chromium can do better cheaply; the
@@ -418,7 +423,7 @@ credentials.
 | 3   | Extract HostCore + BrowserEngine, typed errors              | Implemented       | 2026-08-10 |
 | 5   | Remote stays SSH-only; no cloud offering                    | Decided (owner)   | 2026-08-04 |
 | 6   | Windows = stretch via Chromium engine; WSL2/Docker interim  | Decided (owner)   | 2026-08-04 |
-| 8   | Real CDP input on Linux as capability upgrade               | Planned (Phase 4) | 2026-08-04 |
+| 8   | Real CDP input on Linux as capability upgrade               | Implemented       | 2026-08-13 |
 | 12  | Version unification on git tag                              | Implemented       | 2026-08-04 |
 | 14  | Run one conformance scenario against every engine           | Implemented       | 2026-08-10 |
 | 15  | Package-manager distribution set                            | Decided (owner)   | 2026-08-04 |

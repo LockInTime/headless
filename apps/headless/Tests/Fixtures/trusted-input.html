@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Trusted input fixture</title>
+</head>
+<body>
+  <main>
+    <h1>Trusted input fixture</h1>
+    <label for="trusted-input">Trusted input</label>
+    <input id="trusted-input" autocomplete="off">
+    <button type="button">Trusted click</button>
+    <output aria-label="Input evidence">waiting</output>
+  </main>
+  <script>
+    const evidence = [];
+    const output = document.querySelector('output');
+    const record = value => {
+      evidence.push(value);
+      output.textContent = evidence.join(' ');
+    };
+    document.querySelector('input').addEventListener('input', event => record(`input:${event.isTrusted}`));
+    document.querySelector('input').addEventListener('keydown', event => record(`key:${event.key}:${event.isTrusted}`));
+    document.querySelector('button').addEventListener('click', event => record(`click:${event.isTrusted}`));
+  </script>
+</body>
+</html>

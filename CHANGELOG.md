@@ -24,6 +24,9 @@ Cutting that release is tracked in
 
 ### Added
 
+- Chromium `click`, `fill`, and `press` now dispatch trusted mouse, keyboard,
+  and text input through CDP after isolated-world semantic target and link
+  safety validation; capabilities declare the WebKit synthetic-input boundary.
 - Tagged macOS releases now ship a universal Apple Silicon/Intel app through a
   checksum-pinned Homebrew cask, with Developer ID signing, hardened runtime,
   notarization, stapling, and Gatekeeper validation enforced by release CI.

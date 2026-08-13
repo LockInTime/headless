@@ -108,7 +108,12 @@ private func writeRawSocket(_ data: Data, descriptor: Int32) throws -> Int {
             #endif
             if count < 0 {
                 if errno == EINTR { continue }
-                if sent > headlessMaximumMessageBytes { return sent }
+                // The server deliberately closes after recognizing an
+                // oversized frame. Darwin may surface that close before the
+                // client's send count crosses the logical limit even though
+                // the typed rejection response is already queued. The caller
+                // verifies that response, which is the security contract.
+                if errno == EPIPE || errno == ECONNRESET { return sent }
                 throw TestFailure(description: "raw socket write failed before the size limit")
             }
             guard count > 0 else { return sent }
@@ -1247,6 +1252,20 @@ struct ProtocolTests {
             BrowserEngineCapabilities.chromium.unsupportedCommands.isEmpty,
             "Chromium should implement every protocol command"
         )
+        guard case .object(let webkitDocument) = BrowserEngineCapabilities.webkit.document,
+              case .object(let webkitFeatures)? = webkitDocument["features"],
+              case .object(let chromiumDocument) = BrowserEngineCapabilities.chromium.document,
+              case .object(let chromiumFeatures)? = chromiumDocument["features"] else {
+            throw TestFailure(description: "engine feature capability shape")
+        }
+        try expect(
+            webkitFeatures["inputDispatch"] == .string("synthetic-dom"),
+            "WebKit should declare its portable synthetic input path"
+        )
+        try expect(
+            chromiumFeatures["inputDispatch"] == .string("trusted-cdp"),
+            "Chromium should declare trusted CDP input"
+        )
         try expect(
             document["currentEngine"] == .string(currentBrowserEngineCapabilities.engine.rawValue),
             "capabilities should identify the engine for this binary"
@@ -1290,8 +1309,7 @@ struct ProtocolTests {
         defer { closeRawSocket(descriptor) }
         var request = Data(repeating: 0x78, count: headlessMaximumMessageBytes + 8_192)
         request.append(0x0A)
-        let sent = try writeRawSocket(request, descriptor: descriptor)
-        try expect(sent > headlessMaximumMessageBytes, "raw request should cross the protocol limit")
+        _ = try writeRawSocket(request, descriptor: descriptor)
         let response = try ProtocolCodec.decodeLine(
             CommandResponse.self, from: readRawSocketLine(descriptor: descriptor)
         )

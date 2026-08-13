@@ -248,6 +248,89 @@ final class ChromiumProcess {
     }
 }
 
+private struct ChromiumInputTarget {
+    let reference: String
+    let role: String
+    let name: String
+    let x: Double
+    let y: Double
+
+    init(_ value: JSONValue) throws {
+        guard case .object(let object) = value,
+              let reference = object["ref"]?.stringValue,
+              let role = object["role"]?.stringValue,
+              let name = object["name"]?.stringValue,
+              let x = object["x"]?.numberValue,
+              let y = object["y"]?.numberValue,
+              x.isFinite, y.isFinite,
+              x >= 0, y >= 0,
+              x <= ProtocolBounds.screenshotDimension,
+              y <= ProtocolBounds.screenshotDimension else {
+            throw CDPError.invalidResponse("trusted input target")
+        }
+        self.reference = reference
+        self.role = role
+        self.name = name
+        self.x = x
+        self.y = y
+    }
+}
+
+private struct ChromiumKey {
+    let key: String
+    let code: String
+    let virtualKeyCode: Int
+    let text: String?
+    let modifiers: Int
+
+    static func resolve(_ input: String) -> ChromiumKey {
+        let named: [String: (key: String, code: String, virtualKeyCode: Int, text: String?)] = [
+            "Enter": ("Enter", "Enter", 13, "\r"),
+            "Return": ("Enter", "Enter", 13, "\r"),
+            "Tab": ("Tab", "Tab", 9, nil),
+            "Escape": ("Escape", "Escape", 27, nil),
+            "Esc": ("Escape", "Escape", 27, nil),
+            "Backspace": ("Backspace", "Backspace", 8, nil),
+            "Delete": ("Delete", "Delete", 46, nil),
+            "ArrowLeft": ("ArrowLeft", "ArrowLeft", 37, nil),
+            "ArrowUp": ("ArrowUp", "ArrowUp", 38, nil),
+            "ArrowRight": ("ArrowRight", "ArrowRight", 39, nil),
+            "ArrowDown": ("ArrowDown", "ArrowDown", 40, nil),
+            "Home": ("Home", "Home", 36, nil),
+            "End": ("End", "End", 35, nil),
+            "PageUp": ("PageUp", "PageUp", 33, nil),
+            "PageDown": ("PageDown", "PageDown", 34, nil),
+            "Space": (" ", "Space", 32, " "),
+            " ": (" ", "Space", 32, " "),
+        ]
+        if let match = named[input] {
+            return ChromiumKey(
+                key: match.key, code: match.code, virtualKeyCode: match.virtualKeyCode,
+                text: match.text, modifiers: 0
+            )
+        }
+        if input.count == 1, let scalar = input.unicodeScalars.first {
+            let value = Int(scalar.value)
+            if scalar.isASCII, CharacterSet.letters.contains(scalar) {
+                let upper = input.uppercased()
+                return ChromiumKey(
+                    key: input, code: "Key\(upper)",
+                    virtualKeyCode: Int(upper.unicodeScalars.first?.value ?? scalar.value),
+                    text: input, modifiers: input == upper ? 8 : 0
+                )
+            }
+            if scalar.isASCII, CharacterSet.decimalDigits.contains(scalar) {
+                return ChromiumKey(
+                    key: input, code: "Digit\(input)", virtualKeyCode: value,
+                    text: input, modifiers: 0
+                )
+            }
+            return ChromiumKey(key: input, code: "", virtualKeyCode: value, text: input, modifiers: 0)
+        }
+        return ChromiumKey(key: input, code: input, virtualKeyCode: 0, text: nil, modifiers: 0)
+    }
+}
+
 final class LinuxBrowserSession: @unchecked Sendable {
     private struct NetworkMock: Sendable {
         let url: String
@@ -338,28 +421,83 @@ final class LinuxBrowserSession: @unchecked Sendable {
         )
     }
 
-    func click(parameters: [String: JSONValue]) throws -> JSONValue {
+    private func trustedInputTarget(
+        parameters: [String: JSONValue], action: String
+    ) throws -> ChromiumInputTarget {
         let args = try browserTargetArguments(parameters)
-        let result = try evaluate("return globalThis.__headlessAgent.click(args);", input: ["args": args])
+        return try ChromiumInputTarget(evaluate(
+            "return globalThis.__headlessAgent.inputTarget(args, '\(action)');",
+            input: ["args": args]
+        ))
+    }
+
+    private func dispatchKey(
+        _ key: ChromiumKey, modifiers overrideModifiers: Int? = nil, includeText: Bool = true
+    ) throws {
+        let modifiers = overrideModifiers ?? key.modifiers
+        var parameters: [String: Any] = [
+            "type": includeText && key.text != nil ? "keyDown" : "rawKeyDown",
+            "key": key.key,
+            "code": key.code,
+            "windowsVirtualKeyCode": key.virtualKeyCode,
+            "nativeVirtualKeyCode": key.virtualKeyCode,
+            "modifiers": modifiers,
+        ]
+        if includeText, let text = key.text {
+            parameters["text"] = text
+            parameters["unmodifiedText"] = text
+        }
+        _ = try command("Input.dispatchKeyEvent", parameters: parameters)
+        parameters["type"] = "keyUp"
+        parameters.removeValue(forKey: "text")
+        parameters.removeValue(forKey: "unmodifiedText")
+        _ = try command("Input.dispatchKeyEvent", parameters: parameters)
+    }
+
+    func click(parameters: [String: JSONValue]) throws -> JSONValue {
+        let target = try trustedInputTarget(parameters: parameters, action: "click")
+        _ = try command("Input.dispatchMouseEvent", parameters: [
+            "type": "mouseMoved", "x": target.x, "y": target.y,
+        ])
+        _ = try command("Input.dispatchMouseEvent", parameters: [
+            "type": "mousePressed", "x": target.x, "y": target.y,
+            "button": "left", "buttons": 1, "clickCount": 1,
+        ])
+        _ = try command("Input.dispatchMouseEvent", parameters: [
+            "type": "mouseReleased", "x": target.x, "y": target.y,
+            "button": "left", "buttons": 0, "clickCount": 1,
+        ])
         // A click can synchronously begin a cross-document navigation. Let the
         // foreground wait command observe that transition before frame capture
         // resumes, instead of asking Chromium to composite a disappearing page.
         pauseRecordingCapture()
-        return result
+        return .object([
+            "clicked": .string(target.reference),
+            "role": .string(target.role),
+            "name": .string(target.name),
+        ])
     }
 
     func fill(parameters: [String: JSONValue]) throws -> JSONValue {
-        var args = try browserTargetArguments(parameters)
         guard let value = parameters["value"]?.stringValue else { throw CDPError.commandFailed("missing value") }
-        args["value"] = value
-        return try evaluate("return globalThis.__headlessAgent.fill(args);", input: ["args": args])
+        let target = try trustedInputTarget(parameters: parameters, action: "fill")
+        try dispatchKey(ChromiumKey.resolve("a"), modifiers: 2, includeText: false)
+        try dispatchKey(ChromiumKey.resolve("Backspace"))
+        if !value.isEmpty {
+            _ = try command("Input.insertText", parameters: ["text": value])
+        }
+        return .object([
+            "filled": .string(target.reference),
+            "valueLength": .number(Double(value.utf16.count)),
+        ])
     }
 
     func press(parameters: [String: JSONValue]) throws -> JSONValue {
         guard let key = parameters["key"]?.stringValue, !key.isEmpty, key.count <= 32 else {
             throw HostError(code: .operationFailed, message: "Missing command parameter: key")
         }
-        return try evaluate("return globalThis.__headlessAgent.press(key);", input: ["key": key])
+        try dispatchKey(ChromiumKey.resolve(key))
+        return .object(["pressed": .string(key)])
     }
 
     func scroll(parameters: [String: JSONValue]) throws -> JSONValue {

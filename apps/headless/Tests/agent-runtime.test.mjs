@@ -182,6 +182,8 @@ controls.innerHTML = `
 window.document.body.prepend(controls);
 const button = controls.querySelector('button');
 const input = controls.querySelector('input');
+button.getBoundingClientRect = () => ({x: 20, y: 20, top: 20, left: 20, right: 120, bottom: 60, width: 100, height: 40});
+input.getBoundingClientRect = () => ({x: 20, y: 80, top: 80, left: 20, right: 220, bottom: 120, width: 200, height: 40});
 let clicks = 0;
 let inputs = 0;
 let changes = 0;
@@ -191,6 +193,20 @@ input.addEventListener('input', () => { inputs += 1; });
 input.addEventListener('change', () => { changes += 1; });
 input.addEventListener('keydown', event => pressed.push(`down:${event.key}`));
 input.addEventListener('keyup', event => pressed.push(`up:${event.key}`));
+
+window.document.elementFromPoint = () => button;
+const trustedClickTarget = agent.inputTarget({role: 'button', name: 'Runtime action'}, 'click');
+assert.match(trustedClickTarget.ref, /^@e\d+$/);
+assert.equal(trustedClickTarget.role, 'button');
+assert(Number.isFinite(trustedClickTarget.x) && Number.isFinite(trustedClickTarget.y));
+window.document.elementFromPoint = () => input;
+const trustedFillTarget = agent.inputTarget({role: 'textbox', name: 'Runtime input'}, 'fill');
+assert.equal(trustedFillTarget.role, 'textbox');
+window.document.elementFromPoint = () => window.document.body;
+assert.throws(
+  () => agent.inputTarget({role: 'button', name: 'Runtime action'}, 'click'),
+  /ELEMENT_OBSCURED/,
+);
 
 const clicked = agent.click({role: 'button', name: 'Runtime action'});
 assert.match(clicked.clicked, /^@e\d+$/);

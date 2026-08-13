@@ -560,8 +560,7 @@ if (!globalThis.__headlessAgent) {
       }
       return {origin: String(location.origin).slice(0, 2048), stores};
     };
-    const click = args => {
-      const element = target(args);
+    const requireSafeClickTarget = element => {
       if (element instanceof HTMLAnchorElement && element.href) {
         const destination = new URL(element.href, document.baseURI);
         const scheme = destination.protocol.toLowerCase();
@@ -571,10 +570,38 @@ if (!globalThis.__headlessAgent) {
         const safety = resourceSafety(destination.href);
         if (safety.level === 'blocked') fail('UNSAFE_RESOURCE_TYPE', `UNSAFE_RESOURCE_TYPE:${safety.extension}`);
       }
+    };
+    const click = args => {
+      const element = target(args);
+      requireSafeClickTarget(element);
       element.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});
       element.focus({preventScroll: true});
       element.click();
       return {clicked: refFor(element), role: role(element), name: name(element)};
+    };
+    // Chromium uses this isolated-world resolver only to select and validate a
+    // target. The host performs the action through CDP's trusted input domain.
+    // Page-derived coordinates remain bounded to the visible viewport.
+    const inputTarget = (args, action) => {
+      const element = target(args);
+      if (action === 'click') requireSafeClickTarget(element);
+      if (action === 'fill') {
+        const editable = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element.isContentEditable;
+        if (!editable || element.disabled || element.readOnly) throw new Error('NOT_EDITABLE');
+      }
+      element.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});
+      element.focus({preventScroll: true});
+      const rect = element.getBoundingClientRect();
+      const left = Math.max(0, rect.left);
+      const right = Math.min(innerWidth, rect.right);
+      const top = Math.max(0, rect.top);
+      const bottom = Math.min(innerHeight, rect.bottom);
+      if (right <= left || bottom <= top) throw new Error('ELEMENT_NOT_VISIBLE');
+      const x = left + (right - left) / 2;
+      const y = top + (bottom - top) / 2;
+      const hit = document.elementFromPoint(x, y);
+      if (!hit || (hit !== element && !element.contains(hit))) throw new Error('ELEMENT_OBSCURED');
+      return {ref: refFor(element), role: role(element), name: name(element), x, y};
     };
     const fill = args => {
       const element = target(args);
@@ -755,7 +782,7 @@ if (!globalThis.__headlessAgent) {
       return {count: document.getAnimations().length, animations: all, truncated: document.getAnimations().length > all.length};
     };
     return {
-      snapshot, click, fill, press, scroll, state, tour, screenshotPlan,
+      snapshot, click, fill, press, inputTarget, scroll, state, tour, screenshotPlan,
       scrollToCapturePoint, rectangle, styles, storage,
       performance: performanceSummary, animations
     };
