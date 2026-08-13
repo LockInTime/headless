@@ -1213,7 +1213,12 @@ struct ProtocolTests {
             engines.count == BrowserEngineName.allCases.count,
             "capabilities should contain exactly one profile for every engine"
         )
-        for profile in BrowserEngineCapabilities.all {
+        try expect(
+            BrowserEngineCapabilities.all.map(\.engine) == BrowserEngineName.allCases,
+            "capability profiles should be generated in engine-enum order"
+        )
+        for engineName in BrowserEngineName.allCases {
+            let profile = BrowserEngineCapabilities.profile(for: engineName)
             guard case .object(let engine)? = engines[profile.engine.rawValue],
                   case .array(let rawSupported)? = engine["commands"],
                   case .array(let rawUnsupported)? = engine["unsupportedCommands"],

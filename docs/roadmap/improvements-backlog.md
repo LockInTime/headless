@@ -269,8 +269,12 @@ oversized line / local-command rejection (`MCP/main.swift:64-66`).~~ **Done:**
 `HeadlessMCPTests` drives the built stdio process through every named case and
 uses a private local socket server to verify a real browser-command round trip.
 
-**C4. Machine-accurate `capabilities`** ([#32](https://github.com/LockInTime/headless/issues/32)) — generate from `CommandName.allCases`
-and the engine matrix (see B6) so agents can trust it.
+**C4. Machine-accurate `capabilities`** ([#32](https://github.com/LockInTime/headless/issues/32)) — ~~generate from `CommandName.allCases`
+and the engine matrix (see B6) so agents can trust it.~~ **Done:** the document
+derives commands from `CommandName.allCases`, engine profiles from
+`BrowserEngineName.allCases`, and capture formats and bounds from their runtime
+definitions. The protocol suite proves both command partitions are exhaustive
+and every declared engine has exactly one profile.
 
 **C5. Harness onboarding [exists: skill content].** ([#33](https://github.com/LockInTime/headless/issues/33)) ~~Root `AGENTS.md` +
 `CLAUDE.md`; mirror the skill into `.claude/skills/` so Claude Code

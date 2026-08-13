@@ -106,7 +106,17 @@ public struct BrowserEngineCapabilities: Sendable {
         screenshotClipboard: false
     )
 
-    public static let all: [BrowserEngineCapabilities] = [.webkit, .chromium]
+    public static func profile(for engine: BrowserEngineName) -> BrowserEngineCapabilities {
+        switch engine {
+        case .webkit: webkit
+        case .chromium: chromium
+        }
+    }
+
+    /// Generated from the engine enum so adding an engine cannot silently
+    /// leave it out of the machine-readable capability document.
+    public static let all: [BrowserEngineCapabilities] =
+        BrowserEngineName.allCases.map { BrowserEngineCapabilities.profile(for: $0) }
 }
 
 public var currentBrowserEngineCapabilities: BrowserEngineCapabilities {

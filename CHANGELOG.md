@@ -85,6 +85,10 @@ Cutting that release is tracked in
 
 ### Changed
 
+- Machine-readable capabilities now derive their command and engine inventories
+  exhaustively from the protocol enums, preventing new commands or engines from
+  being silently omitted.
+
 - macOS agent startup now opens browser windows without activating Headless or
   covering the user's current app. The startup presentation can be configured
   persistently or overridden for one launch.
