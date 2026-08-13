@@ -14,6 +14,8 @@ on:
       - "apps/headless/install-linux.sh"
       - "apps/headless/install.sh"
       - "apps/headless/Tests/linux-installer.sh"
+      - "apps/headless/Tests/macos-distribution.sh"
+      - "apps/headless/headless.entitlements"
       - "apps/headless/Package.swift"
       - "apps/headless/Sources/HeadlessProtocol/ProductVersion.swift"
       - "apps/headless/VERSION"
@@ -75,8 +77,41 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install FFmpeg
         run: brew install ffmpeg
+      - name: Import Developer ID certificate
+        if: needs.version.outputs.publish == 'true'
+        id: signing
+        shell: bash
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [[ -n "$CERTIFICATE_BASE64" && -n "$CERTIFICATE_PASSWORD" ]] || {
+            echo "Apple Developer ID certificate secrets are required for tagged releases" >&2
+            exit 64
+          }
+          keychain="$RUNNER_TEMP/headless-signing.keychain-db"
+          certificate="$RUNNER_TEMP/headless-developer-id.p12"
+          keychain_password="$(uuidgen)$(uuidgen)"
+          printf '%s' "$CERTIFICATE_BASE64" | base64 -D > "$certificate"
+          chmod 0600 "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          identities="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p')"
+          [[ "$(printf '%s\n' "$identities" | sed '/^$/d' | wc -l | tr -d ' ')" == 1 ]] || {
+            echo "The certificate archive must contain exactly one Developer ID Application identity" >&2
+            exit 64
+          }
+          echo "identity=$identities" >> "$GITHUB_OUTPUT"
       - name: Build
         env:
+          CODESIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
+          HEADLESS_ARCHS: arm64 x86_64
+          HEADLESS_RELEASE_BUILD: ${{ needs.version.outputs.publish == 'true' && '1' || '0' }}
           HEADLESS_VERSION: ${{ needs.version.outputs.version }}
         run: ./apps/headless/build.sh
       - name: Unit tests
@@ -85,18 +120,57 @@ jobs:
         run: ./apps/headless/test.sh
       - name: E2E
         run: zsh ./apps/headless/Tests/macos-e2e.sh
-      - name: Package
+      - name: Validate distribution bundle
+        shell: bash
         env:
+          PUBLISH: ${{ needs.version.outputs.publish }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          set -eu
-          cd apps/headless
-          ditto -c -k --keepParent Headless.app "Headless-${VERSION}-macos.zip"
-          test -s "Headless-${VERSION}-macos.zip"
-          unzip -t "Headless-${VERSION}-macos.zip"
-          unzip -Z1 "Headless-${VERSION}-macos.zip" | grep -qx 'Headless.app/Contents/MacOS/Headless'
-          unzip -Z1 "Headless-${VERSION}-macos.zip" | grep -qx 'Headless.app/Contents/Resources/bin/headless'
-          unzip -Z1 "Headless-${VERSION}-macos.zip" | grep -qx 'Headless.app/Contents/Resources/bin/headless-mcp'
+          set -euo pipefail
+          mode=adhoc
+          if [[ "$PUBLISH" == true ]]; then mode=developer-id; fi
+          ./apps/headless/Tests/macos-distribution.sh \
+            apps/headless/Headless.app "$VERSION" "$mode" "arm64 x86_64"
+      - name: Prepare notarization key
+        if: needs.version.outputs.publish == 'true'
+        shell: bash
+        env:
+          NOTARY_KEY_BASE64: ${{ secrets.APPLE_NOTARY_KEY_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          [[ -n "$NOTARY_KEY_BASE64" && -n "$NOTARY_KEY_ID" && -n "$NOTARY_ISSUER_ID" ]] || {
+            echo "Apple notary API secrets are required for tagged releases" >&2
+            exit 64
+          }
+          printf '%s' "$NOTARY_KEY_BASE64" | base64 -D > "$RUNNER_TEMP/AuthKey.p8"
+          chmod 0600 "$RUNNER_TEMP/AuthKey.p8"
+      - name: Package
+        env:
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
+          PUBLISH: ${{ needs.version.outputs.publish }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$PUBLISH" == true ]]; then
+            ./.github/scripts/macos-package.sh \
+              apps/headless/Headless.app "$VERSION" apps/headless --notarize
+          else
+            ./.github/scripts/macos-package.sh \
+              apps/headless/Headless.app "$VERSION" apps/headless
+          fi
+      - name: Clean signing material
+        if: always() && needs.version.outputs.publish == 'true'
+        shell: bash
+        env:
+          KEYCHAIN: ${{ runner.temp }}/headless-signing.keychain-db
+        run: |
+          set -euo pipefail
+          if [[ -f "$KEYCHAIN" ]]; then security delete-keychain "$KEYCHAIN" || true; fi
+          rm -f "$RUNNER_TEMP/headless-developer-id.p12" "$RUNNER_TEMP/AuthKey.p8"
       - uses: actions/upload-artifact@v7
         with:
           name: macos
@@ -269,7 +343,7 @@ jobs:
 
             | File | Platform |
             | --- | --- |
-            | `Headless-${{ needs.version.outputs.version }}-macos.zip` | macOS (ad-hoc signed `.app`) |
+            | `Headless-${{ needs.version.outputs.version }}-macos.zip` | macOS universal, Developer ID signed and notarized |
             | `headless-${{ needs.version.outputs.version }}-linux-amd64.tar.gz` | Linux x86_64 |
             | `headless-${{ needs.version.outputs.version }}-linux-arm64.tar.gz` | Linux arm64 |
             | `install.sh` | Verified Linux bootstrap installer |
@@ -277,7 +351,7 @@ jobs:
 
             ### Notes
 
-            - **macOS:** Unzip and run `Headless.app`. Gatekeeper may warn (ad-hoc signature; notarization not included yet). CLI: `Headless.app/Contents/Resources/bin/headless`.
+            - **macOS:** Unzip and run `Headless.app`, or install with `brew install --cask LockInTime/headless/headless` after the tap sync completes. The app is universal, Developer ID signed, notarized, and stapled. CLI: `Headless.app/Contents/Resources/bin/headless`.
             - **Linux:** `curl -fsSL https://github.com/LockInTime/headless/releases/latest/download/install.sh | sh`. The installer verifies the selected tarball against `SHA256SUMS`. Chromium and FFmpeg remain system dependencies.
             - **Container:** `docker pull ${{ env.CONTAINER_IMAGE }}:${{ needs.version.outputs.version }}`. The image includes Chromium and FFmpeg and runs as uid 10001.
           files: |

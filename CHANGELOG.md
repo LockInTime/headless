@@ -24,6 +24,9 @@ Cutting that release is tracked in
 
 ### Added
 
+- Tagged macOS releases now ship a universal Apple Silicon/Intel app through a
+  checksum-pinned Homebrew cask, with Developer ID signing, hardened runtime,
+  notarization, stapling, and Gatekeeper validation enforced by release CI.
 - Tagged releases now publish a smoke-tested, non-root amd64/arm64 production
   image to GHCR with SemVer and commit-SHA tags, provenance, and an SBOM.
 - A checksum-verifying Linux bootstrap installer now selects the correct

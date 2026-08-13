@@ -83,6 +83,12 @@ of GHCR and requires an anonymous pull by digest before it creates the GitHub
 Release, so a private image fails closed instead of producing a broken public
 release.
 
+macOS release signing, notarization, and Homebrew publication follow the
+operator contract in [`apps/headless/docs/P3.md`](apps/headless/docs/P3.md).
+Never replace missing Apple credentials with ad-hoc signing on a tag, and never
+grant the product release workflow cross-repository write access. The tap
+updates itself with its own repository-scoped workflow token.
+
 ## Style
 
 - **Swift:** Foundation and system frameworks only. No new SwiftPM

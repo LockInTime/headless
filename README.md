@@ -171,12 +171,24 @@ accessible name; screenshots and recordings capture the visible media pixels.
 ### macOS
 
 ```sh
+brew install --cask LockInTime/headless/headless
+headless help
+```
+
+Beginning with the next signed release, macOS bundles are universal for Apple
+Silicon and Intel, Developer ID signed, notarized, and stapled. The tap syncs
+after publication, and the cask also links `headless-mcp`. To build locally
+instead:
+
+```sh
 ./apps/headless/build.sh
 ./apps/headless/Headless.app/Contents/Resources/bin/headless help
 ```
 
 Requires Xcode Command Line Tools. The build checks for Swift, Apple utilities,
-and a compatible SDK before compiling.
+and a compatible SDK before compiling. Local builds target the current
+architecture by default; set `HEADLESS_ARCHS="arm64 x86_64"` to reproduce the
+universal release bundle.
 
 ### Linux
 
@@ -263,8 +275,8 @@ sha256sum --ignore-missing -c SHA256SUMS              # Linux
 shasum -a 256 --ignore-missing -c SHA256SUMS          # macOS
 ```
 
-See the Actions `Release` workflow and the release notes on each tag for
-install caveats (Gatekeeper; Linux Chromium/FFmpeg).
+See the Actions `Release` workflow and the release notes on each tag for Linux
+Chromium/FFmpeg install caveats.
 
 The `Release` workflow can also be run manually with `dry_run` enabled. That
 builds, verifies, and uploads all three workflow artifacts without creating a

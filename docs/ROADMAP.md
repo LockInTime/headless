@@ -98,6 +98,10 @@ Honest snapshot, so newcomers know what is real:
   E2E scripts; 11 recorded QA evidence videos in `docs/qa/evidence/`.
 - Tag-triggered release CI producing a macOS app zip and Linux
   amd64/arm64 tarballs (v1.0.0–v1.0.2 published).
+- Phase 3 distribution automation for universal Developer ID macOS builds,
+  notarization/stapling, a checksum-pinned Homebrew cask, the verified Linux
+  bootstrap, release checksums, and a multi-platform GHCR image. These paths
+  become user-visible with the next tag.
 - A Next.js marketing/docs site (`apps/web`) — built, not deployed.
 - An agent skill (`.agents/skills/headless-computer-use/`) with safety rules,
   command reference, and a Docker sandbox wrapper.
@@ -106,9 +110,9 @@ Honest snapshot, so newcomers know what is real:
 - ~~No CI on pull requests or `main`~~ — PR CI landed (`.github/workflows/ci.yml`,
   backlog §D1/§D3). Correctness fixes in §A are still outstanding, and the
   macOS E2E is nightly/label-gated rather than a per-PR gate.
-- No signing/notarization, no Homebrew/apt/npm, no published Docker image, no
-  checksums on release assets. "Install" means "download from GitHub
-  Releases and click through a Gatekeeper warning".
+- The npm wrapper and distro-native Linux packages remain unimplemented.
+  Homebrew, notarized ZIP, Linux bootstrap, checksums, and GHCR automation are
+  implemented but are not user-visible until the next tag.
 - The latest features (capture formats, context pruning) are **unreleased** —
   no tag since v1.0.2 (2026-07-19).
 - No `CLAUDE.md`/`AGENTS.md`; the skill is not auto-discovered by Claude Code.
@@ -149,9 +153,9 @@ codebase's existing behavior because they are the product:
 
 | Platform | Status today | Target |
 | --- | --- | --- |
-| **macOS 13+** (Apple Silicon) | Works; ad-hoc signed | Signed + notarized, Homebrew, universal binary |
-| **macOS Intel** | Not built | Universal binary in release CI |
-| **Linux** (Debian/Ubuntu, non-Snap Chromium) | Works; tarball + Docker | curl installer, published Docker image (GHCR), apt guidance |
+| **macOS 13+** (Apple Silicon) | Universal signed release pipeline awaiting tag | Signed + notarized, Homebrew, universal binary |
+| **macOS Intel** | Universal release pipeline awaiting tag | Universal binary in release CI |
+| **Linux** (Debian/Ubuntu, non-Snap Chromium) | Verified installer and GHCR pipeline awaiting tag | curl installer, published Docker image (GHCR), apt guidance |
 | **Linux other distros** | Works where a non-Snap Chromium exists | Documented candidate paths per distro family |
 | **Windows 10/11** | Not supported | **Stretch goal (Phase W)** — Chromium host ported; not required for "done". See [architecture decisions §6](roadmap/architecture-decisions.md). |
 | **Any OS via Docker** | Works (build locally) | `docker run ghcr.io/…/headless` one-liner, including as the practical Windows answer (WSL2/Docker Desktop) until Phase W lands |

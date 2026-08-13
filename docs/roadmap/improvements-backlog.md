@@ -359,10 +359,14 @@ and the refreshed five-repeat snapshot includes task-aware action inspection.
 
 Owner-decided scope: package managers, no hosted service.
 
-- **E1.** ([#39](https://github.com/LockInTime/headless/issues/39)) macOS Developer ID signing + notarization + stapling (today ad-hoc,
-  `build.sh:96-114`); universal binary (today `uname -m` on an arm64 runner);
-  Homebrew tap/cask. Resolve the `com.headless.app` provisioning question for
-  the passkey entitlement (`.hermes` plan flagged it; `build.sh:97-109`).
+- **E1.** [x] ([#39](https://github.com/LockInTime/headless/issues/39)) ~~macOS Developer ID signing + notarization + stapling; universal binary;
+  Homebrew tap/cask; resolve passkey provisioning.~~ **Done:** tag builds fail
+  closed unless every arm64/x86_64 executable is hardened-runtime Developer ID
+  signed and securely timestamped, accepted by `notarytool`, stapled, and
+  Gatekeeper-valid. A checksum-pinned cask is published by the tap's own
+  repository-scoped workflow. The restricted passkey entitlement is omitted unless Apple
+  approves a matching `com.headless.app` provisioning profile; the existing
+  fallback remains active otherwise.
 - **E2.** [x] ([#40](https://github.com/LockInTime/headless/issues/40)) ~~Linux `curl | sh` installer wrapping the existing tarball +
   preflight; align its FFmpeg policy with the runtime allow-list; single-source
   Snap detection.~~ **Done:** the release bootstrap resolves amd64/arm64,
