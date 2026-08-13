@@ -1,6 +1,6 @@
 {
   "name": "@lockintime/headless",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Verified npm launcher for the Headless agent browser",
   "license": "MIT",
   "repository": {

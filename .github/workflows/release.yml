@@ -47,7 +47,13 @@ jobs:
       - id: version
         shell: bash
         env:
+          APPLE_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_BASE64: ${{ secrets.APPLE_NOTARY_KEY_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           DRY_RUN: ${{ inputs.dry_run }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
@@ -66,6 +72,18 @@ jobs:
               echo "Release tag $version does not match npm launcher $npm_version" >&2
               exit 64
             fi
+            for required in \
+              APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 \
+              APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD \
+              APPLE_NOTARY_KEY_BASE64 \
+              APPLE_NOTARY_KEY_ID \
+              APPLE_NOTARY_ISSUER_ID \
+              NPM_TOKEN; do
+              if [[ -z "${!required:-}" ]]; then
+                echo "Required release secret is missing: $required" >&2
+                exit 64
+              fi
+            done
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$DRY_RUN" != "true" ]]; then

@@ -18,9 +18,14 @@ Two versions travel independently, on purpose:
 
 ## [Unreleased]
 
-Everything below has landed on `main` but is **not yet in a tagged release**.
-Cutting that release is tracked in
-[#45](https://github.com/LockInTime/headless/issues/45).
+No changes yet.
+
+## [1.1.0] — 2026-08-13
+
+This release carries the roadmap work completed since v1.0.2, including
+progressive context pruning, expanded capture formats, a shared cross-engine
+core and conformance suite, trusted Chromium input, hardened distribution, and
+deeper agent-harness integration.
 
 ### Added
 
@@ -154,12 +159,12 @@ Cutting that release is tracked in
 ### Known gaps
 
 Tracked as [`backlog`](https://github.com/LockInTime/headless/labels/backlog)
-issues, grouped by roadmap phase into milestones. Highlights:
-a shutdown data race on the Linux host
-([#12](https://github.com/LockInTime/headless/issues/12)), responses that can
-exceed the 1 MiB frame ([#14](https://github.com/LockInTime/headless/issues/14)),
-and unsigned macOS builds
-([#39](https://github.com/LockInTime/headless/issues/39)).
+issues, grouped by roadmap phase into milestones. Highlights include deferred
+interaction design ([#35](https://github.com/LockInTime/headless/issues/35)),
+website and documentation depth
+([#47](https://github.com/LockInTime/headless/issues/47)–[#53](https://github.com/LockInTime/headless/issues/53)),
+and stretch Windows support
+([#56](https://github.com/LockInTime/headless/issues/56)).
 
 ## [1.0.2] — 2026-07-19
 
@@ -200,7 +205,8 @@ First tagged release: the P0–P2 contract on macOS and Linux.
 - Tag-triggered release workflow publishing a macOS app zip and Linux
   amd64/arm64 tarballs.
 
-[Unreleased]: https://github.com/LockInTime/headless/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/LockInTime/headless/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/LockInTime/headless/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/LockInTime/headless/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/LockInTime/headless/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/LockInTime/headless/releases/tag/v1.0.0
