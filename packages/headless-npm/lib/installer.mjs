@@ -21,8 +21,10 @@ const RELEASE_REPOSITORY = "LockInTime/headless";
 const MANIFEST_LIMIT = 256 * 1024;
 const ASSET_LIMIT = 512 * 1024 * 1024;
 const LOCK_WAIT_MS = 30_000;
-const LOCK_STALE_MS = 5 * 60_000;
+const LOCK_STALE_MS = 20 * 60_000;
 const REDIRECT_LIMIT = 5;
+const MANIFEST_TIMEOUT_MS = 30_000;
+const ASSET_TIMEOUT_MS = 120_000;
 const ALLOWED_DOWNLOAD_HOSTS = new Set([
   "github.com",
   "objects.githubusercontent.com",
@@ -122,11 +124,14 @@ function validateDownloadURL(url, allowedHosts, allowHTTP, allowCustomPort) {
 }
 
 async function trustedFetch(url, options) {
-  const { allowedHosts, allowHTTP, allowCustomPort, fetchImpl } = options;
+  const { allowedHosts, allowHTTP, allowCustomPort, fetchImpl, timeoutMilliseconds } = options;
   let current = new URL(url);
   for (let redirects = 0; redirects <= REDIRECT_LIMIT; redirects += 1) {
     validateDownloadURL(current, allowedHosts, allowHTTP, allowCustomPort);
-    const response = await fetchImpl(current, { redirect: "manual" });
+    const response = await fetchImpl(current, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(timeoutMilliseconds),
+    });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location) throw new InstallError("release download returned a redirect without a location");
@@ -361,10 +366,14 @@ export async function ensureInstalled(options = {}) {
       allowCustomPort: options.allowCustomPort === true,
       fetchImpl,
     };
-    const manifestResponse = await trustedFetch(`${baseURL}/SHA256SUMS`, fetchOptions);
+    const manifestResponse = await trustedFetch(`${baseURL}/SHA256SUMS`, {
+      ...fetchOptions, timeoutMilliseconds: MANIFEST_TIMEOUT_MS,
+    });
     const manifest = await boundedText(manifestResponse, MANIFEST_LIMIT);
     const checksum = checksumFromManifest(manifest, release.asset);
-    const assetResponse = await trustedFetch(`${baseURL}/${release.asset}`, fetchOptions);
+    const assetResponse = await trustedFetch(`${baseURL}/${release.asset}`, {
+      ...fetchOptions, timeoutMilliseconds: ASSET_TIMEOUT_MS,
+    });
     await downloadAsset(assetResponse, archive, checksum);
     await extractArchive(archive, staging, release);
     await chmod(join(staging, release.executable), 0o755);
