@@ -34,6 +34,10 @@ updates:
     ignore:
       - dependency-name: eslint
         update-types: ["version-update:semver-major"]
+      # TypeScript 7.0 has no compiler API, so eslint-config-next and
+      # typescript-eslint cannot use it. TypeScript 7.1 will restore an API.
+      - dependency-name: typescript
+        versions: [">=7.0.0 <7.1.0"]
 
   - package-ecosystem: github-actions
     directory: /
