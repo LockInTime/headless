@@ -20,7 +20,7 @@ Two versions travel independently, on purpose:
 
 No changes yet.
 
-## [1.1.0] — 2026-08-13
+## [1.1.0] — 2026-08-21
 
 This release carries the roadmap work completed since v1.0.2, including
 progressive context pruning, expanded capture formats, a shared cross-engine
@@ -98,6 +98,8 @@ deeper agent-harness integration.
 - Machine-readable capabilities now derive their command and engine inventories
   exhaustively from the protocol enums, preventing new commands or engines from
   being silently omitted.
+- Web dependencies refreshed (Next.js group, lucide-react, TypeScript 6 bridge,
+  @types/node).
 
 - macOS agent startup now opens browser windows without activating Headless or
   covering the user's current app. The startup presentation can be configured
