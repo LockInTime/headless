@@ -68,6 +68,7 @@ jobs:
             -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty DirectoryName
           if ($runtimeDir) {
             Write-Host "Runtime dir: $runtimeDir"
+            Copy-Item "$runtimeDir\*.dll" $bin -Force
             Add-Content $env:GITHUB_PATH $runtimeDir
             $env:PATH = "$runtimeDir;$env:PATH"
           } else {
@@ -80,7 +81,7 @@ jobs:
       - name: Build shared core (HeadlessProtocol)
         shell: pwsh
         working-directory: apps/headless
-        run: swift build --target HeadlessProtocol --build-tests-off 2>&1 | Tee-Object core-build.log
+        run: swift build --target HeadlessProtocol 2>&1 | Tee-Object core-build.log
 
       - name: Build protocol test executable
         if: success() || failure()
