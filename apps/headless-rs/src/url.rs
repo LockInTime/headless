@@ -26,7 +26,7 @@ impl Url {
         }
 
         // authority runs until the first '/', '?', or '#'
-        let after_authority = rest.find(|c| c == '/' || c == '?' || c == '#');
+        let after_authority = rest.find(['/', '?', '#']);
         let (authority, tail) = match after_authority {
             Some(i) => (&rest[..i], &rest[i..]),
             None => (rest, ""),

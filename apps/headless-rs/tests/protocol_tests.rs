@@ -96,7 +96,7 @@ fn message_size_limit() {
     // A line over the 1 MiB cap must be rejected at the decode boundary.
     let big = "x".repeat(headless_protocol::HEADLESS_MAXIMUM_MESSAGE_BYTES);
     let mut oversized = Vec::new();
-    oversized.extend_from_slice(&big.as_bytes());
+    oversized.extend_from_slice(big.as_bytes());
     oversized.push(b'\n');
     let result: Result<CommandRequest, _> = codec::decode_line(&oversized);
     assert!(result.is_err(), "oversized frame must be rejected");
