@@ -94,6 +94,16 @@ jobs:
         shell: pwsh
         working-directory: apps/headless
         run: |
+          # The winget install splits the stdlib across two trees. Merge the
+          # runtime tree into the toolchain tree so swiftc can find it.
+          $toolchainUsr = 'C:\Users\runneradmin\AppData\Local\Programs\Swift\Toolchains\6.3.3+Asserts\usr'
+          $runtimeUsr = 'C:\Users\runneradmin\AppData\Local\Programs\Swift\Runtimes\6.3.3\usr'
+          if (Test-Path $runtimeUsr) {
+            Write-Host "merging $runtimeUsr into $toolchainUsr"
+            Get-ChildItem $runtimeUsr -Directory | ForEach-Object {
+              robocopy $_.FullName (Join-Path $toolchainUsr $_.Name) /E /NFL /NDL /NJH /NJS | Out-Null
+            }
+          }
           New-Item -ItemType Directory -Force -Path spike-out | Out-Null
           # hello world sanity check through the whole toolchain
           Set-Content spike-out\hello.swift 'print("hello from windows")'
