@@ -69,6 +69,7 @@ jobs:
           if ($runtimeDir) {
             Write-Host "Runtime dir: $runtimeDir"
             Add-Content $env:GITHUB_PATH $runtimeDir
+            $env:PATH = "$runtimeDir;$env:PATH"
           } else {
             Write-Host 'swiftCore.dll not under Programs\Swift; searching C:\'
             where.exe /R C:\ swiftCore.dll 2>$null | Select-Object -First 3
