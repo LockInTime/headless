@@ -89,6 +89,26 @@ jobs:
         working-directory: apps/headless
         run: swift build --product headless-protocol-tests 2>&1 | Tee-Object tests-build.log
 
+      - name: Bypass SPM - swiftc direct typecheck of portable core
+        if: success() || failure()
+        shell: pwsh
+        working-directory: apps/headless
+        run: |
+          New-Item -ItemType Directory -Force -Path spike-out | Out-Null
+          # hello world sanity check through the whole toolchain
+          Set-Content spike-out\hello.swift 'print("hello from windows")'
+          swiftc spike-out\hello.swift -o spike-out\hello.exe 2>&1 | Tee-Object spike-out\hello-build.log
+          & .\spike-out\hello.exe 2>&1 | Tee-Object spike-out\hello-run.log
+
+          # type-check every HeadlessProtocol source that does not depend on
+          # SPM resource accessors (Bundle.module) or the C version header
+          $portable = Get-ChildItem Sources/HeadlessProtocol -Filter '*.swift' |
+            Where-Object { $_.Name -notin @('AgentRuntime.swift','HostCore.swift','ProductVersion.swift') } |
+            ForEach-Object { $_.FullName }
+          Write-Host "type-checking $($portable.Count) portable sources"
+          swiftc -typecheck -DHEADLESS_WINDOWS_SPIKE $portable 2>&1 | Tee-Object spike-out\portable-typecheck.log
+          Write-Host "portable typecheck exit=$LASTEXITCODE"
+
       - name: Upload build logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -97,4 +117,5 @@ jobs:
           path: |
             apps/headless/core-build.log
             apps/headless/tests-build.log
+            apps/headless/spike-out/
           if-no-files-found: ignore
