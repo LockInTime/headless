@@ -19,9 +19,25 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Swift toolchain
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "6.1"
+        shell: pwsh
+        run: |
+          winget install --id Swift.Toolchain -e --source winget `
+            --accept-source-agreements --accept-package-agreements --disable-interactivity
+          $loc = $null
+          foreach ($hive in @('HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+                              'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall',
+                              'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall')) {
+            Get-ItemProperty "$hive\*" -ErrorAction SilentlyContinue |
+              Where-Object { $_.DisplayName -like '*Swift*' } |
+              ForEach-Object { Write-Host "$($_.DisplayName) -> $($_.InstallLocation)"; if ($_.InstallLocation) { $loc = $_.InstallLocation } }
+          }
+          if (-not $loc -or -not (Test-Path (Join-Path $loc 'bin\swift.exe'))) {
+            Write-Host '--- fallback: searching C:\ for swift.exe ---'
+            where.exe /R C:\ swift.exe 2>$null | Select-Object -First 5
+            throw 'swift.exe still not located'
+          }
+          Add-Content $env:GITHUB_PATH (Join-Path $loc 'bin')
+          Add-Content $env:GITHUB_PATH (Join-Path $loc 'usr\bin')
 
       - name: Locate toolchain
         shell: pwsh
