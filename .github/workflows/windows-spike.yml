@@ -1,0 +1,131 @@
+name: Windows spike
+
+# Throwaway spike (step 1 of PLAN.md): try to build the shared core
+# (Sources/HeadlessProtocol) with Swift-for-Windows on a real runner.
+# Delete this file once the spike outcome is recorded.
+
+on:
+  push:
+    branches: [spike/windows-core]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Swift toolchain
+        shell: pwsh
+        run: |
+          winget install --id Swift.Toolchain -e --source winget `
+            --accept-source-agreements --accept-package-agreements --disable-interactivity
+          $loc = $null
+          foreach ($hive in @('HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+                              'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall',
+                              'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall')) {
+            Get-ItemProperty "$hive\*" -ErrorAction SilentlyContinue |
+              Where-Object { $_.DisplayName -like '*Swift*' } |
+              ForEach-Object { Write-Host "$($_.DisplayName) -> $($_.InstallLocation)"; if ($_.InstallLocation) { $loc = $_.InstallLocation } }
+          }
+          $toolchainBin = Join-Path $env:LOCALAPPDATA 'Programs\Swift\Toolchains'
+          if (Test-Path $toolchainBin) {
+            $found = Get-ChildItem $toolchainBin -Directory | Select-Object -First 1
+            $loc = Join-Path $found.FullName 'usr'
+            Write-Host "Discovered toolchain: $($found.FullName)"
+          }
+          if (-not $loc -or -not (Test-Path (Join-Path $loc 'bin\swift.exe'))) {
+            Write-Host '--- fallback: searching C:\ for swift.exe ---'
+            where.exe /R C:\ swift.exe 2>$null | Select-Object -First 5
+            throw 'swift.exe still not located'
+          }
+          Add-Content $env:GITHUB_PATH (Join-Path $loc 'bin')
+          Add-Content $env:GITHUB_PATH (Join-Path $loc 'usr\bin')
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Locate toolchain
+        shell: pwsh
+        run: |
+          $bin = Split-Path (Get-Command swift).Source
+          Write-Host "bin: $bin"
+          $deps = & dumpbin /DEPENDENTS (Join-Path $bin 'swift.exe') |
+            Where-Object { $_ -match '\.dll' } | ForEach-Object { ($_ -replace '.*\s','').Trim() }
+          Write-Host "swift.exe depends on: $($deps -join ', ')"
+          foreach ($d in $deps) {
+            $found = Get-ChildItem $bin -Filter $d -ErrorAction SilentlyContinue
+            if (-not $found) {
+              $sys = Get-Command $d -ErrorAction SilentlyContinue
+              if ($sys) { Write-Host "$d -> $($sys.Source)" }
+              else { Write-Host "MISSING EVERYWHERE: $d" }
+            } else { Write-Host "$d -> in toolchain bin" }
+          }
+          $runtimeDir = Get-ChildItem "$env:LOCALAPPDATA\Programs\Swift" -Recurse -Filter 'swiftCore.dll' `
+            -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty DirectoryName
+          if ($runtimeDir) {
+            Write-Host "Runtime dir: $runtimeDir"
+            Copy-Item "$runtimeDir\*.dll" $bin -Force
+            Add-Content $env:GITHUB_PATH $runtimeDir
+            $env:PATH = "$runtimeDir;$env:PATH"
+          } else {
+            Write-Host 'swiftCore.dll not under Programs\Swift; searching C:\'
+            where.exe /R C:\ swiftCore.dll 2>$null | Select-Object -First 3
+          }
+          $out = & (Join-Path $bin 'swift.exe') --version 2>&1
+          Write-Host "swift --version exit=$LASTEXITCODE output=$out"
+
+      - name: Build shared core (HeadlessProtocol)
+        shell: pwsh
+        working-directory: apps/headless
+        run: swift build --target HeadlessProtocol 2>&1 | Tee-Object core-build.log
+
+      - name: Build protocol test executable
+        if: success() || failure()
+        shell: pwsh
+        working-directory: apps/headless
+        run: swift build --product headless-protocol-tests 2>&1 | Tee-Object tests-build.log
+
+      - name: Bypass SPM - swiftc direct typecheck of portable core
+        if: success() || failure()
+        shell: pwsh
+        working-directory: apps/headless
+        run: |
+          # The winget install splits the stdlib across two trees. Merge the
+          # runtime tree into the toolchain tree so swiftc can find it.
+          $toolchainUsr = 'C:\Users\runneradmin\AppData\Local\Programs\Swift\Toolchains\6.3.3+Asserts\usr'
+          $runtimeUsr = 'C:\Users\runneradmin\AppData\Local\Programs\Swift\Runtimes\6.3.3\usr'
+          if (Test-Path $runtimeUsr) {
+            Write-Host "merging $runtimeUsr into $toolchainUsr"
+            Get-ChildItem $runtimeUsr -Directory | ForEach-Object {
+              robocopy $_.FullName (Join-Path $toolchainUsr $_.Name) /E /NFL /NDL /NJH /NJS | Out-Null
+            }
+          }
+          New-Item -ItemType Directory -Force -Path spike-out | Out-Null
+          # hello world sanity check through the whole toolchain
+          Set-Content spike-out\hello.swift 'print("hello from windows")'
+          swiftc spike-out\hello.swift -o spike-out\hello.exe 2>&1 | Tee-Object spike-out\hello-build.log
+          & .\spike-out\hello.exe 2>&1 | Tee-Object spike-out\hello-run.log
+
+          # type-check every HeadlessProtocol source that does not depend on
+          # SPM resource accessors (Bundle.module) or the C version header
+          $portable = Get-ChildItem Sources/HeadlessProtocol -Filter '*.swift' |
+            Where-Object { $_.Name -notin @('AgentRuntime.swift','HostCore.swift','ProductVersion.swift') } |
+            ForEach-Object { $_.FullName }
+          Write-Host "type-checking $($portable.Count) portable sources"
+          swiftc -typecheck -DHEADLESS_WINDOWS_SPIKE $portable 2>&1 | Tee-Object spike-out\portable-typecheck.log
+          Write-Host "portable typecheck exit=$LASTEXITCODE"
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-spike-logs
+          path: |
+            apps/headless/core-build.log
+            apps/headless/tests-build.log
+            apps/headless/spike-out/
+          if-no-files-found: ignore
