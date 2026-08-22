@@ -17,9 +17,4 @@ apps/web/next-env.d.ts
 # Local QA evidence is generated on demand; reviewed evidence lives in docs/qa.
 build/qa-evidence/
 
-# Generated artifacts left by the pre-rename Chromeless workspace.
-apps/chromeless/Chromeless.app/
-apps/chromeless/Chromeless.icns
-apps/chromeless/build/
-apps/chromeless/.build/
 *.provisionprofile

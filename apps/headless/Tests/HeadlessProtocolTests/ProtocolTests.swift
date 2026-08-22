@@ -1840,6 +1840,29 @@ struct ProtocolTests {
         }
     }
 
+    static func docsCommandReferenceMatchesHelp() throws {
+        let docPath = "docs/COMMANDS.md"
+        guard let doc = try? String(contentsOfFile: docPath, encoding: .utf8) else {
+            throw TestFailure(description: "missing \(docPath); run the suite from the apps/headless package root")
+        }
+        let helpLines = agentHelp.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard let start = helpLines.firstIndex(of: "Commands:"),
+              let end = helpLines.firstIndex(of: "Global options:"), start < end else {
+            throw TestFailure(description: "agentHelp lost its Commands/Global options markers")
+        }
+        var checked = 0
+        for line in helpLines[(start + 1)..<end] {
+            let usage = line.trimmingCharacters(in: .whitespaces)
+            if usage.isEmpty { continue }
+            try expect(
+                doc.contains(usage),
+                "docs/COMMANDS.md should contain the agentHelp usage line: \(usage)"
+            )
+            checked += 1
+        }
+        try expect(checked >= 30, "expected to check every command line, checked \(checked)")
+    }
+
     static func sharedHostCoreDispatch() throws {
         let root = "/tmp/headless-host-core-test-\(UUID().uuidString)"
         defer { try? FileManager.default.removeItem(atPath: root) }
@@ -1966,6 +1989,7 @@ struct ProtocolTests {
             ("typed host errors", typedHostErrorsRoundTrip),
             ("single-source contract constants", singleSourceContractConstants),
             ("shared host core dispatch", sharedHostCoreDispatch),
+            ("docs command reference matches help", docsCommandReferenceMatchesHelp),
         ]
 
         var failures = 0

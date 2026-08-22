@@ -442,10 +442,14 @@ Owner-decided scope: package managers, no hosted service.
   (`components/docs-markdown.ts:57-64`), unusable by anyone else.~~ **Done:**
   the website serializes the checked-in project config that uses the portable
   repository launcher.
-- **F7. Docs debt in-repo:** ([#53](https://github.com/LockInTime/headless/issues/53)) README states P1/P2 features but there is no
+- **F7. Docs debt in-repo:** ([#53](https://github.com/LockInTime/headless/issues/53)) ~~README states P1/P2 features but there is no
   single command reference doc; P1.md should document the `@eN` invalidation
   contract (A5) and the shared-profile session model (architecture §11);
-  `.gitignore:18-23` still references `apps/chromeless/`.
+  `.gitignore:18-23` still references `apps/chromeless/`.~~
+  Done 2026-08-21: added `apps/headless/docs/COMMANDS.md` with a drift test
+  (`docsCommandReferenceMatchesHelp`) pinning it to `agentHelp`; P1.md now
+  documents both the reference-lifetime contract and the shared-profile
+  session model; stale `.gitignore` entries removed.
 
 ## §G — Feature ideas (informed dump; schedule via roadmap phases) ([#54](https://github.com/LockInTime/headless/issues/54))
 
