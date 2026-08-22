@@ -53,15 +53,19 @@ jobs:
         run: |
           $bin = Split-Path (Get-Command swift).Source
           Write-Host "bin: $bin"
-          Get-ChildItem $bin -Filter '*.dll' | Measure-Object | ForEach-Object { Write-Host "dlls in bin: $($_.Count)" }
-          foreach ($exe in @('swift.exe','clang.exe','swift-frontend.exe')) {
-            $p = Join-Path $bin $exe
-            if (Test-Path $p) {
-              Write-Host "--- $exe ---"
-              $out = & $p --version 2>&1
-              Write-Host "exit=$LASTEXITCODE output=$out"
-            } else { Write-Host "$exe MISSING" }
+          $deps = & dumpbin /DEPENDENTS (Join-Path $bin 'swift.exe') |
+            Where-Object { $_ -match '\.dll' } | ForEach-Object { ($_ -replace '.*\s','').Trim() }
+          Write-Host "swift.exe depends on: $($deps -join ', ')"
+          foreach ($d in $deps) {
+            $found = Get-ChildItem $bin -Filter $d -ErrorAction SilentlyContinue
+            if (-not $found) {
+              $sys = Get-Command $d -ErrorAction SilentlyContinue
+              if ($sys) { Write-Host "$d -> $($sys.Source)" }
+              else { Write-Host "MISSING EVERYWHERE: $d" }
+            } else { Write-Host "$d -> in toolchain bin" }
           }
+          $out = & (Join-Path $bin 'swift.exe') --version 2>&1
+          Write-Host "swift --version exit=$LASTEXITCODE output=$out"
 
       - name: Build shared core (HeadlessProtocol)
         shell: pwsh
