@@ -55,10 +55,15 @@ we port only the shared core to Rust, never the whole product.
   secrets). Docs debt #53 closed.
 - Step 1: spike ran on real Windows runners and **failed** — Swift-for-Windows
   cannot even compile hello-world today. Evidence in architecture decision §6.
-- Step 2: adapter is off the table. Native Windows is deferred behind a
-  revisit trigger; WSL2/Docker is the supported Windows path.
+- Step 2: adapter ruled out. Per architecture decision §21, the shared core
+  is being ported to Rust instead: `apps/headless-rs` now carries the full
+  protocol layer (39 commands, strict validation, navigation boundary,
+  artifact rules, 1 MiB codec) with 10 tests mirroring the Swift suite's
+  security-critical cases, and CI builds it natively on Linux, macOS, and
+  Windows. Next increments: transport, CLI parser, Chromium CDP host.
 - Step 3: WSL2 install documented in README; macOS/Linux packaging already
-  shipped in the E-series work.
+  shipped in the E-series work. Once the Rust core gains a host, Windows
+  gets a real native story (winget/MSI) instead of WSL2.
 
 ## The plan
 

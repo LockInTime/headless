@@ -440,6 +440,38 @@ credentials.
 
 ---
 
+## 21. Rust port of the shared core, scoped to the protocol layer first
+
+**Status:** decided 2026-08-22 (owner approved after the Windows spike).
+
+**Decision:** the Swift-for-Windows spike (§6 update) failed, so a native
+Windows host needs the shared core in a language whose toolchain actually
+works on Windows. We port the shared core to Rust, incrementally and without
+disturbing the shipping Swift product:
+
+- **Scope:** `Sources/HeadlessProtocol/` semantics — protocol types,
+  validation, navigation boundaries, artifact-name rules, bounds. Later
+  increments: transport, CLI parser, then a Chromium engine host that ports
+  the Linux CDP logic (`BrowserProcess.swift`, `CDP.swift`) so macOS, Linux,
+  and Windows all run the same Chromium engine.
+- **Not in scope:** the agent runtime JS (stays as-is), the WKWebView macOS
+  host (stays Swift), the protocol version or wire format (unchanged; both
+  implementations speak protocol 0.5).
+- **Verification:** the Rust crate carries its own tests mirroring the Swift
+  protocol suite's security-critical cases (unsafe URL rejection, credential
+  embedding, frame caps, strict field validation), and CI builds it natively
+  on Linux **and Windows** from day one.
+- **Dependencies:** `serde`/`serde_json` only. The zero-third-party rule was
+  a Swift-host decision; for Rust these two are the ecosystem baseline and
+  are pinned.
+
+The Swift product remains the reference implementation until the Rust core
+passes an equivalent conformance suite; only then can it start replacing
+hosts. Nothing in this decision changes the hard rules: no arbitrary-JS verb,
+no TCP listener, fail closed, bounded everything.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status            | Date       |
@@ -457,5 +489,6 @@ credentials.
 | 18  | Treat WebKit page diagnostics as bounded untrusted evidence | Decided           | 2026-08-10 |
 | 19  | Keep macOS agent startup behind the current app             | Implemented       | 2026-08-12 |
 | 20  | Omit passkeys unless Apple provisions Developer ID release  | Implemented       | 2026-08-12 |
+| 21  | Rust port of shared core, protocol layer first              | In progress       | 2026-08-22 |
 
 New decisions append here with the same format.
