@@ -51,8 +51,17 @@ jobs:
       - name: Locate toolchain
         shell: pwsh
         run: |
-          (Get-Command swift -ErrorAction SilentlyContinue).Source
-          swift --version
+          $bin = Split-Path (Get-Command swift).Source
+          Write-Host "bin: $bin"
+          Get-ChildItem $bin -Filter '*.dll' | Measure-Object | ForEach-Object { Write-Host "dlls in bin: $($_.Count)" }
+          foreach ($exe in @('swift.exe','clang.exe','swift-frontend.exe')) {
+            $p = Join-Path $bin $exe
+            if (Test-Path $p) {
+              Write-Host "--- $exe ---"
+              $out = & $p --version 2>&1
+              Write-Host "exit=$LASTEXITCODE output=$out"
+            } else { Write-Host "$exe MISSING" }
+          }
 
       - name: Build shared core (HeadlessProtocol)
         shell: pwsh
