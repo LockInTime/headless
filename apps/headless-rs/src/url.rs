@@ -104,13 +104,12 @@ pub fn normalized_web_url(input: &str) -> Result<Url, ValidationError> {
     }
 
     let lower = trimmed.to_ascii_lowercase();
-    let candidate: String;
-    if lower.starts_with("http://") || lower.starts_with("https://") {
-        candidate = trimmed.to_string();
+    let candidate: String = if lower.starts_with("http://") || lower.starts_with("https://") {
+        trimmed.to_string()
     } else if trimmed.contains("://") {
         return Err(ValidationError::InvalidUrl(input.to_string()));
     } else if is_local_development_address(trimmed) {
-        candidate = format!("http://{trimmed}");
+        format!("http://{trimmed}")
     } else {
         // Reject explicit non-web schemes such as javascript:, data:, and
         // mailto:. A colon followed by digits is retained as a normal port.
@@ -119,8 +118,8 @@ pub fn normalized_web_url(input: &str) -> Result<Url, ValidationError> {
                 return Err(ValidationError::InvalidUrl(input.to_string()));
             }
         }
-        candidate = format!("https://{trimmed}");
-    }
+        format!("https://{trimmed}")
+    };
 
     let url = Url::parse(&candidate).ok_or_else(|| ValidationError::InvalidUrl(input.to_string()))?;
     if !is_web_navigation_url(&url) {
