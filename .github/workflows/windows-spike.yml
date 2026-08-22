@@ -21,13 +21,15 @@ jobs:
       - name: Install Swift toolchain
         shell: pwsh
         run: |
-          $url = 'https://download.swift.org/swift-6.3.3-release/windows10/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE-windows10.exe'
-          Invoke-WebRequest $url -OutFile swift-installer.exe
-          Start-Process .\swift-installer.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/DIR=C:\Swift' -Wait
+          winget install --id Swift.Toolchain -e --source winget --location 'C:\Swift' `
+            --accept-source-agreements --accept-package-agreements --disable-interactivity
           if (-not (Test-Path 'C:\Swift\bin\swift.exe')) {
-            Get-ChildItem 'C:\Swift' -Recurse -Filter '*.exe' -ErrorAction SilentlyContinue |
-              Select-Object -First 20 -ExpandProperty FullName
-            throw 'swift.exe not at C:\Swift\bin after silent install'
+            Write-Host '--- searching for swift.exe ---'
+            foreach ($root in @('C:\Swift', (Join-Path $env:LOCALAPPDATA 'Programs'), 'C:\Program Files')) {
+              Get-ChildItem $root -Recurse -Filter 'swift.exe' -ErrorAction SilentlyContinue -Depth 4 |
+                Select-Object -First 5 -ExpandProperty FullName
+            }
+            throw 'swift.exe not found after winget install'
           }
           Add-Content $env:GITHUB_PATH 'C:\Swift\bin'
           Add-Content $env:GITHUB_PATH 'C:\Swift\usr\bin'
