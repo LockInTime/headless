@@ -45,18 +45,14 @@ jobs:
           Add-Content $env:GITHUB_PATH (Join-Path $loc 'bin')
           Add-Content $env:GITHUB_PATH (Join-Path $loc 'usr\bin')
 
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Locate toolchain
         shell: pwsh
         run: |
           (Get-Command swift -ErrorAction SilentlyContinue).Source
           swift --version
-
-      - name: Set up MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Show toolchain
-        shell: pwsh
-        run: swift --version
 
       - name: Build shared core (HeadlessProtocol)
         shell: pwsh
