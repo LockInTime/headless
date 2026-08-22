@@ -31,6 +31,12 @@ jobs:
               Where-Object { $_.DisplayName -like '*Swift*' } |
               ForEach-Object { Write-Host "$($_.DisplayName) -> $($_.InstallLocation)"; if ($_.InstallLocation) { $loc = $_.InstallLocation } }
           }
+          $toolchainBin = Join-Path $env:LOCALAPPDATA 'Programs\Swift\Toolchains'
+          if (Test-Path $toolchainBin) {
+            $found = Get-ChildItem $toolchainBin -Directory | Select-Object -First 1
+            $loc = Join-Path $found.FullName 'usr'
+            Write-Host "Discovered toolchain: $($found.FullName)"
+          }
           if (-not $loc -or -not (Test-Path (Join-Path $loc 'bin\swift.exe'))) {
             Write-Host '--- fallback: searching C:\ for swift.exe ---'
             where.exe /R C:\ swift.exe 2>$null | Select-Object -First 5
