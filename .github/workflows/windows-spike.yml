@@ -1,0 +1,58 @@
+name: Windows spike
+
+# Throwaway spike (step 1 of PLAN.md): try to build the shared core
+# (Sources/HeadlessProtocol) with Swift-for-Windows on a real runner.
+# Delete this file once the spike outcome is recorded.
+
+on:
+  push:
+    branches: [spike/windows-core]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Swift toolchain
+        shell: pwsh
+        run: |
+          winget install --id Swift.Toolchain -e --source winget `
+            --accept-source-agreements --accept-package-agreements
+          $swiftBin = Join-Path $env:LOCALAPPDATA 'Programs\Swift\bin'
+          if (-not (Test-Path $swiftBin)) {
+            $swiftBin = 'C:\Swift\bin'
+          }
+          Add-Content $env:GITHUB_PATH $swiftBin
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Show toolchain
+        shell: pwsh
+        run: swift --version
+
+      - name: Build shared core (HeadlessProtocol)
+        shell: pwsh
+        working-directory: apps/headless
+        run: swift build --target HeadlessProtocol --build-tests-off 2>&1 | Tee-Object core-build.log
+
+      - name: Build protocol test executable
+        if: success() || failure()
+        shell: pwsh
+        working-directory: apps/headless
+        run: swift build --product headless-protocol-tests 2>&1 | Tee-Object tests-build.log
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-spike-logs
+          path: |
+            apps/headless/core-build.log
+            apps/headless/tests-build.log
+          if-no-files-found: ignore
