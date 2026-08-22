@@ -19,20 +19,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Swift toolchain
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.3.3"
+
+      - name: Locate toolchain
         shell: pwsh
         run: |
-          winget install --id Swift.Toolchain -e --source winget --location 'C:\Swift' `
-            --accept-source-agreements --accept-package-agreements --disable-interactivity
-          if (-not (Test-Path 'C:\Swift\bin\swift.exe')) {
-            Write-Host '--- searching for swift.exe ---'
-            foreach ($root in @('C:\Swift', (Join-Path $env:LOCALAPPDATA 'Programs'), 'C:\Program Files')) {
-              Get-ChildItem $root -Recurse -Filter 'swift.exe' -ErrorAction SilentlyContinue -Depth 4 |
-                Select-Object -First 5 -ExpandProperty FullName
-            }
-            throw 'swift.exe not found after winget install'
-          }
-          Add-Content $env:GITHUB_PATH 'C:\Swift\bin'
-          Add-Content $env:GITHUB_PATH 'C:\Swift\usr\bin'
+          (Get-Command swift -ErrorAction SilentlyContinue).Source
+          swift --version
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
