@@ -64,6 +64,15 @@ jobs:
               else { Write-Host "MISSING EVERYWHERE: $d" }
             } else { Write-Host "$d -> in toolchain bin" }
           }
+          $runtimeDir = Get-ChildItem "$env:LOCALAPPDATA\Programs\Swift" -Recurse -Filter 'swiftCore.dll' `
+            -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty DirectoryName
+          if ($runtimeDir) {
+            Write-Host "Runtime dir: $runtimeDir"
+            Add-Content $env:GITHUB_PATH $runtimeDir
+          } else {
+            Write-Host 'swiftCore.dll not under Programs\Swift; searching C:\'
+            where.exe /R C:\ swiftCore.dll 2>$null | Select-Object -First 3
+          }
           $out = & (Join-Path $bin 'swift.exe') --version 2>&1
           Write-Host "swift --version exit=$LASTEXITCODE output=$out"
 
