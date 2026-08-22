@@ -159,6 +159,31 @@ the only remote story. A hosted service is out of scope for this roadmap
 - **Interim answer (Phase 3):** published Docker image + WSL2 documented as
   the supported Windows path.
 
+**Update — 2026-08-22, Swift-for-Windows spike failed.** Per PLAN.md step 1,
+we attempted to build the shared core with Swift 6.3.3 for
+x86_64-unknown-windows-msvc on a real `windows-latest` runner
+(workflow: `.github/workflows/windows-spike.yml`, branch
+`spike/windows-core`; run logs preserved there). Findings:
+
+1. Cross-compilation from Linux is not possible; Swift SDK bundles target
+   Linux and WebAssembly only.
+2. The winget toolchain is broken out of the box: runtime DLLs are split
+   across two install trees (`Toolchains\6.3.3+Asserts\usr` and
+   `Runtimes\6.3.3\usr`). `swift.exe` exits `STATUS_DLL_NOT_FOUND` until the
+   trees are merged by hand.
+3. After repair, no Swift code compiles: even `swiftc hello.swift` fails with
+   "unable to load standard library for target x86_64-unknown-windows-msvc",
+   both via SPM and direct `swiftc`. Suspected cause is the `+Asserts`
+   toolchain packaged against a non-asserts runtime, or missing stdlib
+   modules in the package.
+
+Consequence: the "portable already" claim above does not hold on today's
+toolchain, so a Windows engine adapter written in Swift is not viable.
+WSL2/Docker remains the only supported Windows path. A native Windows host
+requires either a materially better Swift-for-Windows toolchain or a scoped
+Rust port of the shared core; revisit only when native Windows becomes an
+actual product requirement, and record a new decision entry first.
+
 ## 7. macOS engine: keep WKWebView as the visible-browser experience
 
 **Decision:** keep the WKWebView host as macOS's default engine. It is the
@@ -422,7 +447,7 @@ credentials.
 | 1   | Keep Swift core; Rust only via revisit trigger              | Decided           | 2026-08-04 |
 | 3   | Extract HostCore + BrowserEngine, typed errors              | Implemented       | 2026-08-10 |
 | 5   | Remote stays SSH-only; no cloud offering                    | Decided (owner)   | 2026-08-04 |
-| 6   | Windows = stretch via Chromium engine; WSL2/Docker interim  | Decided (owner)   | 2026-08-04 |
+| 6   | Windows = stretch via Chromium engine; WSL2/Docker interim  | Decided (owner); spike failed 2026-08-22, native deferred | 2026-08-04 |
 | 8   | Real CDP input on Linux as capability upgrade               | Implemented       | 2026-08-13 |
 | 12  | Version unification on git tag                              | Implemented       | 2026-08-04 |
 | 14  | Run one conformance scenario against every engine           | Implemented       | 2026-08-10 |

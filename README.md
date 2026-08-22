@@ -218,6 +218,25 @@ installer that checks Chromium and FFmpeg before copying the binaries. The
 Docker image is the supported self-contained Linux runtime and uses Debian's
 Chromium binary at `/usr/lib/chromium/chromium`.
 
+### Windows (WSL2)
+
+There is no native Windows build; the Swift toolchain cannot currently compile
+the core for Windows (see architecture decision §6). Run Headless inside
+WSL2 instead:
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+Then, inside WSL2, follow the Linux install above. Chromium and FFmpeg come
+from `apt` (`sudo apt install chromium ffmpeg`). Alternatively, run the
+published GHCR image under Docker Desktop:
+
+```sh
+docker run --shm-size=1g ghcr.io/lockintime/headless:latest headless --version
+```
+
+
 ### npm / npx
 
 JavaScript-based agent harnesses can run the verified launcher without a

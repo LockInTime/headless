@@ -49,6 +49,17 @@ Linux host already uses. So Windows becomes a third engine adapter, not a rewrit
 We still test the ground truth first, with a spike (step 1 below). If the spike fails,
 we port only the shared core to Rust, never the whole product.
 
+## Status
+
+- Step 0: release #45 prepared (tag pushed; publish blocked only on Apple/npm
+  secrets). Docs debt #53 closed.
+- Step 1: spike ran on real Windows runners and **failed** — Swift-for-Windows
+  cannot even compile hello-world today. Evidence in architecture decision §6.
+- Step 2: adapter is off the table. Native Windows is deferred behind a
+  revisit trigger; WSL2/Docker is the supported Windows path.
+- Step 3: WSL2 install documented in README; macOS/Linux packaging already
+  shipped in the E-series work.
+
 ## The plan
 
 ```
