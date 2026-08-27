@@ -9,19 +9,27 @@ const config = JSON.parse(await read("vercel.json"));
 assert.deepEqual(config, {
   $schema: "https://openapi.vercel.sh/vercel.json",
   framework: "nextjs",
-  installCommand: "pnpm install --frozen-lockfile --filter @headless/web",
   buildCommand: "pnpm --filter @headless/web build",
-  devCommand: "pnpm --filter @headless/web dev",
+  devCommand: "pnpm --filter @headless/web exec next dev --port $PORT",
   outputDirectory: "apps/web/.next",
 });
 
 const productionUrl = "https://headless-web-pi.vercel.app";
-const [metadata, deploymentDocs, agentRules, nextConfig] = await Promise.all([
-  read("apps/web/lib/site-metadata.ts"),
-  read("docs/DEPLOYMENT.md"),
-  read("AGENTS.md"),
-  read("apps/web/next.config.ts"),
-]);
+const [metadata, deploymentDocs, agentRules, nextConfig, rootPackage, lockfile] =
+  await Promise.all([
+    read("apps/web/lib/site-metadata.ts"),
+    read("docs/DEPLOYMENT.md"),
+    read("AGENTS.md"),
+    read("apps/web/next.config.ts"),
+    read("package.json"),
+    read("pnpm-lock.yaml"),
+  ]);
+
+const packageJson = JSON.parse(rootPackage);
+assert.match(packageJson.packageManager ?? "", /^pnpm@9\./);
+assert.match(packageJson.engines?.pnpm ?? "", />=9/);
+assert.match(lockfile, /^lockfileVersion: ['"]?9\.0['"]?$/m);
+assert.equal(config.installCommand, undefined);
 
 for (const source of [metadata, deploymentDocs, agentRules]) {
   assert.match(source, new RegExp(productionUrl.replaceAll(".", "\\.")));

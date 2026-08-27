@@ -23,7 +23,7 @@ Read before making non-trivial changes:
   check items off when you fix them and add the named test.
 - `CONTRIBUTING.md` — the same rules for humans, plus setup detail.
 - `SECURITY.md` — the boundaries a bug report is measured against.
-- To _use_ Headless as a browser tool (rather than develop it), follow the
+- To *use* Headless as a browser tool (rather than develop it), follow the
   skill: `.agents/skills/headless-computer-use/SKILL.md`.
 
 ## Layout

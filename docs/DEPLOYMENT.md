@@ -2,8 +2,10 @@
 
 The marketing and documentation site is deployed to Vercel from this monorepo.
 The repository configuration in [`vercel.json`](../vercel.json) is the source
-of truth for framework detection, dependency installation, build command, local
-development command, and output location.
+of truth for framework detection, build and development commands, and output
+location. Vercel derives pnpm from the root lockfile. Do not add an install
+override with plain `pnpm install`: Vercel uses its oldest available pnpm
+runtime for that override, while this repository requires pnpm 9 or newer.
 
 ## Production contract
 
