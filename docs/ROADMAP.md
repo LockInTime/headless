@@ -81,12 +81,13 @@ of them:
 Honest snapshot, so newcomers know what is real:
 
 **Working and verified**
+
 - 39-verb JSON protocol over a `0600` Unix socket with peer-UID checks
   (`apps/headless/Sources/HeadlessProtocol/`).
 - Two engines behind one CLI: macOS `WKWebView` app, Linux sandboxed Chromium
   over the DevTools fd-3/4 pipe (no debug port).
 - Progressive context pruning (`inspect --context
-  summary|outline|text|actions|full`, `--task`, `--within @rN`, `--budget`)
+summary|outline|text|actions|full`, `--task`, `--within @rN`, `--budget`)
   with a measured **94.5 % token reduction** on the 120-section fixture.
 - Evidence capture: PNG/JPG/PDF screenshots, viewport/section series, MP4/MOV/
   WebM/GIF recordings, visual diffs, flows, QA reports.
@@ -107,6 +108,7 @@ Honest snapshot, so newcomers know what is real:
   command reference, and a Docker sandbox wrapper.
 
 **Not yet real**
+
 - ~~No CI on pull requests or `main`~~ — PR CI landed (`.github/workflows/ci.yml`,
   backlog §D1/§D3). Correctness fixes in §A are still outstanding, and the
   macOS E2E is nightly/label-gated rather than a per-PR gate.
@@ -121,7 +123,7 @@ Honest snapshot, so newcomers know what is real:
   three places each and will drift; the site has no deploy pipeline.
 - Windows is not supported.
 - A list of real code defects (thread-safety on shutdown, oversized `qa
-  report` responses, `@eN` ref invalidation surprises, host code duplication)
+report` responses, `@eN` ref invalidation surprises, host code duplication)
   — all catalogued in the [improvements backlog](roadmap/improvements-backlog.md).
 
 ---
@@ -152,23 +154,23 @@ codebase's existing behavior because they are the product:
 
 ## 4. Platform support
 
-| Platform | Status today | Target |
-| --- | --- | --- |
-| **macOS 13+** (Apple Silicon) | Universal signed release pipeline awaiting tag | Signed + notarized, Homebrew, universal binary |
-| **macOS Intel** | Universal release pipeline awaiting tag | Universal binary in release CI |
-| **Linux** (Debian/Ubuntu, non-Snap Chromium) | Verified installer and GHCR pipeline awaiting tag | curl installer, published Docker image (GHCR), apt guidance |
-| **Linux other distros** | Works where a non-Snap Chromium exists | Documented candidate paths per distro family |
-| **Windows 10/11** | Not supported | **Stretch goal (Phase W)** — Chromium host ported; not required for "done". See [architecture decisions §6](roadmap/architecture-decisions.md). |
-| **Any OS via Docker** | Works (build locally) | `docker run ghcr.io/…/headless` one-liner, including as the practical Windows answer (WSL2/Docker Desktop) until Phase W lands |
+| Platform                                     | Status today                                      | Target                                                                                                                                          |
+| -------------------------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **macOS 13+** (Apple Silicon)                | Universal signed release pipeline awaiting tag    | Signed + notarized, Homebrew, universal binary                                                                                                  |
+| **macOS Intel**                              | Universal release pipeline awaiting tag           | Universal binary in release CI                                                                                                                  |
+| **Linux** (Debian/Ubuntu, non-Snap Chromium) | Verified installer and GHCR pipeline awaiting tag | curl installer, published Docker image (GHCR), apt guidance                                                                                     |
+| **Linux other distros**                      | Works where a non-Snap Chromium exists            | Documented candidate paths per distro family                                                                                                    |
+| **Windows 10/11**                            | Not supported                                     | **Stretch goal (Phase W)** — Chromium host ported; not required for "done". See [architecture decisions §6](roadmap/architecture-decisions.md). |
+| **Any OS via Docker**                        | Works (build locally)                             | `docker run ghcr.io/…/headless` one-liner, including as the practical Windows answer (WSL2/Docker Desktop) until Phase W lands                  |
 
 Agent-harness support (the other axis of "platform"):
 
-| Harness | Today | Target |
-| --- | --- | --- |
-| MCP clients (Claude Code, Cursor, Codex, …) | `headless-mcp` stdio server | unchanged core; per-client setup docs + `.mcp.json` example |
-| Claude Code | manual skill pointer | root `CLAUDE.md` + discoverable skill |
-| Codex / OpenCode / Amp / others | `AGENTS.md` convention | root `AGENTS.md` (done in this change) |
-| Plain shell agents | CLI + `headless capabilities` | unchanged; capabilities doc kept machine-checked |
+| Harness                                     | Today                         | Target                                                      |
+| ------------------------------------------- | ----------------------------- | ----------------------------------------------------------- |
+| MCP clients (Claude Code, Cursor, Codex, …) | `headless-mcp` stdio server   | unchanged core; per-client setup docs + `.mcp.json` example |
+| Claude Code                                 | manual skill pointer          | root `CLAUDE.md` + discoverable skill                       |
+| Codex / OpenCode / Amp / others             | `AGENTS.md` convention        | root `AGENTS.md` (done in this change)                      |
+| Plain shell agents                          | CLI + `headless capabilities` | unchanged; capabilities doc kept machine-checked            |
 
 ---
 
@@ -184,7 +186,7 @@ every item carries file/line detail.
 Write down what the product is, what must not change, and everything that is
 wrong. Add agent rule files so every harness can work on this repo.
 
-*Exit test:* this document set is merged; `AGENTS.md`/`CLAUDE.md` exist at
+_Exit test:_ this document set is merged; `AGENTS.md`/`CLAUDE.md` exist at
 root.
 
 ### Phase 1 — Trust the build (CI + correctness)
@@ -202,7 +204,7 @@ known races exist.
   `ELEMENT_NOT_FOUND` (backlog §A7).
 - Web app gets `next build` + eslint in the same CI (backlog §D3).
 
-*Exit test:* a PR cannot merge with failing tests; the E2E suites pass on CI
+_Exit test:_ a PR cannot merge with failing tests; the E2E suites pass on CI
 runners, not just laptops; the known-crash list in the backlog §A is empty.
 
 ### Phase 2 — One host, written once (deduplication refactor)
@@ -216,7 +218,7 @@ errors end-to-end (backlog §B).
 This is also the **prerequisite for Windows**: after it, a Windows port is one
 new engine + one new transport backend, not a third copy of everything.
 
-*Exit test:* adding a hypothetical new verb touches one dispatch site; the
+_Exit test:_ adding a hypothetical new verb touches one dispatch site; the
 error-code mapping is a typed enum, not string matching; the capability matrix
 (clipboard, network mock, PDF fidelity, …) is generated from code and asserted
 in tests.
@@ -237,7 +239,7 @@ in tests.
 - **npm wrapper** (`npx headless-browser` style) that downloads the platform
   binary — the cheapest path into JS-centric agent stacks. (Backlog §E.)
 
-*Exit test:* a new user on a clean macOS or Linux machine gets from zero to
+_Exit test:_ a new user on a clean macOS or Linux machine gets from zero to
 `headless start` + first `visit` in under two minutes without touching a
 compiler, and without a Gatekeeper override on macOS.
 
@@ -258,7 +260,7 @@ Make Headless the obvious choice inside every harness:
   implemented so `fill` can type literal `--json`; response pagination for
   large reports remains (backlog §G).
 
-*Exit test:* a fresh Claude Code, Cursor, and Codex session can each discover
+_Exit test:_ a fresh Claude Code, Cursor, and Codex session can each discover
 and drive Headless with zero manual prompting beyond repo checkout.
 
 ### Phase 5 — Website and docs as a product surface
@@ -269,11 +271,11 @@ and drive Headless with zero manual prompting beyond repo checkout.
   generated from the CLI) (backlog §F).
 - Add the missing pages: install, security model, MCP setup, command
   reference, changelog, platform matrix.
-- Re-run the benchmark with the task-aware inspect flow before quoting any
-  token number — the site currently markets `--task` while quoting pre-`--task`
-  measurements (backlog §F4).
+- Keep the generated benchmark current with the task-aware inspect flow before
+  quoting any token number. The site imports the generated medians and carries
+  their point-in-time caveat (backlog §F4).
 
-*Exit test:* site deploys on merge; every number and command on it is
+_Exit test:_ site deploys on merge; every number and command on it is
 generated or test-asserted; the "stale benchmark" warning is gone because the
 benchmark is current.
 
@@ -283,6 +285,9 @@ Best-effort goal, explicitly **not required for "done"**. Prerequisite:
 Phase 2's engine/transport split. Shape of the work (detailed in
 [architecture-decisions §6](roadmap/architecture-decisions.md)):
 
+- The Rust control-transport seam and secure Unix backend are implemented in
+  [#140](https://github.com/LockInTime/headless/issues/140), preserving the
+  shipping local-security contract while leaving the Windows backend explicit.
 - Named-pipe transport with SID-based peer checks replacing the Unix socket.
 - Win32 process/pipe layer for Chromium's `--remote-debugging-pipe` (HANDLE
   inheritance instead of fd 3/4).
@@ -292,7 +297,7 @@ Phase 2's engine/transport split. Shape of the work (detailed in
 - Until then, the documented Windows answer is Docker Desktop/WSL2 with the
   published image (Phase 3 dependency).
 
-*Exit test:* the Linux E2E scenario passes on a Windows runner with the
+_Exit test:_ the Linux E2E scenario passes on a Windows runner with the
 Chromium engine; `winget install headless` works.
 
 ---
@@ -312,7 +317,7 @@ of the following hold:
    returns an explicit capability error; the matrix is generated and asserted.
 4. **Agent-native:** any MCP-capable harness and any AGENTS.md-reading harness
    can drive Headless from a fresh checkout with no human glue; `headless
-   capabilities` is machine-accurate.
+capabilities` is machine-accurate.
 5. **Evidence current:** benchmark re-run on the shipping workflow; QA
    evidence regenerated for the release; website deployed and drift-free.
 6. **Docs:** this roadmap's Phases 1–5 checked off, with Windows either
