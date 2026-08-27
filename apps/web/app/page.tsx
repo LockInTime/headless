@@ -2,12 +2,9 @@ import { HeadlessMark } from "@/components/headless-mark";
 import { BenchmarkChart } from "@/components/benchmark-chart";
 import { EfficiencyChart } from "@/components/efficiency-chart";
 import { BeamsBackground } from "@/components/ui/beams-background";
-import { PixelBlast } from "@/components/ui/pixel-blast";
 import { ScanFrame } from "@/components/scan-frame";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LinkGlyph } from "@/components/link-glyph";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { loadBenchmarkContent } from "@/lib/repository-content.mjs";
 import { ArrowDownIcon, ArrowUpRightIcon } from "lucide-react";
 
@@ -48,22 +45,6 @@ export default function Home() {
       <section className="hero">
         <div className="hero-beams" aria-hidden="true">
           <BeamsBackground className="hero-beams-static" />
-          <PixelBlast
-            className="hero-pixel-blast"
-            variant="circle"
-            pixelSize={5}
-            color="#FFB020"
-            patternScale={3}
-            patternDensity={1.1}
-            pixelSizeJitter={0.35}
-            enableRipples
-            rippleSpeed={0.35}
-            rippleThickness={0.1}
-            rippleIntensityScale={1.1}
-            speed={0.45}
-            edgeFade={0.3}
-            transparent
-          />
         </div>
 
         <nav className="nav container" aria-label="Main navigation">
@@ -99,10 +80,7 @@ export default function Home() {
             <div className="hero-actions">
               <a
                 href="#workflow"
-                className={cn(
-                  buttonVariants({ variant: "default", size: "cta" }),
-                  "hover:-translate-y-0.5",
-                )}
+                className="cta-link"
               >
                 See the workflow
                 <ArrowDownIcon
@@ -113,7 +91,7 @@ export default function Home() {
               </a>
               <a
                 href="/docs"
-                className={buttonVariants({ variant: "quiet", size: "cta" })}
+                className="cta-link cta-link-quiet"
               >
                 Read the docs
                 <ArrowUpRightIcon
@@ -323,24 +301,6 @@ export default function Home() {
       </section>
 
       <section className="section closing">
-        <div className="closing-blast" aria-hidden="true">
-          <PixelBlast
-            className="closing-pixel-blast"
-            variant="circle"
-            pixelSize={5}
-            color="#FFB020"
-            patternScale={3}
-            patternDensity={1.05}
-            pixelSizeJitter={0.3}
-            enableRipples
-            rippleSpeed={0.35}
-            rippleThickness={0.1}
-            rippleIntensityScale={1}
-            speed={0.4}
-            edgeFade={0.45}
-            transparent
-          />
-        </div>
         <div className="container closing-inner">
           <div className="closing-panel">
             <div>
@@ -358,10 +318,7 @@ export default function Home() {
               </p>
               <a
                 href="https://github.com/LockInTime/headless/releases"
-                className={cn(
-                  buttonVariants({ variant: "default", size: "cta" }),
-                  "mt-6 hover:-translate-y-0.5",
-                )}
+                className="cta-link mt-6"
               >
                 Open Headless
                 <ArrowUpRightIcon
