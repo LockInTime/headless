@@ -13,7 +13,7 @@ import {
   YAxis,
 } from "recharts";
 
-type WorkflowPoint = {
+export type WorkflowPoint = {
   workflow: string;
   label: string;
   tokens: number;
@@ -23,14 +23,6 @@ type WorkflowPoint = {
   color: string;
 };
 
-/** P2 single-run benchmark. Source: BENCHMARK.md. */
-const data: WorkflowPoint[] = [
-  { workflow: "Headless warm", label: "Warm", tokens: 147, cpuMs: 842, wallMs: 4753, memoryMiB: 276, color: "var(--amber-ink)" },
-  { workflow: "Headless cold", label: "Cold", tokens: 194, cpuMs: 1478, wallMs: 5002, memoryMiB: 279, color: "var(--teal-ink)" },
-  { workflow: "Selenium + Python", label: "Selenium", tokens: 410, cpuMs: 1900, wallMs: 3134, memoryMiB: 280, color: "#8A9490" },
-  { workflow: "Puppeteer", label: "Puppeteer", tokens: 499, cpuMs: 2441, wallMs: 2850, memoryMiB: 319, color: "#5B6469" },
-];
-
 function formatSeconds(value: number) {
   return `${(value / 1000).toFixed(3)} s`;
 }
@@ -39,7 +31,13 @@ function cpuShare(point: WorkflowPoint) {
   return Math.round((point.cpuMs / point.wallMs) * 100);
 }
 
-function EfficiencyTooltip({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: unknown }> }) {
+function EfficiencyTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: ReadonlyArray<{ payload?: unknown }>;
+}) {
   if (!active || !payload?.length) return null;
   const point = payload[0]?.payload as WorkflowPoint | undefined;
   if (!point) return null;
@@ -47,22 +45,38 @@ function EfficiencyTooltip({ active, payload }: { active?: boolean; payload?: Re
   return (
     <div className="chart-tooltip">
       <b style={{ color: point.color }}>{point.workflow}</b>
-      <span>{formatSeconds(point.wallMs)} wall · {formatSeconds(point.cpuMs)} CPU</span>
-      <span>CPU busy {cpuShare(point)}% of the run · {point.memoryMiB} MiB peak</span>
+      <span>
+        {formatSeconds(point.wallMs)} wall · {formatSeconds(point.cpuMs)} CPU
+      </span>
+      <span>
+        CPU busy {cpuShare(point)}% of the run · {point.memoryMiB} MiB peak
+      </span>
     </div>
   );
 }
 
-export function EfficiencyChart() {
+export function EfficiencyChart({ data }: { data: WorkflowPoint[] }) {
+  const ariaLabel = `Wall time versus CPU time per run. ${data
+    .map(
+      (point) =>
+        `${point.workflow}: ${formatSeconds(point.wallMs)} wall, ${formatSeconds(point.cpuMs)} CPU, busy ${cpuShare(point)} percent`,
+    )
+    .join(". ")}.`;
+  const maximum =
+    Math.ceil(Math.max(...data.map((point) => point.wallMs)) / 1_000) * 1_000;
+
   return (
-    <div
-      className="benchmark-chart"
-      role="img"
-      aria-label="Wall time versus CPU time per run for four benchmark workflows. Headless warm: 4.753 seconds wall, 842 milliseconds CPU, busy 18 percent of the run. Headless cold: 5.002 seconds wall, 1.478 seconds CPU, busy 30 percent. Selenium with Python: 3.134 seconds wall, 1.9 seconds CPU, busy 61 percent. Puppeteer: 2.85 seconds wall, 2.441 seconds CPU, busy 86 percent. The gap between the two series is time spent waiting, not computing."
-    >
+    <div className="benchmark-chart" role="img" aria-label={ariaLabel}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 28, right: 20, bottom: 4, left: 0 }}>
-          <CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 3" />
+        <ComposedChart
+          data={data}
+          margin={{ top: 28, right: 20, bottom: 4, left: 0 }}
+        >
+          <CartesianGrid
+            vertical={false}
+            stroke="var(--line)"
+            strokeDasharray="3 3"
+          />
           <XAxis
             dataKey="label"
             axisLine={{ stroke: "var(--line)" }}
@@ -70,14 +84,16 @@ export function EfficiencyChart() {
             tickMargin={10}
           />
           <YAxis
-            domain={[0, 5500]}
-            ticks={[0, 2000, 4000]}
+            domain={[0, maximum]}
             tickFormatter={(value) => `${value / 1000}s`}
             axisLine={false}
             tickLine={false}
             width={40}
           />
-          <Tooltip content={EfficiencyTooltip} cursor={{ stroke: "var(--line)", strokeDasharray: "3 3" }} />
+          <Tooltip
+            content={EfficiencyTooltip}
+            cursor={{ stroke: "var(--line)", strokeDasharray: "3 3" }}
+          />
           <Legend
             verticalAlign="top"
             align="right"
@@ -104,7 +120,12 @@ export function EfficiencyChart() {
             name="CPU time"
             stroke="var(--amber-ink)"
             strokeWidth={2}
-            dot={{ fill: "var(--amber-ink)", stroke: "var(--bg-soft)", strokeWidth: 2, r: 4 }}
+            dot={{
+              fill: "var(--amber-ink)",
+              stroke: "var(--bg-soft)",
+              strokeWidth: 2,
+              r: 4,
+            }}
             activeDot={{ r: 5 }}
             isAnimationActive={false}
           >
@@ -112,7 +133,11 @@ export function EfficiencyChart() {
               dataKey="cpuMs"
               position="bottom"
               offset={10}
-              formatter={(value) => (typeof value === "number" ? `${(value / 1000).toFixed(2)}s` : String(value ?? ""))}
+              formatter={(value) =>
+                typeof value === "number"
+                  ? `${(value / 1000).toFixed(2)}s`
+                  : String(value ?? "")
+              }
               fill="var(--ink-soft)"
               fontFamily="var(--font-mono), monospace"
               fontSize={9}

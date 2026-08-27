@@ -416,20 +416,28 @@ Owner-decided scope: package managers, no hosted service.
   reproducible and reviewable — check in the project config, document the
   hosting in `AGENTS.md`, and decide on a domain. Keep the existing headers/CSP
   in `next.config.ts`; consider a nonce so `unsafe-inline` can be dropped.
-- **F2. Content provenance** ([#48](https://github.com/LockInTime/headless/issues/48)) — benchmark numbers hand-copied in
+- **F2. Content provenance** ([#48](https://github.com/LockInTime/headless/issues/48)) — ~~benchmark numbers hand-copied in
   `app/page.tsx:26-38`, `components/efficiency-chart.tsx:26-31`,
   `components/benchmark-chart.tsx:21-26` (+ date in two places); docs prose
   triplicated across `app/docs/page.tsx`, `components/docs-markdown.ts`, and
-  `README.md`, already diverging. Import from generated artifacts (D5, B6).
-- **F3. Missing pages:** ([#49](https://github.com/LockInTime/headless/issues/49)) install (README's build/install section is absent
+  `README.md`, already diverging. Import from generated artifacts (D5, B6).~~
+  **Done:** the website validates and derives benchmark values from generated
+  results, while rendered and copyable docs share README and generated command
+  reference content. Web lint runs the provenance validator so malformed or
+  missing sources fail the build instead of falling back to copied claims.
+- **F3. Missing pages:** ([#49](https://github.com/LockInTime/headless/issues/49)) ~~install (README's build/install section is absent
   from the site entirely), security model, MCP setup, full command reference
   (~30 commands; site lists 4 groups), changelog/version indicator, platform
   matrix, the README's comparison table (strongest positioning content, not
   on site). Plus `robots.txt`, `sitemap`, OG metadata, per-page `metadata`,
-  404 page.
-- **F4. Stale-benchmark honesty:** ([#50](https://github.com/LockInTime/headless/issues/50)) site quotes pre-`--task` numbers while
+  404 page.~~ **Done:** six source-backed product documentation routes now
+  cover the missing content, with lint-time completeness checks, route metadata,
+  crawler files, and a branded not-found page.
+- **F4. Stale-benchmark honesty:** ([#50](https://github.com/LockInTime/headless/issues/50)) ~~site quotes pre-`--task` numbers while
   marketing `--task`, and drops BENCHMARK.md's re-run warning; headline says
-  "Measured, not claimed." Fix by refresh (D5) or by carrying the caveat.
+  "Measured, not claimed." Fix by refresh (D5) or by carrying the caveat.~~
+  **Done:** a new five-repeat, task-aware snapshot was generated on 27 August 2026. The website imports its medians and date, preserves the point-in-time
+  warning, and web lint rejects README claims that drift from generated data.
 - **F5. Dead weight:** ([#51](https://github.com/LockInTime/headless/issues/51)) `components/ui/side-rays.tsx` + `ogl` dep (unused),
   `public/scan-dashboard.png` (unreferenced), leftover shadcn `.dark` block in
   `globals.css`, 8 unused button variants; two WebGL stacks (~700 KB) for
@@ -479,6 +487,21 @@ get an architecture-decision entry:
 - **G9. Cookie import for authenticated QA** — deliberately absent today;
   needs a security design (gated like sensitive diagnostics) before any work.
 - **G10. Per-session isolated browser contexts** — architecture §11.
+
+---
+
+## §W — Windows stretch work ([#56](https://github.com/LockInTime/headless/issues/56))
+
+- **W1. Rust control-transport seam and secure Unix backend.**
+  ([#140](https://github.com/LockInTime/headless/issues/140)) ~~Port bounded
+  framing, correlated request/response exchange, private runtime-directory
+  validation, stale/live Unix-socket handling, and peer-UID authorization.
+  Keep Windows named pipes, ACLs, and SID checks as a separate backend so an
+  incomplete implementation cannot be mistaken for a security boundary.~~
+  **Done:** the platform-independent framing and exchange code compiles across
+  Linux, macOS, and Windows; the Unix backend and adversarial transport suite
+  preserve the shipping Swift security contract without claiming named-pipe
+  support.
 
 ---
 

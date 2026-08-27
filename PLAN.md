@@ -58,9 +58,10 @@ we port only the shared core to Rust, never the whole product.
 - Step 2: adapter ruled out. Per architecture decision §21, the shared core
   is being ported to Rust instead: `apps/headless-rs` now carries the full
   protocol layer (39 commands, strict validation, navigation boundary,
-  artifact rules, 1 MiB codec) with 10 tests mirroring the Swift suite's
+  artifact rules, 1 MiB codec) plus the platform-neutral control-transport
+  seam and secure Unix backend from #140. The Rust suite mirrors the Swift
   security-critical cases, and CI builds it natively on Linux, macOS, and
-  Windows. Next increments: transport, CLI parser, Chromium CDP host.
+  Windows. Next increments: Windows named pipes, CLI parser, Chromium CDP host.
 - Step 3: WSL2 install documented in README; macOS/Linux packaging already
   shipped in the E-series work. Once the Rust core gains a host, Windows
   gets a real native story (winget/MSI) instead of WSL2.
