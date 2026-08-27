@@ -482,6 +482,21 @@ get an architecture-decision entry:
 
 ---
 
+## §W — Windows stretch work ([#56](https://github.com/LockInTime/headless/issues/56))
+
+- **W1. Rust control-transport seam and secure Unix backend.**
+  ([#140](https://github.com/LockInTime/headless/issues/140)) ~~Port bounded
+  framing, correlated request/response exchange, private runtime-directory
+  validation, stale/live Unix-socket handling, and peer-UID authorization.
+  Keep Windows named pipes, ACLs, and SID checks as a separate backend so an
+  incomplete implementation cannot be mistaken for a security boundary.~~
+  **Done:** the platform-independent framing and exchange code compiles across
+  Linux, macOS, and Windows; the Unix backend and adversarial transport suite
+  preserve the shipping Swift security contract without claiming named-pipe
+  support.
+
+---
+
 ## Priority key
 
 Phase 1 = §A + §C1–C3 + §D1–D3. Phase 2 = §B + §D4. Phase 3 = §E.
