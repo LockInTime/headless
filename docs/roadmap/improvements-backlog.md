@@ -416,11 +416,15 @@ Owner-decided scope: package managers, no hosted service.
   reproducible and reviewable — check in the project config, document the
   hosting in `AGENTS.md`, and decide on a domain. Keep the existing headers/CSP
   in `next.config.ts`; consider a nonce so `unsafe-inline` can be dropped.
-- **F2. Content provenance** ([#48](https://github.com/LockInTime/headless/issues/48)) — benchmark numbers hand-copied in
+- **F2. Content provenance** ([#48](https://github.com/LockInTime/headless/issues/48)) — ~~benchmark numbers hand-copied in
   `app/page.tsx:26-38`, `components/efficiency-chart.tsx:26-31`,
   `components/benchmark-chart.tsx:21-26` (+ date in two places); docs prose
   triplicated across `app/docs/page.tsx`, `components/docs-markdown.ts`, and
-  `README.md`, already diverging. Import from generated artifacts (D5, B6).
+  `README.md`, already diverging. Import from generated artifacts (D5, B6).~~
+  **Done:** the website validates and derives benchmark values from generated
+  results, while rendered and copyable docs share README and generated command
+  reference content. Web lint runs the provenance validator so malformed or
+  missing sources fail the build instead of falling back to copied claims.
 - **F3. Missing pages:** ([#49](https://github.com/LockInTime/headless/issues/49)) install (README's build/install section is absent
   from the site entirely), security model, MCP setup, full command reference
   (~30 commands; site lists 4 groups), changelog/version indicator, platform
