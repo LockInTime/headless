@@ -23,7 +23,7 @@ Read before making non-trivial changes:
   check items off when you fix them and add the named test.
 - `CONTRIBUTING.md` — the same rules for humans, plus setup detail.
 - `SECURITY.md` — the boundaries a bug report is measured against.
-- To *use* Headless as a browser tool (rather than develop it), follow the
+- To _use_ Headless as a browser tool (rather than develop it), follow the
   skill: `.agents/skills/headless-computer-use/SKILL.md`.
 
 ## Layout
@@ -130,3 +130,13 @@ Tags `v*` trigger `.github/workflows/release.yml` (macOS zip + Linux
 tarballs). `HEADLESS_VERSION` flows from the tag; protocol version (`"0.5"`
 in `Protocol.swift`) is independent — bump it only for wire-visible changes,
 with a decision entry.
+
+## Website deployment
+
+Vercel deploys `apps/web` from the repository root using
+[`vercel.json`](vercel.json). The production branch is `main`, and the
+canonical production URL is <https://headless-web-pi.vercel.app>. Keep the
+Vercel for GitHub integration enabled for pull-request previews and preview-URL
+comments. Do not add a second deployment workflow that can race the integration.
+Hosting setup, verification, rollback, and the custom-domain decision are in
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).

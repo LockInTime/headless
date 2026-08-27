@@ -103,7 +103,7 @@ summary|outline|text|actions|full`, `--task`, `--within @rN`, `--budget`)
   notarization/stapling, a checksum-pinned Homebrew cask, the verified Linux
   bootstrap, release checksums, and a multi-platform GHCR image. These paths
   become user-visible with the next tag.
-- A Next.js marketing/docs site (`apps/web`) — built, not deployed.
+- A Next.js marketing/docs site (`apps/web`) deployed to Vercel from `main`.
 - An agent skill (`.agents/skills/headless-computer-use/`) with safety rules,
   command reference, and a Docker sandbox wrapper.
 
@@ -265,7 +265,8 @@ and drive Headless with zero manual prompting beyond repo checkout.
 
 ### Phase 5 — Website and docs as a product surface
 
-- Deploy `apps/web` (Vercel or static export + CDN) with CI.
+- Keep the Vercel deployment of `apps/web` reproducible, previewable, and
+  verified alongside CI.
 - Kill the three-copy content drift: docs prose and benchmark numbers come
   from single sources (benchmark emits JSON; site imports it; command tables
   generated from the CLI) (backlog §F).
