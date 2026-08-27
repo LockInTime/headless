@@ -21,6 +21,16 @@ const PRESENTATION = {
 
 let benchmarkCache;
 let documentationCache;
+let productDocsCache;
+
+export const PRODUCT_DOC_ROUTES = [
+  { href: "/docs/install", label: "Install" },
+  { href: "/docs/mcp", label: "MCP setup" },
+  { href: "/docs/commands", label: "Commands" },
+  { href: "/docs/security", label: "Security" },
+  { href: "/docs/platforms", label: "Platforms" },
+  { href: "/docs/changelog", label: "Changelog" },
+];
 
 function fail(message) {
   throw new Error(`repository content: ${message}`);
@@ -253,6 +263,21 @@ function extractSection(markdown, heading) {
     .trim();
 }
 
+function extractSubsection(markdown, heading) {
+  const marker = `### ${heading}`;
+  const start = markdown.indexOf(marker);
+  if (start < 0) fail(`missing Markdown subsection: ${heading}`);
+  const contentStart = start + marker.length;
+  const nextSubsection = markdown.indexOf("\n### ", contentStart);
+  const nextSection = markdown.indexOf("\n## ", contentStart);
+  const candidates = [nextSubsection, nextSection].filter(
+    (position) => position >= 0,
+  );
+  const end =
+    candidates.length === 0 ? markdown.length : Math.min(...candidates);
+  return markdown.slice(contentStart, end).trim();
+}
+
 function normalizeParagraph(value) {
   return value
     .split("\n")
@@ -285,6 +310,12 @@ function fencedCode(markdown) {
   return match[1].trim();
 }
 
+function fencedCodeBlocks(markdown) {
+  return [...markdown.matchAll(/```[^\n]*\n([\s\S]*?)\n```/g)].map((match) =>
+    match[1].trim(),
+  );
+}
+
 function bulletItems(markdown) {
   const items = [];
   let current = "";
@@ -301,6 +332,40 @@ function bulletItems(markdown) {
   }
   if (current) items.push(normalizeParagraph(current));
   return items;
+}
+
+function markdownTable(markdown) {
+  const rows = markdown
+    .split("\n")
+    .filter((line) => line.trim().startsWith("|"))
+    .map((line) =>
+      line
+        .split("|")
+        .slice(1, -1)
+        .map((cell) => cell.trim()),
+    );
+  if (rows.length < 3) fail("missing Markdown table");
+  const [headers, divider, ...body] = rows;
+  if (!divider.every((cell) => /^:?-{3,}:?$/.test(cell))) {
+    fail("malformed Markdown table divider");
+  }
+  if (body.some((row) => row.length !== headers.length)) {
+    fail("malformed Markdown table row");
+  }
+  return { headers, rows: body };
+}
+
+function commandFormCount(groups) {
+  return groups.reduce(
+    (total, group) =>
+      total +
+      group.usage
+        .split("\n")
+        .filter((line) => line && !/^\s/.test(line))
+        .flatMap((line) => line.split(" | "))
+        .filter((form) => form.trim() && form.trim() !== "--version").length,
+    0,
+  );
 }
 
 function commandNames(usage) {
@@ -436,9 +501,168 @@ export function loadDocumentationContent() {
   return documentationCache;
 }
 
+export function loadProductDocsContent() {
+  if (productDocsCache) return productDocsCache;
+  const readme = readRepositoryFile("README.md");
+  const commandReference = readRepositoryFile("apps/headless/docs/COMMANDS.md");
+  const securityDocument = readRepositoryFile("SECURITY.md");
+  const changelog = readRepositoryFile("CHANGELOG.md");
+  const p2 = readRepositoryFile("apps/headless/docs/P2.md");
+  const packageDocument = JSON.parse(readRepositoryFile("package.json"));
+  const protocolSource = readRepositoryFile(
+    "apps/headless/Sources/HeadlessProtocol/Protocol.swift",
+  );
+  const mcpConfig = JSON.parse(readRepositoryFile(".mcp.json"));
+  const cursorConfig = JSON.parse(readRepositoryFile(".cursor/mcp.json"));
+
+  if (!/^\d+\.\d+\.\d+$/.test(packageDocument.version)) {
+    fail("package version must be semantic");
+  }
+  for (const packagePath of [
+    "apps/headless/package.json",
+    "apps/web/package.json",
+    "packages/headless-npm/package.json",
+  ]) {
+    const siblingPackage = JSON.parse(readRepositoryFile(packagePath));
+    if (siblingPackage.version !== packageDocument.version) {
+      fail(`${packagePath} version differs from the product version`);
+    }
+  }
+  const protocolMatch = protocolSource.match(
+    /headlessProtocolVersion\s*=\s*"([0-9]+\.[0-9]+)"/,
+  );
+  if (!protocolMatch) fail("protocol version is missing");
+  if (JSON.stringify(mcpConfig) !== JSON.stringify(cursorConfig)) {
+    fail("project and Cursor MCP configurations differ");
+  }
+  const mcpServer = mcpConfig?.mcpServers?.headless;
+  if (
+    typeof mcpServer?.command !== "string" ||
+    !Array.isArray(mcpServer.args) ||
+    typeof mcpServer.env !== "object" ||
+    mcpServer.env === null
+  ) {
+    fail("Headless MCP configuration is malformed");
+  }
+
+  const commandGroups = [
+    commandGroup(commandReference, "Host lifecycle"),
+    commandGroup(commandReference, "Navigation and interaction"),
+    commandGroup(commandReference, "Capture and evidence"),
+    commandGroup(commandReference, "Diagnostics"),
+  ];
+  const commandForms = commandFormCount(commandGroups);
+  if (commandForms < 30) fail("command reference contains fewer than 30 forms");
+
+  const build = extractSection(readme, "Build");
+  const install = ["macOS", "Linux", "Windows (WSL2)", "npm / npx"].map(
+    (title) => {
+      const source = extractSubsection(build, title);
+      const copy = paragraphs(source);
+      const commands = fencedCodeBlocks(source);
+      if (copy.length === 0 || commands.length === 0) {
+        fail(`install method is incomplete: ${title}`);
+      }
+      return { title, copy, commands };
+    },
+  );
+
+  const securityBoundary = markdownTable(
+    extractSection(securityDocument, "What counts as a vulnerability"),
+  );
+  const limitations = bulletItems(
+    extractSection(securityDocument, "Known limitations (not vulnerabilities)"),
+  );
+  const hardening = bulletItems(
+    extractSection(securityDocument, "Hardening guidance for operators"),
+  );
+  if (
+    securityBoundary.rows.length < 5 ||
+    limitations.length < 3 ||
+    hardening.length < 3
+  ) {
+    fail("security documentation is incomplete");
+  }
+
+  const comparisonSection = extractSection(readme, "Computer use comparison");
+  const comparison = markdownTable(comparisonSection);
+  const comparisonNotes = bulletItems(comparisonSection);
+  if (comparison.rows.length !== 7 || comparisonNotes.length !== 3) {
+    fail("computer-use comparison is incomplete");
+  }
+
+  const releaseHeadings = [
+    ...changelog.matchAll(
+      /^## \[(\d+\.\d+\.\d+)\] ([—-]) (\d{4}-\d{2}-\d{2})$/gm,
+    ),
+  ];
+  const releases = releaseHeadings.map((match) => {
+    const version = match[1];
+    const date = match[3];
+    const section = extractSection(
+      changelog,
+      `[${version}] ${match[2]} ${date}`,
+    );
+    const changes = [...section.matchAll(/^### (Added|Changed|Fixed)$/gm)].map(
+      (category) => ({
+        title: category[1],
+        items: bulletItems(extractSubsection(section, category[1])),
+      }),
+    );
+    if (
+      changes.length === 0 ||
+      changes.some((group) => group.items.length === 0)
+    ) {
+      fail(`changelog release is incomplete: ${version}`);
+    }
+    return {
+      version,
+      date,
+      summary:
+        paragraphs(section).find((paragraph) => !paragraph.startsWith("###")) ??
+        "",
+      changes,
+    };
+  });
+  if (releases.length < 2 || releases[0].version !== packageDocument.version) {
+    fail("changelog does not begin with the current package version");
+  }
+  if (!releases[0].summary) fail("latest changelog release lacks a summary");
+
+  const remoteMcp = extractSection(p2, "Remote agents and MCP");
+  const mcpCopy = paragraphs(remoteMcp);
+  const mcpCommands = fencedCodeBlocks(remoteMcp);
+  if (mcpCopy.length < 2 || mcpCommands.length !== 1) {
+    fail("MCP documentation is incomplete");
+  }
+
+  productDocsCache = {
+    routes: PRODUCT_DOC_ROUTES,
+    version: packageDocument.version,
+    protocolVersion: protocolMatch[1],
+    install,
+    commands: { groups: commandGroups, count: commandForms },
+    mcp: {
+      copy: mcpCopy,
+      commands: mcpCommands,
+      config: JSON.stringify(mcpConfig, null, 2),
+    },
+    security: { boundary: securityBoundary, limitations, hardening },
+    platforms: {
+      supported: loadDocumentationContent().platforms,
+      comparison,
+      notes: comparisonNotes,
+    },
+    release: releases[0],
+    releases,
+  };
+  return productDocsCache;
+}
+
 export function validateRepositoryContent() {
   const benchmark = loadBenchmarkContent();
   const documentation = loadDocumentationContent();
+  const productDocs = loadProductDocsContent();
   const readme = readRepositoryFile("README.md");
   const method = readRepositoryFile("apps/headless/docs/BENCHMARK.md");
   const measuredClaim = readme.match(
@@ -484,9 +708,23 @@ export function validateRepositoryContent() {
       fail(`benchmark method row is stale: ${workflow.label}`);
     }
   }
+  for (const route of productDocs.routes) {
+    const page = readRepositoryFile(`apps/web/app${route.href}/page.tsx`);
+    if (!page.includes("export const metadata")) {
+      fail(`product documentation route lacks metadata: ${route.href}`);
+    }
+  }
+  for (const convention of ["not-found.tsx", "robots.ts", "sitemap.ts"]) {
+    readRepositoryFile(`apps/web/app/${convention}`);
+  }
   return {
     benchmarkCases: benchmark.workflows.length,
     commandGroups: documentation.commandGroups.length,
     securityRules: documentation.security.length,
+    productDocRoutes: productDocs.routes.length,
+    commandForms: productDocs.commands.count,
+    installMethods: productDocs.install.length,
+    securityBoundaries: productDocs.security.boundary.rows.length,
+    releases: productDocs.releases.length,
   };
 }

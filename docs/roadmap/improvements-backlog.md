@@ -425,12 +425,14 @@ Owner-decided scope: package managers, no hosted service.
   results, while rendered and copyable docs share README and generated command
   reference content. Web lint runs the provenance validator so malformed or
   missing sources fail the build instead of falling back to copied claims.
-- **F3. Missing pages:** ([#49](https://github.com/LockInTime/headless/issues/49)) install (README's build/install section is absent
+- **F3. Missing pages:** ([#49](https://github.com/LockInTime/headless/issues/49)) ~~install (README's build/install section is absent
   from the site entirely), security model, MCP setup, full command reference
   (~30 commands; site lists 4 groups), changelog/version indicator, platform
   matrix, the README's comparison table (strongest positioning content, not
   on site). Plus `robots.txt`, `sitemap`, OG metadata, per-page `metadata`,
-  404 page.
+  404 page.~~ **Done:** six source-backed product documentation routes now
+  cover the missing content, with lint-time completeness checks, route metadata,
+  crawler files, and a branded not-found page.
 - **F4. Stale-benchmark honesty:** ([#50](https://github.com/LockInTime/headless/issues/50)) ~~site quotes pre-`--task` numbers while
   marketing `--task`, and drops BENCHMARK.md's re-run warning; headline says
   "Measured, not claimed." Fix by refresh (D5) or by carrying the caveat.~~
