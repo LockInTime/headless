@@ -431,14 +431,11 @@ Owner-decided scope: package managers, no hosted service.
   "Measured, not claimed." Fix by refresh (D5) or by carrying the caveat.~~
   **Done:** a new five-repeat, task-aware snapshot was generated on 27 August 2026. The website imports its medians and date, preserves the point-in-time
   warning, and web lint rejects README claims that drift from generated data.
-- **F5. Dead weight:** ([#51](https://github.com/LockInTime/headless/issues/51)) `components/ui/side-rays.tsx` + `ogl` dep (unused),
-  `public/scan-dashboard.png` (unreferenced), leftover shadcn `.dark` block in
-  `globals.css`, 8 unused button variants; two WebGL stacks (~700 KB) for
-  decoration — `PixelBlast` still creates GL contexts under
-  `prefers-reduced-motion` (CSS-only hide) and its closing instance has no
-  reduced-motion rule; Recharts (~150 KB) for 4 static bars. Also
-  `scan-frame.tsx` hardcodes pixel bounds tied to a committed github.com
-  screenshot (drift + trademark question).
+- **F5. Dead weight:** [x] ([#51](https://github.com/LockInTime/headless/issues/51)) ~~Unused UI variants and assets, two WebGL decoration stacks, Recharts for
+  static data, and a pixel-bound third-party screenshot inflated the site and
+  created reduced-motion and provenance risks.~~ **Done:** the homepage uses
+  server-rendered HTML/CSS charts and a repository-owned semantic demo, ships
+  no WebGL/chart runtime, and lint enforces the dependency and asset boundary.
 - **F6. Fix the Cursor config snippet** ([#52](https://github.com/LockInTime/headless/issues/52)) — ~~hardcodes `ssh hermes-vm`
   (`components/docs-markdown.ts:57-64`), unusable by anyone else.~~ **Done:**
   the website serializes the checked-in project config that uses the portable
