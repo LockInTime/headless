@@ -1,5 +1,6 @@
 export type BenchmarkWorkflow = {
   case: string;
+  label: string;
   workflow: string;
   name: string;
   variant: string;
@@ -19,6 +20,7 @@ export type BenchmarkWorkflow = {
 
 export type BenchmarkContent = {
   sectionLabel: string;
+  methodDate: string;
   headline: string;
   summary: string;
   proofs: Array<{

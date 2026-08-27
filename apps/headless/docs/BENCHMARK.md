@@ -5,26 +5,26 @@ record through the `Continue` transition, and save a final screenshot.
 
 ## Current snapshot
 
-Five fresh containers were run for each case on 12 August 2026, on Apple
+Five fresh containers were run for each case on 27 August 2026, on Apple
 Silicon with Docker Linux ARM64. The table reports the median of each metric.
 These remain point-in-time measurements; repeat the benchmark before using
 them to compare a change. The generated
 [`results.json`](../../../packages/benchmark-results/results.json) preserves
 all 20 raw samples and the aggregation provenance.
 
-| Workflow | Estimated tokens | Wall time | CPU time | Peak memory |
-| --- | ---: | ---: | ---: | ---: |
-| Headless, cold | 218 | 3,484 ms | 2,028 ms | 368 MiB |
-| Headless, warm | 174 | 3,248 ms | 1,379 ms | 366 MiB |
-| Selenium with Python | 410 | 2,880 ms | 2,010 ms | 363 MiB |
-| Puppeteer | 499 | 2,402 ms | 1,860 ms | 358 MiB |
+| Workflow             | Estimated tokens | Wall time | CPU time | Peak memory |
+| -------------------- | ---------------: | --------: | -------: | ----------: |
+| Headless, cold       |              218 |  3,413 ms | 1,794 ms |     381 MiB |
+| Headless, warm       |              174 |  3,239 ms | 1,218 ms |     379 MiB |
+| Selenium with Python |              410 |  2,828 ms | 1,788 ms |     378 MiB |
+| Puppeteer            |              499 |  2,400 ms | 1,849 ms |     367 MiB |
 
 Estimated tokens are `ceil(workflow source bytes / 4)`. They compare the agent
 workflow surface, not billed LLM tokens, tool schemas, prompts, or responses.
 
 Headless has the smallest measured agent surface: the warm workflow uses about
 58% fewer estimated tokens than Selenium and 65% fewer than Puppeteer. Its
-median CPU time is about 31% lower than Selenium and 26% lower than Puppeteer.
+median CPU time is about 32% lower than Selenium and 34% lower than Puppeteer.
 Puppeteer is fastest and has the lowest median peak memory; Headless does not
 lead those dimensions. The reusable P2 flow command reduces orchestration work
 for real agent-driven repeats, but this benchmark retains the comparable
@@ -38,9 +38,9 @@ lookup.
 
 ## Method
 
-Each workflow uses Chromium 151 and FFmpeg 5.1 to produce the same two
+Each workflow uses Chromium 151.0.7922.173 and FFmpeg 5.1.9 to produce the same two
 artifacts: an MP4 that tours both pages and a final viewport PNG. Selenium 4.8.3
-uses ChromeDriver 151; Puppeteer Core is 22.15.0. All waits use page load or an
+uses ChromeDriver 151.0.7922.173; Puppeteer Core is 22.15.0. All waits use page load or an
 explicit URL condition. Every measured run gets a fresh container. The warm
 Headless case starts its host and session before timing; the cold case
 includes them.
