@@ -9,6 +9,7 @@
 pub mod error;
 pub mod json;
 pub mod protocol;
+pub mod transport;
 pub mod url;
 pub mod validate;
 

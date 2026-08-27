@@ -283,6 +283,9 @@ Best-effort goal, explicitly **not required for "done"**. Prerequisite:
 Phase 2's engine/transport split. Shape of the work (detailed in
 [architecture-decisions §6](roadmap/architecture-decisions.md)):
 
+- The Rust control-transport seam and secure Unix backend are implemented in
+  [#140](https://github.com/LockInTime/headless/issues/140), preserving the
+  shipping local-security contract while leaving the Windows backend explicit.
 - Named-pipe transport with SID-based peer checks replacing the Unix socket.
 - Win32 process/pipe layer for Chromium's `--remote-debugging-pipe` (HANDLE
   inheritance instead of fd 3/4).

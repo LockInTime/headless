@@ -465,6 +465,13 @@ disturbing the shipping Swift product:
   a Swift-host decision; for Rust these two are the ecosystem baseline and
   are pinned.
 
+**Progress, 2026-08-27:** #140 adds the platform-neutral connection/listener
+seam, bounded newline framing, response correlation, and the secure Unix
+backend. The Unix implementation preserves the private `0700` runtime,
+`0600` socket, effective-UID peer authorization, stale-socket safety, and
+live-endpoint protection. This does not implement or claim Windows transport;
+the named-pipe, ACL, and SID-authentication backend remains a separate step.
+
 The Swift product remains the reference implementation until the Rust core
 passes an equivalent conformance suite; only then can it start replacing
 hosts. Nothing in this decision changes the hard rules: no arbitrary-JS verb,
