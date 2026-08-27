@@ -408,14 +408,7 @@ Owner-decided scope: package managers, no hosted service.
 
 ## §F — Website & docs (Phase 5)
 
-- **F1. Deploy pipeline is invisible to the repo** ([#47](https://github.com/LockInTime/headless/issues/47)) — the site _is_ live at
-  `https://headless-web-pi.vercel.app` (set as the repo homepage) via Vercel's
-  GitHub integration, but nothing in the tree records that: no `vercel.json`,
-  no deploy docs, no preview-URL comment on PRs, and the temporary
-  `*-pi.vercel.app` hostname suggests no custom domain. Make the deployment
-  reproducible and reviewable — check in the project config, document the
-  hosting in `AGENTS.md`, and decide on a domain. Keep the existing headers/CSP
-  in `next.config.ts`; consider a nonce so `unsafe-inline` can be dropped.
+- **F1. Deploy pipeline is invisible to the repo** ([#47](https://github.com/LockInTime/headless/issues/47)) — **Repository side ready:** root deployment settings are versioned and linted, the GitHub preview and rollback contract is documented, security headers remain in Next.js, and the proven Vercel project alias is canonical until the organization publishes a controlled custom domain. **Pending account verification:** reconnect the Vercel for GitHub integration and confirm a PR preview plus a `main` production deployment before checking this item off.
 - **F2. Content provenance** ([#48](https://github.com/LockInTime/headless/issues/48)) — ~~benchmark numbers hand-copied in
   `app/page.tsx:26-38`, `components/efficiency-chart.tsx:26-31`,
   `components/benchmark-chart.tsx:21-26` (+ date in two places); docs prose

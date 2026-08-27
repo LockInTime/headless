@@ -117,10 +117,9 @@ If a change brushes against any of these, stop and record a decision in
 - Docs: feature docs live in the phase contracts (P0/P1/P2 style — contract,
   deferrals, known limitations). Keep README claims backed by tests or
   evidence.
-- Web (`apps/web`): content is currently hand-duplicated in three places
-  (backlog §F2) — if you change CLI behavior, grep the site
-  (`app/docs/page.tsx`, `components/docs-markdown.ts`, `README.md`) and
-  update all copies.
+- Web (`apps/web`): rendered content derives from `README.md`,
+  `apps/headless/docs/COMMANDS.md`, and the generated benchmark results. Update
+  those sources when CLI behavior changes; web lint checks their provenance.
 - Commits: conventional-ish prefixes in use (`feat:`, `fix:`, `docs:`,
   `ci:`, scope in parens like `fix(macos):`).
 
@@ -130,3 +129,13 @@ Tags `v*` trigger `.github/workflows/release.yml` (macOS zip + Linux
 tarballs). `HEADLESS_VERSION` flows from the tag; protocol version (`"0.5"`
 in `Protocol.swift`) is independent — bump it only for wire-visible changes,
 with a decision entry.
+
+## Website deployment
+
+Vercel deploys `apps/web` from the repository root using
+[`vercel.json`](vercel.json). The production branch is `main`, and the
+canonical production URL is <https://headless-web-pi.vercel.app>. Keep the
+Vercel for GitHub integration enabled for pull-request previews and preview-URL
+comments. Do not add a second deployment workflow that can race the integration.
+Hosting setup, verification, rollback, and the custom-domain decision are in
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).

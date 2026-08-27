@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "pnpm --filter @headless/web build",
+  "devCommand": "pnpm --filter @headless/web exec next dev --port $PORT",
+  "outputDirectory": "apps/web/.next"
+}
