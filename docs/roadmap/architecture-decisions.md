@@ -279,6 +279,8 @@ product version). CHANGELOG generated per tag.
 
 ## 13. Web app: keep Next.js; move content to generated sources (Phase 5)
 
+**Status:** implemented 2026-08-27.
+
 **Decision:** keep `apps/web` on Next.js/Tailwind — no framework change. The
 architectural change is **content provenance**: benchmark numbers, command
 tables, and docs prose must be imported from repo artifacts (benchmark JSON
@@ -287,6 +289,12 @@ parser/help, shared markdown) instead of hand-copied into TSX/TS in three
 places. Also: delete dead visual code (`side-rays.tsx`/`ogl`, unused assets),
 reconsider shipping two WebGL bundles for decoration, add deploy pipeline +
 CI, metadata/sitemap/404. Details: backlog §F.
+
+The website now validates and derives its benchmark presentation from the
+generated benchmark JSON. Its rendered and copyable documentation share the
+README and generated command reference as build-time sources, with a web lint
+gate that fails on missing or malformed provenance instead of preserving a
+stale hand-written fallback.
 
 ## 14. Testing architecture: promote the conformance suite (Phase 1–2)
 
@@ -481,21 +489,21 @@ no TCP listener, fail closed, bounded everything.
 
 ## Decision log
 
-| #   | Decision                                                    | Status            | Date       |
-| --- | ----------------------------------------------------------- | ----------------- | ---------- |
-| 1   | Keep Swift core; Rust only via revisit trigger              | Decided           | 2026-08-04 |
-| 3   | Extract HostCore + BrowserEngine, typed errors              | Implemented       | 2026-08-10 |
-| 5   | Remote stays SSH-only; no cloud offering                    | Decided (owner)   | 2026-08-04 |
+| #   | Decision                                                    | Status                                                    | Date       |
+| --- | ----------------------------------------------------------- | --------------------------------------------------------- | ---------- |
+| 1   | Keep Swift core; Rust only via revisit trigger              | Decided                                                   | 2026-08-04 |
+| 3   | Extract HostCore + BrowserEngine, typed errors              | Implemented                                               | 2026-08-10 |
+| 5   | Remote stays SSH-only; no cloud offering                    | Decided (owner)                                           | 2026-08-04 |
 | 6   | Windows = stretch via Chromium engine; WSL2/Docker interim  | Decided (owner); spike failed 2026-08-22, native deferred | 2026-08-04 |
-| 8   | Real CDP input on Linux as capability upgrade               | Implemented       | 2026-08-13 |
-| 12  | Version unification on git tag                              | Implemented       | 2026-08-04 |
-| 14  | Run one conformance scenario against every engine           | Implemented       | 2026-08-10 |
-| 15  | Package-manager distribution set                            | Decided (owner)   | 2026-08-04 |
-| 16  | Preserve CLI value boundaries with `--` and shell quoting   | Decided           | 2026-08-10 |
-| 17  | Keep full MCP surface; annotate its maximum risk            | Decided           | 2026-08-10 |
-| 18  | Treat WebKit page diagnostics as bounded untrusted evidence | Decided           | 2026-08-10 |
-| 19  | Keep macOS agent startup behind the current app             | Implemented       | 2026-08-12 |
-| 20  | Omit passkeys unless Apple provisions Developer ID release  | Implemented       | 2026-08-12 |
-| 21  | Rust port of shared core, protocol layer first              | In progress       | 2026-08-22 |
+| 8   | Real CDP input on Linux as capability upgrade               | Implemented                                               | 2026-08-13 |
+| 12  | Version unification on git tag                              | Implemented                                               | 2026-08-04 |
+| 14  | Run one conformance scenario against every engine           | Implemented                                               | 2026-08-10 |
+| 15  | Package-manager distribution set                            | Decided (owner)                                           | 2026-08-04 |
+| 16  | Preserve CLI value boundaries with `--` and shell quoting   | Decided                                                   | 2026-08-10 |
+| 17  | Keep full MCP surface; annotate its maximum risk            | Decided                                                   | 2026-08-10 |
+| 18  | Treat WebKit page diagnostics as bounded untrusted evidence | Decided                                                   | 2026-08-10 |
+| 19  | Keep macOS agent startup behind the current app             | Implemented                                               | 2026-08-12 |
+| 20  | Omit passkeys unless Apple provisions Developer ID release  | Implemented                                               | 2026-08-12 |
+| 21  | Rust port of shared core, protocol layer first              | In progress                                               | 2026-08-22 |
 
 New decisions append here with the same format.
