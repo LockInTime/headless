@@ -62,8 +62,8 @@ judgments (not lab benchmarks):
   Runs on macOS and Linux (Ubuntu and common CI/test distros); Windows is the
   exception.
 
-**Measured agent surface** (same P2 fixture flow, Docker ARM64, 17 Jul 2026 —
-point-in-time): Headless warm **147** est. tokens vs Selenium **410** /
+**Measured agent surface** (same P2 fixture flow, Docker ARM64, 27 Aug 2026 —
+point-in-time): Headless warm **174** est. tokens vs Selenium **410** /
 Puppeteer **499**. Full method and limits:
 [BENCHMARK.md](apps/headless/docs/BENCHMARK.md).
 
@@ -235,7 +235,6 @@ published GHCR image under Docker Desktop:
 ```sh
 docker run --shm-size=1g ghcr.io/lockintime/headless:latest headless --version
 ```
-
 
 ### npm / npx
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-12T13:50:38Z",
+  "generatedAt": "2026-08-27T08:42:55Z",
   "provenance": {
     "generator": "apps/headless/benchmark.sh",
     "method": "apps/headless/docs/BENCHMARK.md",
@@ -16,55 +16,55 @@
       "samples": [
         {
           "iteration": 1,
-          "wallMs": 3930,
-          "cpuMs": 2187,
-          "memoryPeakBytes": 752189440,
-          "artifactBytes": 102472,
+          "wallMs": 3551,
+          "cpuMs": 1873,
+          "memoryPeakBytes": 665522176,
+          "artifactBytes": 138624,
           "workflowBytes": 870,
           "estimatedTokens": 218
         },
         {
           "iteration": 2,
-          "wallMs": 3484,
-          "cpuMs": 2028,
-          "memoryPeakBytes": 380952576,
-          "artifactBytes": 99135,
+          "wallMs": 3413,
+          "cpuMs": 1812,
+          "memoryPeakBytes": 395333632,
+          "artifactBytes": 136998,
           "workflowBytes": 870,
           "estimatedTokens": 218
         },
         {
           "iteration": 3,
-          "wallMs": 3473,
-          "cpuMs": 2036,
-          "memoryPeakBytes": 386068480,
-          "artifactBytes": 137356,
+          "wallMs": 3428,
+          "cpuMs": 1794,
+          "memoryPeakBytes": 397774848,
+          "artifactBytes": 136998,
           "workflowBytes": 870,
           "estimatedTokens": 218
         },
         {
           "iteration": 4,
-          "wallMs": 3492,
-          "cpuMs": 1908,
-          "memoryPeakBytes": 388087808,
-          "artifactBytes": 132276,
+          "wallMs": 3378,
+          "cpuMs": 1575,
+          "memoryPeakBytes": 399491072,
+          "artifactBytes": 138274,
           "workflowBytes": 870,
           "estimatedTokens": 218
         },
         {
           "iteration": 5,
-          "wallMs": 3479,
-          "cpuMs": 1972,
-          "memoryPeakBytes": 381677568,
-          "artifactBytes": 101808,
+          "wallMs": 3411,
+          "cpuMs": 1783,
+          "memoryPeakBytes": 400982016,
+          "artifactBytes": 141710,
           "workflowBytes": 870,
           "estimatedTokens": 218
         }
       ],
       "median": {
-        "wallMs": 3484,
-        "cpuMs": 2028,
-        "memoryPeakBytes": 386068480,
-        "artifactBytes": 102472,
+        "wallMs": 3413,
+        "cpuMs": 1794,
+        "memoryPeakBytes": 399491072,
+        "artifactBytes": 138274,
         "workflowBytes": 870,
         "estimatedTokens": 218
       }
@@ -75,54 +75,54 @@
       "samples": [
         {
           "iteration": 1,
-          "wallMs": 3248,
-          "cpuMs": 1379,
-          "memoryPeakBytes": 390807552,
-          "artifactBytes": 141710,
+          "wallMs": 3239,
+          "cpuMs": 1166,
+          "memoryPeakBytes": 397705216,
+          "artifactBytes": 136988,
           "workflowBytes": 693,
           "estimatedTokens": 174
         },
         {
           "iteration": 2,
-          "wallMs": 3237,
-          "cpuMs": 1349,
-          "memoryPeakBytes": 383737856,
-          "artifactBytes": 142986,
+          "wallMs": 3248,
+          "cpuMs": 1219,
+          "memoryPeakBytes": 401375232,
+          "artifactBytes": 136998,
           "workflowBytes": 693,
           "estimatedTokens": 174
         },
         {
           "iteration": 3,
-          "wallMs": 3233,
-          "cpuMs": 1414,
-          "memoryPeakBytes": 383971328,
-          "artifactBytes": 101808,
+          "wallMs": 3237,
+          "cpuMs": 1273,
+          "memoryPeakBytes": 397455360,
+          "artifactBytes": 138253,
           "workflowBytes": 693,
           "estimatedTokens": 174
         },
         {
           "iteration": 4,
-          "wallMs": 3256,
-          "cpuMs": 1376,
-          "memoryPeakBytes": 383102976,
-          "artifactBytes": 103840,
+          "wallMs": 3234,
+          "cpuMs": 1192,
+          "memoryPeakBytes": 396791808,
+          "artifactBytes": 136998,
           "workflowBytes": 693,
           "estimatedTokens": 174
         },
         {
           "iteration": 5,
-          "wallMs": 3277,
-          "cpuMs": 1455,
-          "memoryPeakBytes": 389758976,
-          "artifactBytes": 136998,
+          "wallMs": 3242,
+          "cpuMs": 1218,
+          "memoryPeakBytes": 401682432,
+          "artifactBytes": 138253,
           "workflowBytes": 693,
           "estimatedTokens": 174
         }
       ],
       "median": {
-        "wallMs": 3248,
-        "cpuMs": 1379,
-        "memoryPeakBytes": 383971328,
+        "wallMs": 3239,
+        "cpuMs": 1218,
+        "memoryPeakBytes": 397705216,
         "artifactBytes": 136998,
         "workflowBytes": 693,
         "estimatedTokens": 174
@@ -134,54 +134,54 @@
       "samples": [
         {
           "iteration": 1,
-          "wallMs": 2865,
-          "cpuMs": 1959,
-          "memoryPeakBytes": 380690432,
+          "wallMs": 2800,
+          "cpuMs": 1784,
+          "memoryPeakBytes": 396455936,
           "artifactBytes": 173975,
           "workflowBytes": 1638,
           "estimatedTokens": 410
         },
         {
           "iteration": 2,
-          "wallMs": 2813,
-          "cpuMs": 1893,
-          "memoryPeakBytes": 383242240,
+          "wallMs": 2836,
+          "cpuMs": 1788,
+          "memoryPeakBytes": 395948032,
           "artifactBytes": 173975,
           "workflowBytes": 1638,
           "estimatedTokens": 410
         },
         {
           "iteration": 3,
-          "wallMs": 2924,
-          "cpuMs": 2117,
-          "memoryPeakBytes": 380301312,
+          "wallMs": 2799,
+          "cpuMs": 1780,
+          "memoryPeakBytes": 396189696,
           "artifactBytes": 173975,
           "workflowBytes": 1638,
           "estimatedTokens": 410
         },
         {
           "iteration": 4,
-          "wallMs": 2897,
-          "cpuMs": 2078,
-          "memoryPeakBytes": 385925120,
+          "wallMs": 2834,
+          "cpuMs": 1808,
+          "memoryPeakBytes": 394080256,
           "artifactBytes": 173975,
           "workflowBytes": 1638,
           "estimatedTokens": 410
         },
         {
           "iteration": 5,
-          "wallMs": 2880,
-          "cpuMs": 2010,
-          "memoryPeakBytes": 378208256,
+          "wallMs": 2828,
+          "cpuMs": 1822,
+          "memoryPeakBytes": 395735040,
           "artifactBytes": 173975,
           "workflowBytes": 1638,
           "estimatedTokens": 410
         }
       ],
       "median": {
-        "wallMs": 2880,
-        "cpuMs": 2010,
-        "memoryPeakBytes": 380690432,
+        "wallMs": 2828,
+        "cpuMs": 1788,
+        "memoryPeakBytes": 395948032,
         "artifactBytes": 173975,
         "workflowBytes": 1638,
         "estimatedTokens": 410
@@ -193,54 +193,54 @@
       "samples": [
         {
           "iteration": 1,
-          "wallMs": 2486,
-          "cpuMs": 1942,
-          "memoryPeakBytes": 377262080,
+          "wallMs": 2499,
+          "cpuMs": 1917,
+          "memoryPeakBytes": 403075072,
           "artifactBytes": 178320,
           "workflowBytes": 1996,
           "estimatedTokens": 499
         },
         {
           "iteration": 2,
-          "wallMs": 2437,
-          "cpuMs": 1942,
-          "memoryPeakBytes": 375758848,
+          "wallMs": 2400,
+          "cpuMs": 1861,
+          "memoryPeakBytes": 385277952,
           "artifactBytes": 178320,
           "workflowBytes": 1996,
           "estimatedTokens": 499
         },
         {
           "iteration": 3,
-          "wallMs": 2362,
-          "cpuMs": 1827,
-          "memoryPeakBytes": 375615488,
+          "wallMs": 2415,
+          "cpuMs": 1849,
+          "memoryPeakBytes": 382992384,
           "artifactBytes": 178320,
           "workflowBytes": 1996,
           "estimatedTokens": 499
         },
         {
           "iteration": 4,
-          "wallMs": 2402,
-          "cpuMs": 1860,
-          "memoryPeakBytes": 376266752,
+          "wallMs": 2369,
+          "cpuMs": 1810,
+          "memoryPeakBytes": 379813888,
           "artifactBytes": 178320,
           "workflowBytes": 1996,
           "estimatedTokens": 499
         },
         {
           "iteration": 5,
-          "wallMs": 2398,
-          "cpuMs": 1849,
-          "memoryPeakBytes": 374726656,
+          "wallMs": 2391,
+          "cpuMs": 1842,
+          "memoryPeakBytes": 389476352,
           "artifactBytes": 178320,
           "workflowBytes": 1996,
           "estimatedTokens": 499
         }
       ],
       "median": {
-        "wallMs": 2402,
-        "cpuMs": 1860,
-        "memoryPeakBytes": 375758848,
+        "wallMs": 2400,
+        "cpuMs": 1849,
+        "memoryPeakBytes": 385277952,
         "artifactBytes": 178320,
         "workflowBytes": 1996,
         "estimatedTokens": 499

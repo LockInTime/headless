@@ -431,9 +431,11 @@ Owner-decided scope: package managers, no hosted service.
   matrix, the README's comparison table (strongest positioning content, not
   on site). Plus `robots.txt`, `sitemap`, OG metadata, per-page `metadata`,
   404 page.
-- **F4. Stale-benchmark honesty:** ([#50](https://github.com/LockInTime/headless/issues/50)) site quotes pre-`--task` numbers while
+- **F4. Stale-benchmark honesty:** ([#50](https://github.com/LockInTime/headless/issues/50)) ~~site quotes pre-`--task` numbers while
   marketing `--task`, and drops BENCHMARK.md's re-run warning; headline says
-  "Measured, not claimed." Fix by refresh (D5) or by carrying the caveat.
+  "Measured, not claimed." Fix by refresh (D5) or by carrying the caveat.~~
+  **Done:** a new five-repeat, task-aware snapshot was generated on 27 August 2026. The website imports its medians and date, preserves the point-in-time
+  warning, and web lint rejects README claims that drift from generated data.
 - **F5. Dead weight:** ([#51](https://github.com/LockInTime/headless/issues/51)) `components/ui/side-rays.tsx` + `ogl` dep (unused),
   `public/scan-dashboard.png` (unreferenced), leftover shadcn `.dark` block in
   `globals.css`, 8 unused button variants; two WebGL stacks (~700 KB) for

@@ -165,12 +165,19 @@ export function loadBenchmarkContent() {
     year: "numeric",
     timeZone: "UTC",
   }).format(generatedAt);
+  const methodDate = new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(generatedAt);
 
   const workflows = BENCHMARK_CASES.map((caseName) => {
     const entry = cases.get(caseName);
     const presentation = PRESENTATION[caseName];
     return {
       case: caseName,
+      label: entry.label,
       workflow: entry.label.replace(",", ""),
       ...presentation,
       tokens: entry.median.estimatedTokens,
@@ -189,6 +196,7 @@ export function loadBenchmarkContent() {
 
   benchmarkCache = {
     sectionLabel: `P2 benchmark / ${date}`,
+    methodDate,
     headline:
       warm.estimatedTokens ===
       Math.min(...workflows.map((workflow) => workflow.tokens))
@@ -431,6 +439,51 @@ export function loadDocumentationContent() {
 export function validateRepositoryContent() {
   const benchmark = loadBenchmarkContent();
   const documentation = loadDocumentationContent();
+  const readme = readRepositoryFile("README.md");
+  const method = readRepositoryFile("apps/headless/docs/BENCHMARK.md");
+  const measuredClaim = readme.match(
+    /\*\*Measured agent surface\*\*[\s\S]*?Docker ARM64, ([0-9]{1,2} [A-Z][a-z]{2} [0-9]{4})[\s\S]*?Headless warm \*\*(\d+)\*\* est\. tokens vs Selenium \*\*(\d+)\*\* \/\s*Puppeteer \*\*(\d+)\*\*/,
+  );
+  if (!measuredClaim) fail("README measured agent-surface claim is missing");
+  const workflows = new Map(
+    benchmark.workflows.map((workflow) => [workflow.case, workflow]),
+  );
+  const expectedClaim = [
+    benchmark.sectionLabel.replace("P2 benchmark / ", ""),
+    String(workflows.get("headless-warm").tokens),
+    String(workflows.get("selenium").tokens),
+    String(workflows.get("puppeteer").tokens),
+  ];
+  if (
+    JSON.stringify(measuredClaim.slice(1)) !== JSON.stringify(expectedClaim)
+  ) {
+    fail(
+      "README measured agent-surface claim does not match generated results",
+    );
+  }
+  if (!method.includes(`for each case on ${benchmark.methodDate},`)) {
+    fail("benchmark method date does not match generated results");
+  }
+  for (const workflow of benchmark.workflows) {
+    const row = method
+      .split("\n")
+      .find((line) => line.startsWith(`| ${workflow.label}`));
+    if (!row) fail(`benchmark method is missing row: ${workflow.label}`);
+    const cells = row
+      .split("|")
+      .slice(1, -1)
+      .map((cell) => cell.trim());
+    const expectedCells = [
+      workflow.label,
+      workflow.tokens.toLocaleString("en-US"),
+      `${workflow.wallMs.toLocaleString("en-US")} ms`,
+      `${workflow.cpuMs.toLocaleString("en-US")} ms`,
+      `${workflow.memoryMiB.toLocaleString("en-US")} MiB`,
+    ];
+    if (JSON.stringify(cells) !== JSON.stringify(expectedCells)) {
+      fail(`benchmark method row is stale: ${workflow.label}`);
+    }
+  }
   return {
     benchmarkCases: benchmark.workflows.length,
     commandGroups: documentation.commandGroups.length,
