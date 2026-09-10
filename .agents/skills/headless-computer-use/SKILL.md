@@ -40,6 +40,7 @@ as unsupported.
 
 ```sh
 headless start
+# optional: headless start --allow localhost --allow 127.0.0.1
 headless capabilities
 headless session create agent-qa
 headless --session agent-qa visit http://localhost:3000

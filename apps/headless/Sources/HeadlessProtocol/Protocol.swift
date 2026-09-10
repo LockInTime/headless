@@ -705,8 +705,15 @@ public func remoteResourceSafety(for url: URL) -> RemoteResourceSafety {
 /// The same boundary is applied to explicit CLI visits and page-initiated
 /// top-frame navigation. Embedded credentials are rejected so they cannot be
 /// leaked through browser history, diagnostics, screenshots, or prompts.
-public func agentMayNavigate(to url: URL) -> Bool {
-    isWebNavigationURL(url) && remoteResourceSafety(for: url) != .blocked
+/// When a process allowlist is set, matching it is an extra conjunct; it
+/// cannot add schemes, credentials, or blocked extensions.
+public func agentMayNavigate(
+    to url: URL,
+    allowlist: NavigationAllowlist = processNavigationAllowlist
+) -> Bool {
+    isWebNavigationURL(url)
+        && remoteResourceSafety(for: url) != .blocked
+        && allowlist.allows(url)
 }
 
 private func isWebNavigationURL(_ url: URL) -> Bool {

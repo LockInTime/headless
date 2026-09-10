@@ -504,6 +504,213 @@ struct ProtocolTests {
         }
     }
 
+    static func navigationAllowlist() throws {
+        let unrestricted = NavigationAllowlist.unrestricted
+        try expect(unrestricted.patterns.isEmpty, "empty allowlist should be unrestricted")
+        try expect(!unrestricted.isRestricted, "empty allowlist should not be restricted")
+        try expect(
+            unrestricted.allows(URL(string: "https://example.com/dashboard")!),
+            "unrestricted allowlist should permit any otherwise-legal host"
+        )
+        try expect(
+            agentMayNavigate(to: URL(string: "https://example.com/dashboard")!, allowlist: unrestricted),
+            "agentMayNavigate should stay open when the allowlist is empty"
+        )
+
+        let repeated = try CLIParser().parse([
+            "start", "--allow", "localhost", "--allow", "*.staging.example.com",
+        ])
+        try expect(
+            repeated.local == .start(
+                presentation: nil,
+                allowlist: try NavigationAllowlist.parse(["localhost", "*.staging.example.com"])
+            ),
+            "repeated --allow flags should parse in order"
+        )
+
+        let commaSeparated = try CLIParser().parse(["start", "--allow", "localhost,127.0.0.1"])
+        try expect(
+            commaSeparated.local == .start(
+                presentation: nil,
+                allowlist: try NavigationAllowlist.parse(["localhost", "127.0.0.1"])
+            ),
+            "comma-separated --allow values should parse"
+        )
+
+        let withBackground = try CLIParser().parse([
+            "start", "--allow", "localhost", "--background",
+        ])
+        try expect(
+            withBackground.local == .start(
+                presentation: .background,
+                allowlist: try NavigationAllowlist.parse(["localhost"])
+            ),
+            "start --allow should compose with --background"
+        )
+        let withForeground = try CLIParser().parse([
+            "start", "--foreground", "--allow", "127.0.0.1",
+        ])
+        try expect(
+            withForeground.local == .start(
+                presentation: .foreground,
+                allowlist: try NavigationAllowlist.parse(["127.0.0.1"])
+            ),
+            "start --allow should compose with --foreground"
+        )
+
+        let deduped = try NavigationAllowlist.parse(["LocalHost", "localhost", "LOCALHOST:3000"])
+        try expect(
+            deduped.patterns == ["localhost", "localhost:3000"],
+            "allowlist patterns should canonicalize case and preserve first-seen order"
+        )
+
+        try expectThrows("bare * is not a host pattern") {
+            _ = try NavigationAllowlist.parse(["*"])
+        }
+        try expectThrows("file: patterns must be rejected") {
+            _ = try NavigationAllowlist.parse(["file:"])
+        }
+        try expectThrows("scheme patterns must be rejected") {
+            _ = try NavigationAllowlist.parse(["https://example.com"])
+        }
+        try expectThrows("javascript: patterns must be rejected") {
+            _ = try NavigationAllowlist.parse(["javascript:alert(1)"])
+        }
+        try expectThrows("credential patterns must be rejected") {
+            _ = try NavigationAllowlist.parse(["user:secret@example.com"])
+        }
+        try expectThrows("path patterns must be rejected") {
+            _ = try NavigationAllowlist.parse(["example.com/path"])
+        }
+        try expectThrows("whitespace-only patterns must be rejected") {
+            _ = try NavigationAllowlist.parse(["   "])
+        }
+        try expectThrows("empty --allow should be a parse error") {
+            _ = try CLIParser().parse(["start", "--allow"])
+        }
+        try expectThrows("empty --allow values should be a parse error") {
+            _ = try CLIParser().parse(["start", "--allow", ""])
+        }
+        try expectThrows("non-ASCII patterns must be rejected") {
+            _ = try NavigationAllowlist.parse(["exämple.com"])
+        }
+        try expectThrows("embedded wildcards must be rejected") {
+            _ = try NavigationAllowlist.parse(["foo.*.example.com"])
+        }
+
+        var tooMany = ["start"]
+        for index in 1...33 {
+            tooMany.append(contentsOf: ["--allow", "host\(index).example.com"])
+        }
+        try expectThrows("more than 32 patterns should be rejected") {
+            _ = try CLIParser().parse(tooMany)
+        }
+        let atCap = (1...32).map { "host\($0).example.com" }
+        try expect(
+            try NavigationAllowlist.parse(atCap).patterns.count == 32,
+            "32 unique patterns should be accepted"
+        )
+
+        let wildcard = try NavigationAllowlist.parse(["*.example.com"])
+        try expect(
+            wildcard.allows(URL(string: "https://foo.example.com/")!),
+            "wildcard should match one subdomain label"
+        )
+        try expect(
+            wildcard.allows(URL(string: "https://a.b.example.com/")!),
+            "wildcard should match nested subdomain labels"
+        )
+        try expect(
+            !wildcard.allows(URL(string: "https://example.com/")!),
+            "wildcard should not match the apex host"
+        )
+        try expect(
+            !wildcard.allows(URL(string: "https://example.com.evil.test/")!),
+            "wildcard should not match a suffix outside the parent domain"
+        )
+        try expect(
+            !agentMayNavigate(
+                to: URL(string: "https://example.com/")!,
+                allowlist: wildcard
+            ),
+            "agentMayNavigate should deny an apex host for a subdomain wildcard"
+        )
+
+        let anyPort = try NavigationAllowlist.parse(["localhost"])
+        try expect(anyPort.allows(URL(string: "http://localhost/")!), "localhost should match the default HTTP port")
+        try expect(anyPort.allows(URL(string: "http://localhost:3000/")!), "localhost should match any port")
+        try expect(anyPort.allows(URL(string: "https://localhost:8443/")!), "localhost should match HTTPS ports")
+        let exactPort = try NavigationAllowlist.parse(["localhost:3000"])
+        try expect(exactPort.allows(URL(string: "http://localhost:3000/")!), "localhost:3000 should match that port")
+        try expect(!exactPort.allows(URL(string: "http://localhost:3001/")!), "localhost:3000 should reject other ports")
+        try expect(!exactPort.allows(URL(string: "http://localhost/")!), "localhost:3000 should reject the default HTTP port")
+
+        let loopback = try NavigationAllowlist.parse(["127.0.0.1"])
+        try expect(loopback.allows(URL(string: "http://127.0.0.1:41739/")!), "IPv4 literals should match exactly")
+        try expect(!loopback.allows(URL(string: "http://localhost/")!), "IPv4 literals should not match localhost")
+
+        try CommandRequest(
+            command: .visit, parameters: ["url": .string("https://example.com/dashboard")]
+        ).validate()
+        let visit = try CLIParser().parse(["visit", "example.com"])
+        try expect(
+            visit.request?.parameters["url"] == .string("https://example.com"),
+            "visit should still accept example.com as a URL before host allowlist enforcement"
+        )
+
+        try expect(
+            try NavigationAllowlist(environment: [:]).patterns.isEmpty,
+            "missing env should be unrestricted"
+        )
+        try expect(
+            try NavigationAllowlist(environment: [headlessNavigationAllowlistEnvironmentKey: ""]).patterns.isEmpty,
+            "empty env should be unrestricted"
+        )
+        try expect(
+            try NavigationAllowlist(
+                environment: [headlessNavigationAllowlistEnvironmentKey: "localhost,127.0.0.1"]
+            ).patterns == ["localhost", "127.0.0.1"],
+            "env should parse canonical comma-separated patterns"
+        )
+        try expectThrows("invalid env patterns should fail closed") {
+            _ = try NavigationAllowlist(environment: [headlessNavigationAllowlistEnvironmentKey: "*"])
+        }
+
+        let root = "/tmp/headless-allowlist-test-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let core = HostCore(
+            engine: TestBrowserEngine(),
+            artifacts: try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": root]),
+            defaultSession: TestBrowserSession(),
+            navigationAllowlist: loopback,
+            shutdownHandler: {}
+        )
+        defer { core.stop() }
+        let ping = core.handle(CommandRequest(command: .ping))
+        guard ping.ok, case .object(let pingResult) = ping.result else {
+            throw TestFailure(description: "restricted host ping should succeed")
+        }
+        try expect(
+            pingResult["navigationAllowlist"] == .array([.string("127.0.0.1")]),
+            "ping should report canonical allowlist patterns"
+        )
+        let allowed = core.handle(CommandRequest(
+            command: .visit, parameters: ["url": .string("http://127.0.0.1:41739/designers/dashboard")]
+        ))
+        try expect(allowed.ok, "visit to an allowlisted host should succeed")
+        let denied = core.handle(CommandRequest(
+            command: .visit, parameters: ["url": .string("https://example.com")]
+        ))
+        try expect(
+            denied.error?.code == "UNSAFE_NAVIGATION",
+            "host-side visit should deny a non-matching host after URL validation"
+        )
+        try expect(
+            agentRuntimeJavaScript.contains("__headlessNavigationAllowlist"),
+            "injected runtime should carry the process allowlist preamble"
+        )
+    }
+
     static func messageSizeLimit() throws {
         let exactPayload = String(repeating: "a", count: headlessMaximumMessageBytes - 3)
         let exactLine = try ProtocolCodec.encodeLine(exactPayload)
@@ -1029,9 +1236,19 @@ struct ProtocolTests {
         }
 
         let localCommands: [([String], LocalCommand)] = [
-            (["start"], .start(presentation: nil)),
-            (["start", "--background"], .start(presentation: .background)),
-            (["start", "--foreground"], .start(presentation: .foreground)),
+            (["start"], .start(presentation: nil, allowlist: .unrestricted)),
+            (["start", "--background"], .start(presentation: .background, allowlist: .unrestricted)),
+            (["start", "--foreground"], .start(presentation: .foreground, allowlist: .unrestricted)),
+            (["start", "--allow", "localhost"], .start(
+                presentation: nil, allowlist: try NavigationAllowlist.parse(["localhost"])
+            )),
+            (
+                ["start", "--allow", "localhost", "--allow", "127.0.0.1", "--background"],
+                .start(
+                    presentation: .background,
+                    allowlist: try NavigationAllowlist.parse(["localhost", "127.0.0.1"])
+                )
+            ),
             (["config", "get", "startup-presentation"], .config(.get("startup-presentation"))),
             (["config", "set", "startup-presentation", "background"], .config(.set(
                 key: "startup-presentation", value: "background"
@@ -3195,6 +3412,10 @@ struct ProtocolTests {
         try expect(pingResult["productVersion"] == .string(headlessProductVersion), "ping should identify the product version")
         try expect(pingResult["adapter"] == .string("test-adapter"), "engine ping details should be merged")
         try expect(pingResult["capabilities"] != nil, "ping should publish the active engine profile")
+        try expect(
+            pingResult["navigationAllowlist"] == .array([]),
+            "unrestricted ping should report an empty navigation allowlist"
+        )
 
         let cleared = core.handle(CommandRequest(command: .profileClear))
         try expect(cleared.ok, "shared profile clear should succeed")
@@ -3288,6 +3509,7 @@ struct ProtocolTests {
             ("unsafe navigation schemes", rejectsUnsafeNavigationSchemes),
             ("localhost normalization", normalizesLocalhostToHTTP),
             ("page navigation boundary", pageNavigationBoundary),
+            ("navigation allowlist", navigationAllowlist),
             ("message size limit", messageSizeLimit),
             ("identifier validation", identifierValidation),
             ("durable browser profile lifecycle", durableBrowserProfileLifecycle),

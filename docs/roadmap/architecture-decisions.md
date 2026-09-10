@@ -485,6 +485,39 @@ passes an equivalent conformance suite; only then can it start replacing
 hosts. Nothing in this decision changes the hard rules: no arbitrary-JS verb,
 no TCP listener, fail closed, bounded everything.
 
+## 22. Optional host origin allowlist on `headless start`
+
+**Decision:** `headless start --allow PATTERN` installs a process-wide host
+origin allowlist for agent navigation. Repeatable `--allow` flags and
+comma-separated values in one flag are both accepted. Omitting `--allow`
+keeps today's behavior: any otherwise-legal HTTP(S) URL. Presentation flags
+stay macOS-only.
+
+The matcher is a small `NavigationAllowlist` type in `HeadlessProtocol`, used
+as an extra conjunct in `agentMayNavigate`. It cannot add `file:`,
+`javascript:`, credentials, or blocked extensions; `normalizedWebURL` is
+unchanged. When the list is set, visit, top-frame navigation, and in-page
+clicks to a non-matching host fail with `UNSAFE_NAVIGATION`. `status` / ping
+report `navigationAllowlist` (empty array means unrestricted). Changing the
+list on an already-running host is rejected; matching list or `start` without
+`--allow` against a running host remains a no-op success.
+
+**Status:** implemented 2026-09-10.
+
+**Rationale:** a prompt-injected or confused agent can otherwise leave the app
+under test and open an arbitrary site. Scheme/credential/extension checks are
+not an origin policy. The allowlist is a host-enforced boundary, not a prompt
+rule, so it must live in the same function already consulted by CLI visit,
+WKWebView `decidePolicyFor`, Linux frame-event enforcement, and the isolated
+click guard.
+
+**Consequences:** CLI `start --allow` sets `HEADLESS_NAVIGATION_ALLOWLIST` on
+the spawned host. The injected agent runtime receives a JSON-encoded copy as
+defense in depth; page JS cannot widen the host-trusted policy. Protocol
+version stays 0.5 (additive ping field). Patterns are hosts with optional
+`:port` and optional leading `*.`, capped at 32, case-insensitive, fail
+closed on `*` alone, non-ASCII, paths, schemes, and credentials.
+
 ---
 
 ## 24. Credential broker on the unsigned local tier
@@ -734,9 +767,10 @@ rule that durable saved-credential retrieval needs trusted per-use presence.
 | 19  | Keep macOS agent startup behind the current app             | Implemented                                               | 2026-08-12 |
 | 20  | Omit passkeys unless Apple provisions Developer ID release  | Implemented                                               | 2026-08-12 |
 | 21  | Rust port of shared core, protocol layer first              | In progress                                               | 2026-08-22 |
+| 22  | Optional host origin allowlist on `headless start`          | Implemented                                               | 2026-09-10 |
 | 24  | Credential broker on the unsigned local tier                | Decided                                                   | 2026-09-10 |
 | 25  | Typed local settings registry; security policy stays fixed  | Implemented                                               | 2026-09-12 |
 | 26  | Isolated sessions own one ephemeral browser context         | Implemented                                               | 2026-09-12 |
 | 27  | Interactive authentication keeps consent in trusted host    | Implemented                                               | 2026-09-12 |
 
-New decisions append here with the same format. 22 and 23 are claimed by open PRs #170 and #169.
+New decisions append here with the same format.

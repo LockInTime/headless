@@ -506,6 +506,45 @@ headless start >/dev/null
 headless status | grep -q '"ready":true'
 headless session list | grep -q '"sessions":\["default"\]'
 
+# Navigation allowlist: stop the unrestricted host, start with --allow,
+# deny off-list visit/click, then restore an unrestricted host for cleanup.
+wait_for_host_exit() {
+  pid="$1"
+  waited=0
+  while [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 50 ]; do
+    waited=$((waited + 1))
+    sleep 0.1
+  done
+}
+ALLOWLIST_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+headless stop >/dev/null 2>&1 || true
+wait_for_host_exit "$ALLOWLIST_PID"
+headless start --allow 127.0.0.1 | grep -q '"navigationAllowlist":\["127.0.0.1"\]'
+headless visit http://127.0.0.1:41739/designers/dashboard/ | grep -q 'Designers Dashboard'
+if ALLOWLIST_VISIT="$(headless visit https://example.com/)"; then
+  echo "off-allowlist visit was not blocked" >&2
+  exit 1
+fi
+echo "$ALLOWLIST_VISIT" | grep -q 'UNSAFE_NAVIGATION'
+if ALLOWLIST_CLICK="$(headless click --role link --name 'Off-allowlist site')"; then
+  echo "off-allowlist click was not blocked" >&2
+  exit 1
+fi
+echo "$ALLOWLIST_CLICK" | grep -q 'UNSAFE_NAVIGATION'
+headless start --allow 127.0.0.1 | grep -q '"ready":true'
+if ALLOWLIST_MISMATCH="$(headless start --allow example.com)"; then
+  echo "a conflicting --allow list was accepted on a running host" >&2
+  exit 1
+fi
+echo "$ALLOWLIST_MISMATCH" | grep -q 'NAVIGATION_ALLOWLIST_CONFLICT'
+echo "$ALLOWLIST_MISMATCH" | grep -q 'headless stop'
+headless start | grep -q '"ready":true'
+headless status | grep -q '"navigationAllowlist":\["127.0.0.1"\]'
+ALLOWLIST_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+headless stop >/dev/null
+wait_for_host_exit "$ALLOWLIST_PID"
+headless start | grep -q '"navigationAllowlist":\[\]'
+
 if [ -n "${HEADLESS_EVIDENCE_DIR:-}" ]; then
   umask 077
   mkdir -p "$HEADLESS_EVIDENCE_DIR"

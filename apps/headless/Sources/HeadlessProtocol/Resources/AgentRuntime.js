@@ -48,6 +48,42 @@ if (!globalThis.__headlessAgent) {
       } catch (_) { return {level: 'unknown'}; }
       return {level: 'allowed'};
     };
+    const navigationAllowlistAllows = url => {
+      const list = globalThis.__headlessNavigationAllowlist;
+      if (!Array.isArray(list) || list.length === 0) return true;
+      const host = String(url.hostname || '').toLowerCase();
+      if (!host) return false;
+      const protocol = String(url.protocol || '').toLowerCase();
+      let port = url.port ? Number(url.port) : NaN;
+      if (!Number.isFinite(port)) {
+        if (protocol === 'https:') port = 443;
+        else if (protocol === 'http:') port = 80;
+      }
+      for (const raw of list) {
+        let pattern = String(raw || '').toLowerCase();
+        let wildcard = false;
+        if (pattern.startsWith('*.')) {
+          wildcard = true;
+          pattern = pattern.slice(2);
+        }
+        let patternHost = pattern;
+        let patternPort = null;
+        const colon = pattern.lastIndexOf(':');
+        if (colon !== -1) {
+          const parsedPort = Number(pattern.slice(colon + 1));
+          if (Number.isFinite(parsedPort)) {
+            patternHost = pattern.slice(0, colon);
+            patternPort = parsedPort;
+          }
+        }
+        const hostMatches = wildcard
+          ? host !== patternHost && host.endsWith('.' + patternHost)
+          : host === patternHost;
+        const portMatches = patternPort == null || patternPort === port;
+        if (hostMatches && portMatches) return true;
+      }
+      return false;
+    };
     const visible = element => {
       if (!(element instanceof Element) || !element.isConnected) return false;
       const style = getComputedStyle(element);
@@ -568,6 +604,9 @@ if (!globalThis.__headlessAgent) {
         const scheme = destination.protocol.toLowerCase();
         if (!['http:', 'https:'].includes(scheme) || destination.username || destination.password) {
           fail('UNSAFE_NAVIGATION', `UNSAFE_NAVIGATION:${scheme}`);
+        }
+        if (!navigationAllowlistAllows(destination)) {
+          fail('UNSAFE_NAVIGATION', `UNSAFE_NAVIGATION:${destination.hostname || destination.host}`);
         }
         const safety = resourceSafety(destination.href);
         if (safety.level === 'blocked') fail('UNSAFE_RESOURCE_TYPE', `UNSAFE_RESOURCE_TYPE:${safety.extension}`);

@@ -21,7 +21,7 @@ headless <command> -- --value       # stop option parsing; literal values
 
 ```sh
 version | --version
-start [--background|--foreground] | status | stop | runtime
+start [--background|--foreground] [--allow PATTERN]... | status | stop | runtime
 profile clear
 config list | config describe KEY | config get KEY
 config set KEY VALUE | config reset KEY
@@ -29,9 +29,13 @@ session create [NAME] [--isolated] | session list | session close NAME
 capabilities
 ```
 
-- `start` launches the host if it is not already running. `status` and `stop`
-  control it afterwards. `runtime` reports which engine is active and where it
-  came from.
+- `start` launches the host if it is not already running. Repeatable
+  `--allow PATTERN` (comma-separated values also accepted) restricts agent
+  navigation to matching hosts; omit it to keep unrestricted HTTP(S). `status`
+  reports the active `navigationAllowlist` (empty means unrestricted). Changing
+  the list on a running host is rejected — `headless stop` first. `stop`
+  controls the host afterwards. `runtime` reports which engine is active and
+  where it came from.
 - `config list` discovers agent-visible settings. `config describe KEY` reports
   its type, default, platform scope, access class, effect timing, current value,
   and whether the current platform supports it. `config get`, `set`, and

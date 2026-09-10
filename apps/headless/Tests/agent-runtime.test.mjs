@@ -228,6 +228,23 @@ assert.throws(
   error => error.headlessCode === 'UNSAFE_NAVIGATION' && /UNSAFE_NAVIGATION:javascript:/.test(error.message),
 );
 
+window.__headlessNavigationAllowlist = Object.freeze(['127.0.0.1']);
+const offAllowlist = window.document.createElement('a');
+offAllowlist.href = 'https://example.com/';
+offAllowlist.setAttribute('aria-label', 'Off allowlist link');
+window.document.body.prepend(offAllowlist);
+assert.throws(
+  () => agent.click({role: 'link', name: 'Off allowlist link'}),
+  error => error.headlessCode === 'UNSAFE_NAVIGATION',
+);
+const onAllowlist = window.document.createElement('a');
+onAllowlist.href = 'http://127.0.0.1:41739/next';
+onAllowlist.setAttribute('aria-label', 'On allowlist link');
+window.document.body.prepend(onAllowlist);
+assert.equal(agent.click({role: 'link', name: 'On allowlist link'}).role, 'link');
+window.__headlessNavigationAllowlist = [];
+assert.equal(agent.click({role: 'link', name: 'Off allowlist link'}).role, 'link');
+
 window.scrollY = 0;
 const downward = agent.scroll({direction: 'down', amount: 300});
 assert.equal(downward.direction, 'down');
