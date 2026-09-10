@@ -23,7 +23,7 @@ Read before making non-trivial changes:
   check items off when you fix them and add the named test.
 - `CONTRIBUTING.md` — the same rules for humans, plus setup detail.
 - `SECURITY.md` — the boundaries a bug report is measured against.
-- To *use* Headless as a browser tool (rather than develop it), follow the
+- To _use_ Headless as a browser tool (rather than develop it), follow the
   skill: `.agents/skills/headless-computer-use/SKILL.md`.
 
 ## Layout
@@ -117,10 +117,9 @@ If a change brushes against any of these, stop and record a decision in
 - Docs: feature docs live in the phase contracts (P0/P1/P2 style — contract,
   deferrals, known limitations). Keep README claims backed by tests or
   evidence.
-- Web (`apps/web`): content is currently hand-duplicated in three places
-  (backlog §F2) — if you change CLI behavior, grep the site
-  (`app/docs/page.tsx`, `components/docs-markdown.ts`, `README.md`) and
-  update all copies.
+- Web (`apps/web`): rendered content derives from `README.md`,
+  `apps/headless/docs/COMMANDS.md`, and the generated benchmark results. Update
+  those sources when CLI behavior changes; web lint checks their provenance.
 - Commits: conventional-ish prefixes in use (`feat:`, `fix:`, `docs:`,
   `ci:`, scope in parens like `fix(macos):`).
 
@@ -130,3 +129,14 @@ Tags `v*` trigger `.github/workflows/release.yml` (macOS zip + Linux
 tarballs). `HEADLESS_VERSION` flows from the tag; protocol version (`"0.5"`
 in `Protocol.swift`) is independent — bump it only for wire-visible changes,
 with a decision entry.
+
+## Website deployment
+
+Vercel deploys `apps/web` with that directory configured as the project root,
+using [`apps/web/vercel.json`](apps/web/vercel.json). The production branch is
+`main`, and the canonical production URL is
+<https://headless-web-pi.vercel.app>. Keep the Vercel for GitHub integration
+enabled for pull-request previews and preview-URL comments. Do not add a second
+deployment workflow that can race the integration.
+Hosting setup, verification, rollback, and the custom-domain decision are in
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
