@@ -397,6 +397,34 @@ assert.equal(
   budgetedText.contextStats.encodedBytes,
 );
 
+const uploadControls = window.document.createElement('section');
+uploadControls.innerHTML = `
+  <label for="runtime-resume">Resume</label>
+  <input id="runtime-resume" type="file">
+  <button type="button" aria-label="Not a file">Skip</button>
+`;
+window.document.body.prepend(uploadControls);
+const fileInput = uploadControls.querySelector('input[type="file"]');
+fileInput.getBoundingClientRect = () => ({
+  x: 20, y: 140, top: 140, left: 20, right: 220, bottom: 180, width: 200, height: 40,
+});
+agent.snapshot(false, false, {context: 'actions', limit: 20});
+const fileSnapshot = agent.snapshot(false, false, {context: 'actions', task: 'upload Resume', limit: 20});
+const fileItem = fileSnapshot.elements.find(element => element.name === 'Resume');
+assert.equal(fileItem?.inputType, 'file');
+assert.equal(fileItem?.actions?.length, 1);
+assert.equal(fileItem?.actions?.[0], 'upload');
+assert.equal(agent.fileInput({role: 'textbox', name: 'Resume'}), fileInput);
+assert.equal(agent.fileInputResult({role: 'textbox', name: 'Resume'}).uploaded, fileItem.ref);
+assert.throws(
+  () => agent.fileInput({role: 'button', name: 'Not a file'}),
+  error => error.headlessCode === 'ELEMENT_NOT_FOUND' && /not a file input/.test(error.message),
+);
+assert.throws(
+  () => agent.fileInput({role: 'button', name: 'Runtime action'}),
+  error => error.headlessCode === 'ELEMENT_NOT_FOUND',
+);
+
 console.log(JSON.stringify({
   selectedRegion: targetRegion.ref,
   full: full.contextStats,

@@ -9,7 +9,7 @@ STEP="setup"
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
-mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/api"
+mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/file-upload" "$FIXTURE_ROOT/api"
 cp /opt/headless/fixtures/dashboard.html "$FIXTURE_ROOT/designers/dashboard/index.html"
 cp /opt/headless/fixtures/next.html "$FIXTURE_ROOT/next/index.html"
 cp /opt/headless/fixtures/hostile.html "$FIXTURE_ROOT/hostile/index.html"
@@ -17,6 +17,7 @@ cp /opt/headless/fixtures/large-document.html "$FIXTURE_ROOT/large-document/inde
 cp /opt/headless/fixtures/trusted-input.html "$FIXTURE_ROOT/trusted-input/index.html"
 cp /opt/headless/fixtures/auth-state.html "$FIXTURE_ROOT/auth-state/index.html"
 cp /opt/headless/fixtures/auth-login.html "$FIXTURE_ROOT/auth-login/index.html"
+cp /opt/headless/fixtures/file-upload.html "$FIXTURE_ROOT/file-upload/index.html"
 cp /opt/headless/fixtures/api-diagnostic.json "$FIXTURE_ROOT/api/diagnostic"
 busybox httpd -f -p 127.0.0.1:41739 -h "$FIXTURE_ROOT" &
 FIXTURE_PID=$!
@@ -302,6 +303,46 @@ TRUSTED_INPUT="$(headless --session qa inspect --text)"
 echo "$TRUSTED_INPUT" | grep -q 'input:true'
 echo "$TRUSTED_INPUT" | grep -q 'key:Enter:true'
 echo "$TRUSTED_INPUT" | grep -q 'click:true'
+printf 'resume-fixture\n' > "$FIXTURE_ROOT/resume.txt"
+ADD="$(headless artifacts add "$FIXTURE_ROOT/resume.txt" --name resume.txt)"
+echo "$ADD" | grep -q '"name":"resume.txt"'
+echo "$ADD" | grep -q '"kind":"txt"'
+test "$(cat "$HEADLESS_ARTIFACT_DIR/resume.txt")" = "resume-fixture"
+test "$(stat -c %a "$HEADLESS_ARTIFACT_DIR/resume.txt")" = "600"
+printf 'cover-letter\n' > "$FIXTURE_ROOT/cover.txt"
+RELATIVE_ADD="$(cd "$FIXTURE_ROOT" && headless artifacts add ./cover.txt --name cover.txt)"
+echo "$RELATIVE_ADD" | grep -q '"name":"cover.txt"'
+headless artifacts list | grep -q '"name":"resume.txt"'
+if headless artifacts add "$FIXTURE_ROOT/resume.txt" --name resume.txt >/dev/null 2>&1; then
+  echo "artifact ingest overwrite was not rejected" >&2
+  exit 1
+fi
+if headless artifacts add "$FIXTURE_ROOT/resume.txt" --name resume.html >/dev/null 2>&1; then
+  echo "html artifact ingest was not rejected" >&2
+  exit 1
+fi
+headless --session qa visit http://127.0.0.1:41739/file-upload/ | grep -q 'File upload fixture'
+UPLOAD_SNAPSHOT="$(headless --session qa inspect --interactive)"
+echo "$UPLOAD_SNAPSHOT" | grep -q '"name":"Resume"'
+echo "$UPLOAD_SNAPSHOT" | grep -q '"actions":\["upload"\]'
+echo "$UPLOAD_SNAPSHOT" | grep -q '"inputType":"file"'
+UPLOAD="$(headless --session qa upload --role textbox --name Resume --artifact resume.txt)"
+echo "$UPLOAD" | grep -q '"artifact":"resume.txt"'
+echo "$UPLOAD" | grep -q '"uploaded"'
+! echo "$UPLOAD" | grep -q "$HEADLESS_ARTIFACT_DIR"
+! echo "$UPLOAD" | grep -q "$FIXTURE_ROOT"
+UPLOAD_PAGE="$(headless --session qa inspect --text)"
+echo "$UPLOAD_PAGE" | grep -q 'resume.txt'
+if MISSING_UPLOAD="$(headless --session qa upload --role textbox --name Resume --artifact missing.txt)"; then
+  echo "missing artifact upload was not rejected" >&2
+  exit 1
+fi
+echo "$MISSING_UPLOAD" | grep -q 'ARTIFACT_ERROR'
+if BUTTON_UPLOAD="$(headless --session qa upload --role button --name 'Not a file' --artifact resume.txt)"; then
+  echo "upload to a non-file control was not rejected" >&2
+  exit 1
+fi
+echo "$BUTTON_UPLOAD" | grep -q 'ELEMENT_NOT_FOUND'
 headless --session qa visit http://127.0.0.1:41739/designers/dashboard/ | grep -q 'Designers Dashboard'
 if EXTERNAL_RESULT="$(headless --session qa click --role link --name 'External application')"; then
   echo "external application link was not blocked" >&2

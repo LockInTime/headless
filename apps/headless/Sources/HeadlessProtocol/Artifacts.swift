@@ -207,7 +207,7 @@ public final class ArtifactStore: @unchecked Sendable {
     private static let listedExtensions: Set<String> =
         ScreenshotFormat.artifactExtensions
         .union(RecordingFormat.artifactExtensions)
-        .union(["json"])
+        .union(uploadArtifactExtensions)
 
     private func metadata(for url: URL) throws -> JSONValue {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
@@ -220,6 +220,80 @@ public final class ArtifactStore: @unchecked Sendable {
             "bytes": .number(bytes),
             "createdAt": .number(created),
         ])
+    }
+
+    /// Copies a local regular file into the store. The source is read by the
+    /// host process (same UID as the socket peer); file bytes never appear in
+    /// protocol parameters. Symlinks, directories, FIFOs, and oversized files
+    /// fail closed. The stored object is always a new `0600` regular file.
+    public func ingest(sourcePath: String, name: String) throws -> JSONValue {
+        do { try validateArtifactName(name, expectedExtensions: uploadArtifactExtensions) }
+        catch { throw ArtifactError.invalidName(name) }
+        let data = try readUploadSource(sourcePath)
+        let fileExtension = URL(fileURLWithPath: name).pathExtension.lowercased()
+        return try write(
+            data, requestedName: name, extension: fileExtension, prefix: "upload"
+        )
+    }
+
+    /// Resolves an already-stored upload artifact to its on-disk URL. Callers
+    /// receive a path inside this store only, never an agent-supplied path.
+    public func urlForExistingArtifact(
+        name: String, allowedExtensions: Set<String> = uploadArtifactExtensions
+    ) throws -> URL {
+        lock.lock(); defer { lock.unlock() }
+        do { try validateArtifactName(name, expectedExtensions: allowedExtensions) }
+        catch { throw ArtifactError.invalidName(name) }
+        let url = rootURL.appendingPathComponent(name, isDirectory: false)
+        guard url.deletingLastPathComponent().standardizedFileURL == rootURL.standardizedFileURL else {
+            throw ArtifactError.invalidName(name)
+        }
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else { throw ArtifactError.missing(name) }
+        guard (info.st_mode & S_IFMT) == S_IFREG else {
+            throw ArtifactError.writeFailed("Artifact is not a permitted regular file")
+        }
+        return url
+    }
+
+    private func readUploadSource(_ sourcePath: String) throws -> Data {
+        guard sourcePath.hasPrefix("/") else {
+            throw ArtifactError.writeFailed("Source must be an absolute path")
+        }
+        let sourceURL = URL(fileURLWithPath: sourcePath)
+        guard sourceURL.path.hasPrefix("/") else {
+            throw ArtifactError.writeFailed("Source must be an absolute path")
+        }
+        var info = stat()
+        guard lstat(sourceURL.path, &info) == 0 else {
+            throw ArtifactError.writeFailed("Source file is missing or unreadable")
+        }
+        guard (info.st_mode & S_IFMT) == S_IFREG else {
+            throw ArtifactError.writeFailed("Source must be a regular file")
+        }
+        guard info.st_size >= 0, info.st_size <= off_t(ProtocolBounds.artifactUploadBytes) else {
+            throw ArtifactError.writeFailed("Source file exceeds the 5 MiB upload limit")
+        }
+        let descriptor = open(sourceURL.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else {
+            throw ArtifactError.writeFailed("Source file is missing or unreadable")
+        }
+        defer { _ = close(descriptor) }
+        var opened = stat()
+        guard fstat(descriptor, &opened) == 0, (opened.st_mode & S_IFMT) == S_IFREG else {
+            throw ArtifactError.writeFailed("Source must be a regular file")
+        }
+        guard opened.st_size >= 0, opened.st_size <= off_t(ProtocolBounds.artifactUploadBytes) else {
+            throw ArtifactError.writeFailed("Source file exceeds the 5 MiB upload limit")
+        }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
+        let data: Data
+        do { data = try handle.readToEnd() ?? Data() }
+        catch { throw ArtifactError.writeFailed("Source file is missing or unreadable") }
+        guard data.count <= ProtocolBounds.artifactUploadBytes else {
+            throw ArtifactError.writeFailed("Source file exceeds the 5 MiB upload limit")
+        }
+        return data
     }
 
     /// Reads only a regular artifact owned by this store. Callers never receive

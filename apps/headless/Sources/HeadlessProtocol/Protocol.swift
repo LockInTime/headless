@@ -64,6 +64,7 @@ public enum CommandName: String, Codable, CaseIterable, Sendable {
     case inspect
     case click
     case fill
+    case upload
     case press
     case scroll
     case back
@@ -73,6 +74,7 @@ public enum CommandName: String, Codable, CaseIterable, Sendable {
     case captureInfo = "capture.info"
     case screenshot
     case artifactList = "artifact.list"
+    case artifactAdd = "artifact.add"
     case recordStart = "record.start"
     case recordStatus = "record.status"
     case recordStop = "record.stop"
@@ -271,6 +273,22 @@ public struct CommandRequest: Codable, Equatable, Sendable {
             try target(allowValue: false)
         case .fill:
             try target(allowValue: true)
+        case .upload:
+            try target(allowValue: false, validateAllowedKeys: false)
+            try allow(["target", "role", "name", "artifact"])
+            if let artifact = try string("artifact", required: true, maximumBytes: 128) {
+                try validateArtifactName(artifact, expectedExtensions: uploadArtifactExtensions)
+            }
+        case .artifactAdd:
+            try allow(["source", "name"])
+            if let source = try string("source", required: true) {
+                guard source.hasPrefix("/") else {
+                    throw ProtocolValidationError.invalidParameter("Source must be an absolute path")
+                }
+            }
+            if let name = try string("name", required: true, maximumBytes: 128) {
+                try validateArtifactName(name, expectedExtensions: uploadArtifactExtensions)
+            }
         case .press:
             try allow(["key"])
             _ = try string("key", required: true, maximumBytes: 32)
@@ -534,6 +552,10 @@ public func validateIdentifier(_ value: String, field: String) throws {
     }
 }
 
+public let uploadArtifactExtensions: Set<String> = [
+    "csv", "gif", "jpeg", "jpg", "json", "pdf", "png", "txt", "webp",
+]
+
 public func validateArtifactName(_ value: String, expectedExtension: String) throws {
     try validateArtifactName(value, expectedExtensions: [expectedExtension])
 }
@@ -579,6 +601,7 @@ public enum ProtocolBounds {
     public static let networkThroughputKbps = -1.0...1_000_000.0
     public static let screenshotDimension = 16_384.0
     public static let screenshotPixels = 64_000_000.0
+    public static let artifactUploadBytes = 5 * 1_024 * 1_024
 }
 
 public struct BoundedScreenshotRectangle: Equatable, Sendable {

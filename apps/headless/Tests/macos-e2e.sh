@@ -328,6 +328,16 @@ if NETWORK_SIMULATION="$("$CLI" --session qa network emulate --latency 25)"; the
   fail
 fi
 echo "$NETWORK_SIMULATION" | grep -q 'UNSUPPORTED_CAPABILITY'
+STEP="file-upload-unsupported"
+UPLOAD_SOURCE="$(mktemp "${TMPDIR:-/tmp}/headless-upload-source.XXXXXX")"
+printf 'resume-fixture\n' > "$UPLOAD_SOURCE"
+"$CLI" artifacts add "$UPLOAD_SOURCE" --name resume.txt | grep -q '"name":"resume.txt"'
+if UPLOAD="$("$CLI" --session qa upload --role textbox --name Resume --artifact resume.txt)"; then
+  echo "WebKit file upload was unexpectedly exposed" >&2
+  fail
+fi
+echo "$UPLOAD" | grep -q 'UNSUPPORTED_CAPABILITY'
+rm -f "$UPLOAD_SOURCE"
 STEP="flows-reports"
 "$CLI" --session qa flow start | grep -q '"recording":true'
 "$CLI" --session qa visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'

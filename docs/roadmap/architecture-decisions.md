@@ -487,6 +487,40 @@ no TCP listener, fail closed, bounded everything.
 
 ---
 
+## 23. File upload is artifact-store ingest plus engine attach
+
+**Decision:** agents attach files that already live in the private artifact
+store. `artifact.add` copies a local regular file into the store (validated
+basename, `O_EXCL`, `0600`, 5 MiB, allow-listed extensions). `upload` targets
+a file input with the same grammar as `click` and asks the engine to attach
+that on-disk artifact. File bytes never appear on the Unix socket, in protocol
+parameters, MCP, logs, flows, snapshots, diagnostics, or errors. Downloads
+remain denied. There is no TCP fixture server, no home-directory path on
+`upload`, and no arbitrary-JS verb.
+
+Linux Chromium attaches via `DOM.setFileInputFiles` using an isolated-world
+objectId. macOS WKWebView returns `UNSUPPORTED_CAPABILITY` until a native
+attach path exists that does not evaluate page JavaScript or shuttle file
+bytes through JS. Capabilities declare `fileUpload` accordingly.
+
+**Status:** decided 2026-09-10 (owner-approved product contract for #168).
+
+**Rationale:** resume/import/image QA needs file inputs; the existing store
+already has the safety properties we need. Putting bytes on the wire would
+blow the 1 MiB frame and leak file contents into logs. WebKit has no
+equivalent of `setFileInputFiles` without a JS hole.
+
+**Consequences:** MCP can ingest because `artifact.add` is a protocol command
+(MCP rejects local-only CLI). WebKit clients must skip upload or fail closed.
+Replay of `upload` requires the same artifact basename still in the store.
+`artifacts add` is not flow-recorded because it carries a local filesystem
+path.
+
+**Revisit trigger:** a documented WKWebView/native attach API that does not
+execute page JS and does not pass file bytes through the JS bridge.
+
+---
+
 ## 24. Credential broker on the unsigned local tier
 
 Numbered 24 because 22 and 23 are claimed by in-review PRs
@@ -734,9 +768,10 @@ rule that durable saved-credential retrieval needs trusted per-use presence.
 | 19  | Keep macOS agent startup behind the current app             | Implemented                                               | 2026-08-12 |
 | 20  | Omit passkeys unless Apple provisions Developer ID release  | Implemented                                               | 2026-08-12 |
 | 21  | Rust port of shared core, protocol layer first              | In progress                                               | 2026-08-22 |
+| 23  | Artifact-store ingest + engine file attach; downloads denied | Decided                                                  | 2026-09-10 |
 | 24  | Credential broker on the unsigned local tier                | Decided                                                   | 2026-09-10 |
 | 25  | Typed local settings registry; security policy stays fixed  | Implemented                                               | 2026-09-12 |
 | 26  | Isolated sessions own one ephemeral browser context         | Implemented                                               | 2026-09-12 |
 | 27  | Interactive authentication keeps consent in trusted host    | Implemented                                               | 2026-09-12 |
 
-New decisions append here with the same format. 22 and 23 are claimed by open PRs #170 and #169.
+New decisions append here with the same format.

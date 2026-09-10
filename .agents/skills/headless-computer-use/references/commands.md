@@ -29,6 +29,8 @@ headless --session NAME click REF
 headless --session NAME click --role ROLE --name NAME
 headless --session NAME fill REF "TEXT"
 headless --session NAME fill REF -- "--json  stays literal"
+headless --session NAME upload REF --artifact FILE
+headless --session NAME upload --role textbox --name NAME --artifact FILE
 headless --session NAME press KEY
 headless --session NAME scroll up|down|top|bottom --amount PIXELS
 headless --session NAME back
@@ -43,7 +45,10 @@ large pages, request `outline`, select a returned `@rN` region, then use
 bound the result; check `omitted` before assuming it describes the whole page.
 Use `click --role ... --name ...` for unique accessible controls. Use an `@eN`
 ref from the latest inspection when role/name is ambiguous. Inspect again after
-navigation or a large rerender.
+navigation or a large rerender. File inputs advertise `upload`; ingest the
+fixture with `artifacts add` first, then `upload --artifact BASENAME`. Upload
+never takes a home-directory path. Ask before uploading, as in
+[safety.md](safety.md).
 
 Pass fill text as one quoted shell argument so whitespace is preserved. Put
 `--` before a value that contains a literal global flag such as `--json` or
@@ -73,11 +78,13 @@ headless --session NAME record start --fps 10 --format mp4 --quality balanced
 headless --session NAME record status
 headless --session NAME record stop --output flow.mp4
 headless --session NAME capture-info
+headless artifacts add /abs/or/cwd/resume.pdf --name resume.pdf
 headless artifacts list
 ```
 
 Single artifact output names are basenames ending in `.png`, `.jpg`, `.jpeg`,
-`.pdf`, `.mp4`, `.mov`, `.webm`, `.gif`, or `.json`. Screenshot series output
+`.gif`, `.webp`, `.txt`, `.csv`, `.pdf`, `.mp4`, `.mov`, `.webm`, or `.json`.
+Screenshot series output
 uses a safe prefix and creates numbered PNG/JPG artifacts. Headless refuses
 paths and overwrites. Built-in recording captures browser pixels only.
 

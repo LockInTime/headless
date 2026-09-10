@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>File upload fixture</title>
+</head>
+<body>
+  <main>
+    <h1>File upload fixture</h1>
+    <label for="resume">Resume</label>
+    <input id="resume" type="file" name="resume">
+    <button type="button">Not a file</button>
+    <output aria-label="Upload evidence">waiting</output>
+  </main>
+  <script>
+    const input = document.getElementById('resume');
+    const output = document.querySelector('output');
+    const record = () => {
+      const names = Array.from(input.files || []).map(file => file.name);
+      output.textContent = names.join(',') || 'empty';
+    };
+    input.addEventListener('change', record);
+    input.addEventListener('input', record);
+  </script>
+</body>
+</html>

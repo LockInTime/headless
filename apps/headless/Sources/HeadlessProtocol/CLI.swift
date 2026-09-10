@@ -152,6 +152,8 @@ public struct CLIParser {
             return try parseInspect(arguments, session: session, jsonOutput: jsonOutput)
         case "click":
             return try parseTargeted(.click, arguments: arguments, session: session, jsonOutput: jsonOutput)
+        case "upload":
+            return try parseUpload(arguments, session: session, jsonOutput: jsonOutput)
         case "fill":
             guard arguments.count == 2 else { throw CLIParseError.missingArgument("TARGET TEXT") }
             return remote(.fill, session: session, parameters: [
@@ -178,8 +180,7 @@ public struct CLIParser {
         case "screenshot":
             return try parseScreenshot(arguments, session: session, jsonOutput: jsonOutput)
         case "artifacts":
-            guard arguments == ["list"] else { throw CLIParseError.missingArgument("artifacts list") }
-            return remote(.artifactList, session: session, jsonOutput: jsonOutput)
+            return try parseArtifacts(arguments, session: session, jsonOutput: jsonOutput)
         case "record":
             return try parseRecord(arguments, session: session, jsonOutput: jsonOutput)
         case "qa":
@@ -374,6 +375,66 @@ public struct CLIParser {
             throw CLIParseError.invalidOption(option)
         }
         return number
+    }
+
+    private func parseArtifacts(
+        _ arguments: [String], session: String?, jsonOutput: Bool
+    ) throws -> CLIInvocation {
+        guard let subcommand = arguments.first else {
+            throw CLIParseError.missingArgument("artifacts list|add")
+        }
+        var args = Array(arguments.dropFirst())
+        switch subcommand {
+        case "list":
+            try requireEmpty(args)
+            return remote(.artifactList, session: session, jsonOutput: jsonOutput)
+        case "add":
+            let name = try removeOption("--name", from: &args)
+            guard let source = args.first else { throw CLIParseError.missingArgument("SOURCE") }
+            guard args.count == 1 else { throw CLIParseError.invalidOption(args[1]) }
+            guard let name else { throw CLIParseError.missingArgument("--name") }
+            try validateArtifactName(name, expectedExtensions: uploadArtifactExtensions)
+            return remote(
+                .artifactAdd,
+                session: session,
+                parameters: [
+                    "source": .string(try absoluteSourcePath(source)),
+                    "name": .string(name),
+                ],
+                jsonOutput: jsonOutput
+            )
+        default:
+            throw CLIParseError.unknownCommand("artifacts \(subcommand)")
+        }
+    }
+
+    private func parseUpload(
+        _ arguments: [String], session: String?, jsonOutput: Bool
+    ) throws -> CLIInvocation {
+        var args = arguments
+        let artifact = try removeOption("--artifact", from: &args)
+        guard let artifact else { throw CLIParseError.missingArgument("--artifact") }
+        try validateArtifactName(artifact, expectedExtensions: uploadArtifactExtensions)
+        let invocation = try parseTargeted(
+            .upload, arguments: args, session: session, jsonOutput: jsonOutput
+        )
+        var parameters = invocation.request?.parameters ?? [:]
+        parameters["artifact"] = .string(artifact)
+        return remote(.upload, session: session, parameters: parameters, jsonOutput: jsonOutput)
+    }
+
+    private func absoluteSourcePath(_ value: String) throws -> String {
+        guard !value.isEmpty else { throw CLIParseError.missingArgument("SOURCE") }
+        let resolved: URL
+        if value.hasPrefix("/") {
+            resolved = URL(fileURLWithPath: value)
+        } else {
+            let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+            resolved = URL(fileURLWithPath: value, relativeTo: cwd)
+        }
+        let path = resolved.standardizedFileURL.path
+        guard path.hasPrefix("/") else { throw CLIParseError.invalidOption(value) }
+        return path
     }
 
     private func parseTargeted(
@@ -791,6 +852,7 @@ Commands:
           [--within @rN] [--limit N] [--budget TOKENS] [--depth N] [--text]
   click REF | click --role ROLE [--name NAME]
   fill REF TEXT | fill REF -- TEXT_WITH_LITERAL_FLAGS | press KEY
+  upload REF --artifact FILE | upload --role ROLE [--name NAME] --artifact FILE
   scroll [up|down|top|bottom] [--amount PX]
   back | reload
   wait [--settled] [--url PATTERN] [--text TEXT] [--timeout MS]
@@ -800,6 +862,7 @@ Commands:
   screenshot --full-page --format pdf [--output FILE.pdf]
   screenshot --every-viewport|--by-section [--format png|jpg|jpeg] [--output PREFIX]
   artifacts list
+  artifacts add SOURCE --name FILE
   record start [--fps N] [--format mp4|mov|webm|gif] [--quality fast|balanced|high] [--output FILE]
   record status | record stop [--output FILE]
   qa report | qa clear

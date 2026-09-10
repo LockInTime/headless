@@ -50,6 +50,7 @@ public protocol BrowserEngineSession: AnyObject {
     func hostPromptCredentialSave(origin: CredentialOrigin, account: String) throws -> CredentialAlias?
     func hostFillCredential(form: AuthenticationForm, credential: AuthenticationCredential) throws -> JSONValue
     func hostFinishCredentialProtection(form: AuthenticationForm)
+    func hostUpload(parameters: [String: JSONValue], artifactURL: URL) throws -> JSONValue
 }
 
 public extension BrowserEngineSession {
@@ -99,6 +100,13 @@ public extension BrowserEngineSession {
         throw HostError(
             code: .unsupportedCapability,
             message: "Request mocking requires the Chromium CDP engine."
+        )
+    }
+
+    func hostUpload(parameters _: [String: JSONValue], artifactURL _: URL) throws -> JSONValue {
+        throw HostError(
+            code: .unsupportedCapability,
+            message: "File upload requires an engine that can attach files without page JavaScript."
         )
     }
 }
@@ -225,6 +233,19 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             }
             if request.command == .artifactList {
                 return .success(id: request.id, result: try artifacts.list())
+            }
+            if request.command == .artifactAdd {
+                guard let source = request.parameters["source"]?.stringValue,
+                      let name = request.parameters["name"]?.stringValue else {
+                    throw HostError(
+                        code: .missingParameter,
+                        message: "Artifact source and name are required."
+                    )
+                }
+                return .success(
+                    id: request.id,
+                    result: try artifacts.ingest(sourcePath: source, name: name)
+                )
             }
             switch request.command {
             case .sessionCreate:
@@ -436,6 +457,18 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         case .inspect: return try session.hostInspect(parameters: request.parameters)
         case .click: return try session.hostClick(parameters: request.parameters)
         case .fill: return try session.hostFill(parameters: request.parameters)
+        case .upload:
+            guard let artifact = request.parameters["artifact"]?.stringValue else {
+                throw HostError(code: .missingParameter, message: "Artifact name is required.")
+            }
+            let url = try artifacts.urlForExistingArtifact(name: artifact)
+            var result = try session.hostUpload(parameters: request.parameters, artifactURL: url)
+            if case .object(var object) = result {
+                object["artifact"] = .string(artifact)
+                object.removeValue(forKey: "path")
+                result = .object(object)
+            }
+            return result
         case .press: return try session.hostPress(parameters: request.parameters)
         case .scroll: return try session.hostScroll(parameters: request.parameters)
         case .wait: return try session.hostWait(parameters: request.parameters)
@@ -528,7 +561,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             )
         case .flowRun:
             return try runFlow(request, sessionName: name)
-        case .ping, .shutdown, .profileClear, .sessionCreate, .sessionList, .sessionClose, .artifactList:
+        case .ping, .shutdown, .profileClear, .sessionCreate, .sessionList, .sessionClose, .artifactList, .artifactAdd:
             throw HostError(code: .invalidCommand, message: "Command is not valid in this context.")
         }
     }

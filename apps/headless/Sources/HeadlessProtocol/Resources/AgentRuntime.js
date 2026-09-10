@@ -79,21 +79,24 @@ if (!globalThis.__headlessAgent) {
       const hints = [];
       const tag = element.tagName.toLowerCase();
       const elementRole = role(element);
-      if (tag === 'a' && element.hasAttribute('href')) hints.push('click');
-      if (tag === 'button' || elementRole === 'button') hints.push('click');
-      if (tag === 'summary' || elementRole === 'tab' || elementRole === 'menuitem') hints.push('click');
       // Only advertise verbs implemented by the public Headless protocol.
       // Unsupported controls can still appear for context, but must not route
-      // an agent toward nonexistent select/upload/slide commands.
-      if (element instanceof HTMLTextAreaElement || element.isContentEditable) hints.push('fill');
+      // an agent toward nonexistent select/slide commands. File inputs advertise
+      // upload only — never fill or click as the primary verb.
       if (element instanceof HTMLInputElement) {
         const type = (element.getAttribute('type') || 'text').toLowerCase();
-        if (type === 'file') return hints;
-        else if (['checkbox', 'radio'].includes(type)) hints.push('click');
+        if (type === 'file') {
+          hints.push('upload');
+          return Array.from(new Set(hints));
+        } else if (['checkbox', 'radio'].includes(type)) hints.push('click');
         else if (type === 'range') hints.push('fill');
         else if (['button', 'submit', 'reset', 'image'].includes(type)) hints.push('click');
         else hints.push('fill');
       }
+      if (tag === 'a' && element.hasAttribute('href')) hints.push('click');
+      if (tag === 'button' || elementRole === 'button') hints.push('click');
+      if (tag === 'summary' || elementRole === 'tab' || elementRole === 'menuitem') hints.push('click');
+      if (element instanceof HTMLTextAreaElement || element.isContentEditable) hints.push('fill');
       if (element.tabIndex >= 0 && hints.length === 0) hints.push('click');
       return Array.from(new Set(hints));
     };
@@ -605,6 +608,26 @@ if (!globalThis.__headlessAgent) {
       if (!hit || (hit !== element && !element.contains(hit))) throw new Error('ELEMENT_OBSCURED');
       return {ref: refFor(element), role: role(element), name: name(element), x, y};
     };
+    const fileInput = args => {
+      const element = target(args);
+      const type = element instanceof HTMLInputElement
+        ? String(element.getAttribute('type') || '').toLowerCase()
+        : '';
+      if (!(element instanceof HTMLInputElement) || type !== 'file') {
+        fail('ELEMENT_NOT_FOUND', 'ELEMENT_NOT_FOUND: target is not a file input');
+      }
+      return element;
+    };
+    const fileInputResult = args => {
+      const element = fileInput(args);
+      const files = Array.from(element.files || []).map(file => String(file && file.name || '').slice(0, 128));
+      return {
+        uploaded: refFor(element),
+        role: role(element),
+        name: name(element),
+        files,
+      };
+    };
     const fill = args => {
       const element = target(args);
       if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element.isContentEditable)) {
@@ -914,8 +937,8 @@ if (!globalThis.__headlessAgent) {
       return {count: document.getAnimations().length, animations: all, truncated: document.getAnimations().length > all.length};
     };
     return {
-      snapshot, click, fill, credentialFill, finishCredentialFill, press, inputTarget, authentication, scroll, state, tour, screenshotPlan,
-      scrollToCapturePoint, rectangle, styles, storage,
+      snapshot, click, fill, credentialFill, finishCredentialFill, press, inputTarget, fileInput, fileInputResult,
+      authentication, scroll, state, tour, screenshotPlan, scrollToCapturePoint, rectangle, styles, storage,
       performance: performanceSummary, animations
     };
   })();

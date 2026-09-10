@@ -21,8 +21,8 @@ controls the desktop, native applications, OS chrome, microphone, or system audi
    selection, Docker access, visible-browser mode, or MCP configuration matters.
 
 Run `headless capabilities` once before relying on optional features. Network
-emulation and mocking are Linux Chromium capabilities; macOS WebKit reports them
-as unsupported.
+emulation, request mocking, and file upload are Linux Chromium capabilities;
+macOS WebKit reports them as unsupported.
 
 ## Follow the mandatory interaction loop
 

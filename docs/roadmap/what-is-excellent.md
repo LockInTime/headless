@@ -27,9 +27,10 @@ never on CSS selectors they invented.
 
 **Preserve:** refs are observations from the host, not durable selectors;
 role/name is the preferred stable form; action hints (`actions: ["click"]`)
-only ever advertise verbs the protocol can actually execute
-(`AgentRuntime.swift:67-88` deliberately emits no `select`/`upload`/`slide` —
-there is even a test grepping the JS for this, `ProtocolTests.swift:602-604`).
+only ever advertise verbs the protocol can actually execute. File inputs
+advertise `upload`; inspect still never advertises missing `select`/`slide`
+commands. Upload attaches a private artifact-store basename — it is not a
+download manager.
 
 ## 2. Progressive context pruning — the token budget as a first-class contract
 
@@ -69,7 +70,10 @@ prompt-injected or confused agent _cannot_ violate them.
 - **Downloads denied.** `Browser.setDownloadBehavior deny` on Linux
   (`BrowserProcess.swift:196`); WKDownload cancelled on macOS
   (`main.swift:733-748`). Dangerous remote extensions hard-blocked (25-entry
-  list), archives surfaced as `caution` (`Protocol.swift:576-591`).
+  list), archives surfaced as `caution` (`Protocol.swift:576-591`). Upload is
+  the inverse: a user-supplied fixture is ingested into the private artifact
+  store (`artifact.add`) and attached by basename (`upload`). It is not a
+  download manager.
 - **Private control plane.** `0600` socket in a `0700` per-user dir, peer-UID
   check (`getpeereid`/`SO_PEERCRED`), 1 MiB frame cap, strict request
   decoding with per-command parameter allow-lists (`Transport.swift`,
@@ -83,8 +87,9 @@ prompt-injected or confused agent _cannot_ violate them.
   `--values` and a host started with `HEADLESS_ALLOW_SENSITIVE_DIAGNOSTICS=1`;
   auth/cookie/token/secret headers and URL credentials are always redacted
   (`Diagnostics.swift:204-235`).
-- **Typed values never persisted.** Flow recording excludes `fill` — replay
-  files can never contain credentials (`Flows.swift:25-27`).
+- **Typed values never persisted.** Flow recording excludes `fill` and
+  `artifact.add` (local paths). `upload` may record the artifact basename
+  only; replay files can never contain credentials (`Flows.swift`).
 - **Linux never weakens the sandbox.** No `--no-sandbox`, refuses root
   (`BrowserProcess.swift:161-163`); Snap Chromium rejected _before launch_ by
   path and shebang sniffing rather than failing mysteriously later

@@ -11,6 +11,7 @@ const routes = new Map([
   ['/large-document', 'large-document.html'],
   ['/auth-state', 'auth-state.html'],
   ['/auth-login', 'auth-login.html'],
+  ['/file-upload', 'file-upload.html'],
 ]);
 
 const server = createServer(async (request, response) => {

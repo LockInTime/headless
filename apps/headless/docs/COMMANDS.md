@@ -169,6 +169,7 @@ inspect [--context summary|outline|text|actions|full] [--task TEXT]
         [--within @rN] [--limit N] [--budget TOKENS] [--depth N] [--text]
 click REF | click --role ROLE [--name NAME]
 fill REF TEXT | fill REF -- TEXT_WITH_LITERAL_FLAGS | press KEY
+upload REF --artifact FILE | upload --role ROLE [--name NAME] --artifact FILE
 scroll [up|down|top|bottom] [--amount PX]
 back | reload
 wait [--settled] [--url PATTERN] [--text TEXT] [--timeout MS]
@@ -187,11 +188,16 @@ back | reload
   the most recent inspection and are reissued on every inspect; region
   references (`@rN`) stay resolvable so you can outline first and scope later.
   See "Reference lifetime" in P1.md for the full contract.
-- `click`, `fill`, and `press` accept either a reference or a semantic target
-  (`--role`/`--name`). On Linux these dispatch trusted CDP input events;
+- `click`, `fill`, `upload`, and `press` accept either a reference or a semantic
+  target (`--role`/`--name`). On Linux these dispatch trusted CDP input events;
   WebKit uses synthetic input, and capabilities declare the difference.
 - `fill REF -- value` keeps leading dashes in the value. Flow recordings never
   record fill values.
+- `upload` attaches a file that already lives in the private artifact store.
+  `--artifact` is a validated basename only — never a filesystem path. File
+  bytes never travel on the socket. Linux Chromium attaches through
+  `DOM.setFileInputFiles`; macOS WebKit returns `UNSUPPORTED_CAPABILITY`.
+  Downloads stay denied. Ingest the fixture first with `artifacts add`.
 - `wait --timeout` and the tour duration are bounded; unbounded waits are
   rejected at parse time.
 
@@ -203,6 +209,7 @@ screenshot [REF | --role ROLE --name NAME | --full-page] [--format png|jpg|jpeg]
 screenshot --full-page --format pdf [--output FILE.pdf]
 screenshot --every-viewport|--by-section [--format png|jpg|jpeg] [--output PREFIX]
 artifacts list
+artifacts add SOURCE --name FILE
 record start [--fps N] [--format mp4|mov|webm|gif] [--quality fast|balanced|high] [--output FILE]
 record status | record stop [--output FILE]
 qa report | qa clear
@@ -212,6 +219,12 @@ report create [--output REPORT.json]
 - Screenshots and recordings become private artifacts in the per-user store,
   created `O_EXCL` with `0600`. They never overwrite and never leave it unless
   you copy them.
+- `artifacts add` copies a local regular file (absolute or cwd-relative; 5 MiB
+  cap; `pdf`/`png`/`jpg`/`jpeg`/`gif`/`webp`/`txt`/`csv`/`json` only) into that
+  store as a new `0600` name. It is a protocol command so MCP can ingest too.
+  HTML, SVG, executables, and archives are rejected. The stored object is
+  bytes, not a symlink. `upload` then names that basename; it is not a
+  download manager.
 - `--clipboard` capture is macOS only. Linux rejects clipboard capture because
   VM clipboards are not a reliable boundary.
 - PDF screenshots and element-scoped capture follow the engine matrix reported
@@ -244,7 +257,9 @@ flow start | flow stop [--output FLOW.json] | flow run FLOW.json
 - `visual compare` accepts only existing private PNG artifacts, not filesystem
   paths, and writes its difference image back into the artifact store.
 - Flows replay recorded commands but skip every `fill` value by design; rerun
-  fills explicitly when you replay.
+  fills explicitly when you replay. `upload` may be recorded with the artifact
+  basename only; replay needs that same store name. `artifacts add` is never
+  recorded because it carries a local path.
 
 ## Where to go next
 
