@@ -15,15 +15,21 @@ assert.deepEqual(config, {
 });
 
 const productionUrl = "https://headless-web-pi.vercel.app";
-const [metadata, deploymentDocs, agentRules, nextConfig, rootPackage, lockfile] =
-  await Promise.all([
-    read("apps/web/lib/site-metadata.ts"),
-    read("docs/DEPLOYMENT.md"),
-    read("AGENTS.md"),
-    read("apps/web/next.config.ts"),
-    read("package.json"),
-    read("pnpm-lock.yaml"),
-  ]);
+const [
+  metadata,
+  deploymentDocs,
+  agentRules,
+  nextConfig,
+  rootPackage,
+  lockfile,
+] = await Promise.all([
+  read("apps/web/lib/site-metadata.ts"),
+  read("docs/DEPLOYMENT.md"),
+  read("AGENTS.md"),
+  read("apps/web/next.config.ts"),
+  read("package.json"),
+  read("pnpm-lock.yaml"),
+]);
 
 const packageJson = JSON.parse(rootPackage);
 assert.match(packageJson.packageManager ?? "", /^pnpm@9\./);
