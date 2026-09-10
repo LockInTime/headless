@@ -21,3 +21,8 @@ build/qa-evidence/
 
 # Rust build artifacts
 apps/headless-rs/target/
+
+# Local Vercel state and environment secrets
+.vercel/
+.env.local
+.env.*.local

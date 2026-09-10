@@ -2,16 +2,19 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const root = resolve(import.meta.dirname, "../../..");
-const read = (path) => readFile(resolve(root, path), "utf8");
-const config = JSON.parse(await read("vercel.json"));
+const repositoryRoot = resolve(import.meta.dirname, "../../..");
+const webRoot = resolve(repositoryRoot, "apps/web");
+const readRepositoryFile = (path) =>
+  readFile(resolve(repositoryRoot, path), "utf8");
+const readWebFile = (path) => readFile(resolve(webRoot, path), "utf8");
+const config = JSON.parse(await readWebFile("vercel.json"));
 
 assert.deepEqual(config, {
   $schema: "https://openapi.vercel.sh/vercel.json",
   framework: "nextjs",
-  buildCommand: "pnpm --filter @headless/web build",
-  devCommand: "pnpm --filter @headless/web exec next dev --port $PORT",
-  outputDirectory: "apps/web/.next",
+  buildCommand: "pnpm build",
+  devCommand: "pnpm exec next dev --port $PORT",
+  outputDirectory: ".next",
 });
 
 const productionUrl = "https://headless-web-pi.vercel.app";
@@ -23,12 +26,12 @@ const [
   rootPackage,
   lockfile,
 ] = await Promise.all([
-  read("apps/web/lib/site-metadata.ts"),
-  read("docs/DEPLOYMENT.md"),
-  read("AGENTS.md"),
-  read("apps/web/next.config.ts"),
-  read("package.json"),
-  read("pnpm-lock.yaml"),
+  readWebFile("lib/site-metadata.ts"),
+  readRepositoryFile("docs/DEPLOYMENT.md"),
+  readRepositoryFile("AGENTS.md"),
+  readWebFile("next.config.ts"),
+  readRepositoryFile("package.json"),
+  readRepositoryFile("pnpm-lock.yaml"),
 ]);
 
 const packageJson = JSON.parse(rootPackage);

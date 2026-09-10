@@ -1,18 +1,19 @@
 # Website deployment
 
 The marketing and documentation site is deployed to Vercel from this monorepo.
-The repository configuration in [`vercel.json`](../vercel.json) is the source
-of truth for framework detection, build and development commands, and output
-location. Vercel derives pnpm from the root lockfile. Do not add an install
-override with plain `pnpm install`: Vercel uses its oldest available pnpm
-runtime for that override, while this repository requires pnpm 9 or newer.
+The application configuration in
+[`apps/web/vercel.json`](../apps/web/vercel.json) is the source of truth for
+framework detection, build and development commands, and output location.
+Vercel derives pnpm from the repository lockfile. Do not add an install override
+with plain `pnpm install`: Vercel uses its oldest available pnpm runtime for that
+override, while this repository requires pnpm 9 or newer.
 
 ## Production contract
 
 - **Production branch:** `main`.
 - **Production URL:** <https://headless-web-pi.vercel.app>.
-- **Project root:** the repository root, not `apps/web`.
-- **Application:** `apps/web` (`@headless/web`).
+- **Project root:** `apps/web`.
+- **Application:** `@headless/web`.
 - **Security headers:** `apps/web/next.config.ts`. Do not duplicate them in
   `vercel.json`, where they could drift from local and CI builds.
 
@@ -28,14 +29,17 @@ homepage, this document, and the Vercel production-domain assignment together.
 Connect the `LockInTime/headless` repository through Vercel for GitHub with
 these project settings:
 
-1. Leave Root Directory empty so Vercel reads the root `vercel.json` and the
-   workspace lockfile.
-2. Set the production branch to `main`.
-3. Keep preview deployments enabled for pull requests and branch pushes.
-4. Keep pull-request comments enabled so each PR receives its immutable preview
+1. Set Root Directory to `apps/web` so Vercel reads the application-local
+   `vercel.json` and detects Next.js from the application package.
+2. Enable "Include source files outside of the Root Directory in the Build
+   Step". The site imports checked-in documentation and package metadata from
+   the repository root, `apps/headless`, and `packages` during its build.
+3. Set the production branch to `main`.
+4. Keep preview deployments enabled for pull requests and branch pushes.
+5. Keep pull-request comments enabled so each PR receives its immutable preview
    URL. Keep deployment status events enabled so the URL also appears in the
    GitHub deployment timeline.
-5. Do not add a second token-driven GitHub Actions deployment. Two independent
+6. Do not add a second token-driven GitHub Actions deployment. Two independent
    deployers can race production aliases and make rollback history ambiguous.
 
 The integration is an account-level control and cannot be stored in git. If a

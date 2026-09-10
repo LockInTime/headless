@@ -132,10 +132,11 @@ with a decision entry.
 
 ## Website deployment
 
-Vercel deploys `apps/web` from the repository root using
-[`vercel.json`](vercel.json). The production branch is `main`, and the
-canonical production URL is <https://headless-web-pi.vercel.app>. Keep the
-Vercel for GitHub integration enabled for pull-request previews and preview-URL
-comments. Do not add a second deployment workflow that can race the integration.
+Vercel deploys `apps/web` with that directory configured as the project root,
+using [`apps/web/vercel.json`](apps/web/vercel.json). The production branch is
+`main`, and the canonical production URL is
+<https://headless-web-pi.vercel.app>. Keep the Vercel for GitHub integration
+enabled for pull-request previews and preview-URL comments. Do not add a second
+deployment workflow that can race the integration.
 Hosting setup, verification, rollback, and the custom-domain decision are in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
