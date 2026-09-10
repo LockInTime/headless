@@ -118,8 +118,6 @@ summary|outline|text|actions|full`, `--task`, `--within @rN`, `--budget`)
   unimplemented.
 - The latest features (capture formats, context pruning) are **unreleased** —
   no tag since v1.0.2 (2026-07-19).
-- The website deployment configuration is versioned, but GitHub-to-Vercel
-  preview and production deployments remain unverified.
 - Windows is not supported.
 - A list of real code defects (thread-safety on shutdown, oversized `qa
 report` responses, `@eN` ref invalidation surprises, host code duplication)
