@@ -42,6 +42,21 @@ private func expectSettingsError(
     }
 }
 
+private func expectSettingsErrorForAuthentication(
+    _ expected: AuthenticationError, _ message: String, _ body: () throws -> Void
+) throws {
+    do {
+        try body()
+        throw TestFailure(description: message)
+    } catch let error as AuthenticationError {
+        try expect(error == expected, "\(message): received \(error)")
+    } catch is TestFailure {
+        throw TestFailure(description: message)
+    } catch {
+        throw TestFailure(description: "\(message): received \(error)")
+    }
+}
+
 private func settingsObject(_ value: JSONValue, _ message: String) throws -> [String: JSONValue] {
     guard case .object(let object) = value else { throw TestFailure(description: message) }
     return object
@@ -84,6 +99,15 @@ private final class ConcurrentSettingsErrors: @unchecked Sendable {
     var messages: [String] {
         lock.withLock { errors }
     }
+}
+
+private final class TestMonotonicClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: TimeInterval
+
+    init(_ value: TimeInterval) { self.value = value }
+    func now() -> TimeInterval { lock.withLock { value } }
+    func advance(by interval: TimeInterval) { lock.withLock { value += interval } }
 }
 
 private func connectRawUnixSocket(path: String) throws -> Int32 {
@@ -206,6 +230,16 @@ private func readRawSocketLine(descriptor: Int32) throws -> Data {
 
 private final class TestBrowserSession: BrowserEngineSession {
     private(set) var agentControlEnableCount = 0
+    var authenticationState: JSONValue = .object([
+        "origin": .string("http://localhost"), "detection": .string("none"),
+    ])
+    private(set) var filledCredentialAccount: String?
+    var authenticationStateAfterCredentialFill: JSONValue?
+    var promptedAccount = "interactive@example.test"
+    var promptedPassword = "interactive-secret"
+    var saveAlias: CredentialAlias?
+    private(set) var credentialPromptCount = 0
+    private(set) var savePromptCount = 0
 
     func hostEnableAgentControl() { agentControlEnableCount += 1 }
     func hostVisit(_ url: URL) throws -> JSONValue { .object(["url": .string(url.absoluteString)]) }
@@ -246,6 +280,72 @@ private final class TestBrowserSession: BrowserEngineSession {
     func hostStorage(scope: String, includeValues: Bool) throws -> JSONValue { .object(["scope": .string(scope)]) }
     func hostPerformance() throws -> JSONValue { .object(["metrics": .array([])]) }
     func hostAnimations() throws -> JSONValue { .object(["animations": .array([])]) }
+    func hostAuthenticationState() throws -> JSONValue { authenticationState }
+    func hostPromptCredential(origin: CredentialOrigin) throws -> AuthenticationCredential {
+        credentialPromptCount += 1
+        return try AuthenticationCredential(
+            account: promptedAccount,
+            password: AuthenticationSecret(Array(promptedPassword.utf8))
+        )
+    }
+    func hostPromptCredentialSave(origin: CredentialOrigin, account: String) throws -> CredentialAlias? {
+        savePromptCount += 1
+        return saveAlias
+    }
+    func hostFillCredential(
+        form: AuthenticationForm, credential: AuthenticationCredential
+    ) throws -> JSONValue {
+        filledCredentialAccount = credential.account
+        credential.password.clear()
+        authenticationState = authenticationStateAfterCredentialFill ?? .object([
+            "origin": .string(form.origin), "detection": .string("none"),
+        ])
+        return .object(["submitted": .bool(true)])
+    }
+}
+
+private final class TestAuthenticationBroker: @unchecked Sendable, AuthenticationBroker {
+    let origin: CredentialOrigin
+    let alias: CredentialAlias
+    let account: String
+    let password: [UInt8]
+    var credentialError: AuthenticationError?
+    private(set) var storedAlias: CredentialAlias?
+    private(set) var storedAccount: String?
+    private(set) var storedPassword: [UInt8]?
+
+    init(origin: CredentialOrigin, alias: CredentialAlias, account: String, password: String) {
+        self.origin = origin
+        self.alias = alias
+        self.account = account
+        self.password = Array(password.utf8)
+    }
+
+    func aliases(for origin: CredentialOrigin) throws -> [AuthenticationAlias] {
+        guard origin == self.origin else { return [] }
+        return [try AuthenticationAlias(alias: alias, account: account)]
+    }
+
+    func credential(
+        for origin: CredentialOrigin, alias: CredentialAlias
+    ) throws -> AuthenticationCredential {
+        if let credentialError { throw credentialError }
+        guard origin == self.origin, alias == self.alias else {
+            throw AuthenticationError.accountNotFound
+        }
+        return try AuthenticationCredential(
+            account: account, password: AuthenticationSecret(password)
+        )
+    }
+
+    func store(
+        _ credential: AuthenticationCredential, for origin: CredentialOrigin, alias: CredentialAlias
+    ) throws {
+        guard origin == self.origin else { throw AuthenticationError.originChanged }
+        storedAlias = alias
+        storedAccount = credential.account
+        storedPassword = credential.password.withUnsafeBytes { Array($0) }
+    }
 }
 
 private final class TestCredentialPrompt: CredentialPrompting {
@@ -282,6 +382,13 @@ private final class TestCredentialSecretStore: CredentialSecretStore {
         storedSecretBytes = secret.withUnsafeBytes { Array($0) }
         records[record.id] = record
         afterStore?(record)
+    }
+
+    func load(recordID: String) throws -> SensitiveBytes {
+        guard records[recordID] != nil, !storedSecretBytes.isEmpty else {
+            throw CredentialVaultError.notFound
+        }
+        return SensitiveBytes(storedSecretBytes)
     }
 
     func remove(recordID: String) throws {
@@ -2664,6 +2771,240 @@ struct ProtocolTests {
         try expect(checked >= 30, "expected to check every command line, checked \(checked)")
     }
 
+    static func authenticationProtocolAndChallengeLifecycle() throws {
+        let login = try CLIParser().parse([
+            "--session", "work", "auth", "login", "--challenge",
+            "53a0f495-7d21-42ae-a243-c1bc97af4630", "--account", "personal",
+        ])
+        try expect(login.request?.command == .authLogin, "auth login should parse as a remote command")
+        try expect(login.request?.session == "work", "auth login should retain the browser session")
+        try expect(
+            login.request?.parameters["account"] == .string("personal"),
+            "auth login should send only the alias"
+        )
+        try login.request?.validate()
+        let interactive = try CLIParser().parse(["auth", "login", "--interactive"])
+        try expect(
+            interactive.request?.parameters == ["interactive": .bool(true)],
+            "interactive auth must not put credentials or a synthetic challenge on the socket"
+        )
+        try interactive.request?.validate()
+        try expectThrows("auth login should require a challenge") {
+            _ = try CLIParser().parse(["auth", "login", "--account", "personal"])
+        }
+        try expectThrows("auth login should reject conflicting modes") {
+            _ = try CLIParser().parse([
+                "auth", "login", "--interactive", "--challenge",
+                "53a0f495-7d21-42ae-a243-c1bc97af4630", "--account", "personal",
+            ])
+        }
+        try expectThrows("auth login should reject invalid aliases") {
+            _ = try CLIParser().parse([
+                "auth", "login", "--challenge", "challenge", "--account", "not valid",
+            ])
+        }
+        try expectThrows("auth login should reject unknown protocol parameters") {
+            try CommandRequest(
+                command: .authLogin,
+                parameters: [
+                    "challenge": .string("challenge"), "account": .string("personal"),
+                    "password": .string("must-not-enter-the-protocol"),
+                ]
+            ).validate()
+        }
+
+        let origin = try CredentialOrigin(rawValue: "https://accounts.example.test")
+        let form = try AuthenticationForm(.object([
+            "origin": .string(origin.rawValue), "detection": .string("confirmed"),
+            "document": .string("0123456789abcdef0123456789abcdef"),
+            "accountTarget": .string("@e1"), "passwordTarget": .string("@e2"),
+            "submitTarget": .string("@e3"),
+        ]))
+        let clock = TestMonotonicClock(10)
+        let store = AuthenticationChallengeStore(now: { clock.now() })
+        let challenge = store.issue(session: "work", form: form)
+        _ = try store.begin(id: challenge.id, session: "work", currentForm: form)
+        try expectSettingsErrorForAuthentication(
+            .challengeConsumed, "concurrent challenge use must be rejected"
+        ) {
+            _ = try store.begin(id: challenge.id, session: "work", currentForm: form)
+        }
+        store.finish(id: challenge.id, consumed: false)
+        _ = try store.begin(id: challenge.id, session: "work", currentForm: form)
+        store.finish(id: challenge.id, consumed: true)
+        try expectSettingsErrorForAuthentication(
+            .challengeConsumed, "a completed challenge must remain single-use"
+        ) {
+            _ = try store.begin(id: challenge.id, session: "work", currentForm: form)
+        }
+
+        let expiring = store.issue(session: "work", form: form)
+        _ = try store.begin(id: expiring.id, session: "work", currentForm: form)
+        clock.advance(by: AuthenticationChallengeStore.lifetime + 1)
+        try expectSettingsErrorForAuthentication(.challengeExpired, "expired challenge must fail") {
+            _ = try store.validateActive(id: expiring.id, session: "work", currentForm: form)
+        }
+        let wrongOrigin = try AuthenticationForm(.object([
+            "origin": .string("https://other.example.test"), "detection": .string("confirmed"),
+            "document": .string("0123456789abcdef0123456789abcdef"),
+            "passwordTarget": .string("@e2"),
+        ]))
+        let originBound = store.issue(session: "work", form: form)
+        try expectSettingsErrorForAuthentication(.originChanged, "origin changes must invalidate use") {
+            _ = try store.begin(id: originBound.id, session: "work", currentForm: wrongOrigin)
+        }
+        let reloadedForm = try AuthenticationForm(.object([
+            "origin": .string(origin.rawValue), "detection": .string("confirmed"),
+            "document": .string("fedcba9876543210fedcba9876543210"),
+            "accountTarget": .string("@e1"), "passwordTarget": .string("@e2"),
+            "submitTarget": .string("@e3"),
+        ]))
+        let documentBound = store.issue(session: "work", form: form)
+        try expectSettingsErrorForAuthentication(.formChanged, "same-origin reloads must invalidate use") {
+            _ = try store.begin(id: documentBound.id, session: "work", currentForm: reloadedForm)
+        }
+
+        let credential = try AuthenticationCredential(
+            account: "person@example.test", password: AuthenticationSecret(Array("frame-secret".utf8))
+        )
+        var frame = try AuthenticationCredentialFrame.encode(credential)
+        defer { frame.resetBytes(in: 0..<frame.count) }
+        let decoded = try AuthenticationCredentialFrame.decode(frame)
+        defer { decoded.password.clear() }
+        try expect(decoded.account == "person@example.test", "credential frame should preserve account")
+        try expect(
+            decoded.password.withUnsafeBytes { String(decoding: $0, as: UTF8.self) } == "frame-secret",
+            "credential frame should preserve the secret only in protected memory"
+        )
+        try expectSettingsErrorForAuthentication(
+            .invalidBrokerResponse, "truncated credential frames must fail closed"
+        ) {
+            _ = try AuthenticationCredentialFrame.decode(Data(frame.dropLast()))
+        }
+    }
+
+    static func hostAuthenticationOrchestration() throws {
+        let root = "/tmp/headless-auth-core-test-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let origin = try CredentialOrigin(rawValue: "https://accounts.example.test")
+        let alias = try CredentialAlias(rawValue: "personal")
+        let broker = TestAuthenticationBroker(
+            origin: origin, alias: alias, account: "person@example.test", password: "not-in-output"
+        )
+        let session = TestBrowserSession()
+        session.authenticationState = .object([
+            "origin": .string(origin.rawValue), "detection": .string("confirmed"),
+            "document": .string("0123456789abcdef0123456789abcdef"),
+            "accountTarget": .string("@e1"), "passwordTarget": .string("@e2"),
+            "submitTarget": .string("@e3"),
+        ])
+        session.authenticationStateAfterCredentialFill = .object([
+            "origin": .string("https://app.example.test"), "detection": .string("none"),
+        ])
+        let core = HostCore(
+            engine: TestBrowserEngine(),
+            artifacts: try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": root]),
+            defaultSession: session,
+            authenticationBroker: broker,
+            shutdownHandler: {}
+        )
+        defer { core.stop() }
+        let blocked = core.handle(CommandRequest(
+            command: .inspect, parameters: ["interactive": .bool(true)]
+        ))
+        try expect(blocked.error?.code == "AUTH_REQUIRED", "confirmed login form should create a challenge")
+        guard case .object(let details)? = blocked.error?.details,
+              let challenge = details["challenge"]?.stringValue,
+              case .array(let accounts)? = details["accounts"] else {
+            throw TestFailure(description: "AUTH_REQUIRED should include structured challenge details")
+        }
+        try expect(accounts.count == 1, "only exact-origin aliases should be returned")
+        try expect(details["untrustedContent"] == .bool(true), "page-derived auth metadata must be marked untrusted")
+        let encodedBlocked = String(
+            decoding: try ProtocolCodec.encoder.encode(blocked), as: UTF8.self
+        )
+        try expect(!encodedBlocked.contains("not-in-output"), "challenge responses must not expose passwords")
+
+        let unknownAlias = core.handle(CommandRequest(
+            command: .authLogin,
+            parameters: ["challenge": .string(challenge), "account": .string("missing")]
+        ))
+        try expect(
+            unknownAlias.error?.code == "AUTH_ACCOUNT_NOT_FOUND",
+            "an unknown alias should fail without consuming the challenge"
+        )
+        try expect(session.filledCredentialAccount == nil, "an unknown alias must not fill the form")
+
+        broker.credentialError = .userPresenceDenied
+        let denied = core.handle(CommandRequest(
+            command: .authLogin,
+            parameters: ["challenge": .string(challenge), "account": .string(alias.rawValue)]
+        ))
+        try expect(
+            denied.error?.code == "USER_PRESENCE_DENIED",
+            "user-presence denial should be explicit and fail closed"
+        )
+        try expect(session.filledCredentialAccount == nil, "denial must not fill the form")
+        broker.credentialError = nil
+
+        let login = core.handle(CommandRequest(
+            command: .authLogin,
+            parameters: ["challenge": .string(challenge), "account": .string(alias.rawValue)]
+        ))
+        guard login.ok, case .object(let result) = login.result else {
+            throw TestFailure(description: "saved alias login should succeed")
+        }
+        try expect(result["continuation"] == .string("redirected"), "login should report a verified redirect")
+        try expect(result["originalActionReplayed"] == .bool(false), "login must not replay the blocked action")
+        try expect(session.filledCredentialAccount == "person@example.test", "host should fill the selected account")
+        let encodedLogin = String(decoding: try ProtocolCodec.encoder.encode(login), as: UTF8.self)
+        try expect(!encodedLogin.contains("not-in-output"), "login output must not expose passwords")
+
+        let replay = core.handle(CommandRequest(
+            command: .authLogin,
+            parameters: ["challenge": .string(challenge), "account": .string(alias.rawValue)]
+        ))
+        try expect(replay.error?.code == "AUTH_CHALLENGE_CONSUMED", "challenge replay must fail")
+
+        session.authenticationState = .object([
+            "origin": .string(origin.rawValue), "detection": .string("confirmed"),
+            "document": .string("fedcba9876543210fedcba9876543210"),
+            "accountTarget": .string("@e1"), "passwordTarget": .string("@e2"),
+            "submitTarget": .string("@e3"),
+        ])
+        session.authenticationStateAfterCredentialFill = .object([
+            "origin": .string(origin.rawValue), "detection": .string("none"),
+        ])
+        session.saveAlias = nil
+        let declinedSave = core.handle(CommandRequest(
+            command: .authLogin, parameters: ["interactive": .bool(true)]
+        ))
+        guard declinedSave.ok, case .object(let declinedResult) = declinedSave.result else {
+            throw TestFailure(description: "interactive login with declined save should succeed")
+        }
+        try expect(declinedResult["continuation"] == .string("authenticated"), "removed form should verify login")
+        try expect(declinedResult["saved"] == .bool(false), "save must default to declined")
+        try expect(broker.storedAlias == nil, "declining save must not write the vault")
+
+        session.authenticationState = .object([
+            "origin": .string(origin.rawValue), "detection": .string("confirmed"),
+            "document": .string("abcdef0123456789abcdef0123456789"),
+            "accountTarget": .string("@e1"), "passwordTarget": .string("@e2"),
+            "submitTarget": .string("@e3"),
+        ])
+        session.saveAlias = try CredentialAlias(rawValue: "interactive")
+        let saved = core.handle(CommandRequest(
+            command: .authLogin, parameters: ["interactive": .bool(true)]
+        ))
+        guard saved.ok, case .object(let savedResult) = saved.result else {
+            throw TestFailure(description: "interactive login and save should succeed")
+        }
+        try expect(savedResult["saved"] == .bool(true), "explicit consent should save")
+        try expect(broker.storedAlias?.rawValue == "interactive", "save should retain the chosen alias")
+        try expect(broker.storedAccount == session.promptedAccount, "save should retain the entered account")
+        try expect(broker.storedPassword == Array(session.promptedPassword.utf8), "save should retain the entered secret")
+    }
+
     static func sharedHostCoreDispatch() throws {
         let root = "/tmp/headless-host-core-test-\(UUID().uuidString)"
         defer { try? FileManager.default.removeItem(atPath: root) }
@@ -2807,6 +3148,8 @@ struct ProtocolTests {
             ("typed host errors", typedHostErrorsRoundTrip),
             ("single-source contract constants", singleSourceContractConstants),
             ("shared host core dispatch", sharedHostCoreDispatch),
+            ("authentication protocol and challenge lifecycle", authenticationProtocolAndChallengeLifecycle),
+            ("host authentication orchestration", hostAuthenticationOrchestration),
             ("docs command reference matches help", docsCommandReferenceMatchesHelp),
         ]
 

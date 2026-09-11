@@ -44,10 +44,39 @@ public protocol BrowserEngineSession: AnyObject {
     func hostEmulateNetwork(parameters: [String: JSONValue]) throws -> JSONValue
     func hostSetNetworkMock(parameters: [String: JSONValue]) throws -> JSONValue
     func hostClearNetworkMocks() throws -> JSONValue
+    func hostAuthenticationState() throws -> JSONValue
+    func hostPromptCredential(origin: CredentialOrigin) throws -> AuthenticationCredential
+    func hostPromptCredentialSave(origin: CredentialOrigin, account: String) throws -> CredentialAlias?
+    func hostFillCredential(form: AuthenticationForm, credential: AuthenticationCredential) throws -> JSONValue
+    func hostFinishCredentialProtection(form: AuthenticationForm)
 }
 
 public extension BrowserEngineSession {
     func hostEnableAgentControl() {}
+
+    func hostAuthenticationState() throws -> JSONValue {
+        .object(["origin": .string("http://localhost"), "detection": .string("none")])
+    }
+
+    func hostPromptCredential(origin: CredentialOrigin) throws -> AuthenticationCredential {
+        try SecureTerminalAuthenticationPrompt().readCredential()
+    }
+
+    func hostPromptCredentialSave(origin: CredentialOrigin, account: String) throws -> CredentialAlias? {
+        try SecureTerminalAuthenticationPrompt().confirmSave()
+    }
+
+    func hostFillCredential(
+        form: AuthenticationForm, credential: AuthenticationCredential
+    ) throws -> JSONValue {
+        credential.password.clear()
+        throw HostError(
+            code: .unsupportedCapability,
+            message: "Credential login is not supported by this engine."
+        )
+    }
+
+    func hostFinishCredentialProtection(form: AuthenticationForm) {}
 
     func hostEmulateNetwork(parameters: [String: JSONValue]) throws -> JSONValue {
         throw HostError(
@@ -97,6 +126,8 @@ public extension BrowserEngine {
 public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
     private let engine: Engine
     private let artifacts: ArtifactStore
+    private let authenticationBroker: AuthenticationBroker
+    private let authenticationChallenges: AuthenticationChallengeStore
     private let shutdownHandler: @Sendable () -> Void
     private let lock = NSLock()
     private var sessions: [String: Engine.Session]
@@ -110,10 +141,14 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         engine: Engine,
         artifacts: ArtifactStore,
         defaultSession: Engine.Session,
+        authenticationBroker: AuthenticationBroker = UnavailableAuthenticationBroker(),
+        authenticationChallenges: AuthenticationChallengeStore = AuthenticationChallengeStore(),
         shutdownHandler: @escaping @Sendable () -> Void
     ) {
         self.engine = engine
         self.artifacts = artifacts
+        self.authenticationBroker = authenticationBroker
+        self.authenticationChallenges = authenticationChallenges
         self.sessions = ["default": defaultSession]
         self.shutdownHandler = shutdownHandler
     }
@@ -133,6 +168,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
                 trace.removeValue(forKey: name)
                 activeFlows.removeValue(forKey: name)
                 if let recording = recordings.removeValue(forKey: name) { stopped.append(recording) }
+                authenticationChallenges.invalidate(session: name)
             }
             return stopped
         }
@@ -151,6 +187,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             sessions.removeAll()
             trace.removeAll()
             activeFlows.removeAll()
+            authenticationChallenges.removeAll()
             return (activeRecordings, openSessions)
         }
         for recording in captured.0 { _ = try? recording.stop(timeout: 5) }
@@ -193,6 +230,12 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             }
             session.hostEnableAgentControl()
             let result = try execute(request, sessionName: name, session: session)
+            if let response = try authenticationResponse(
+                after: request.command, request: request, sessionName: name,
+                session: session, result: result
+            ) {
+                return response
+            }
             record(request.command, session: name, result: result)
             if let step = flowStepIfSafe(command: request.command, parameters: request.parameters) {
                 withState {
@@ -203,6 +246,8 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             return .success(id: request.id, result: result)
         } catch let error as HostError {
             return hostFailure(request, error)
+        } catch let error as AuthenticationError {
+            return failure(request, error.code, error.description)
         } catch let error as ProtocolValidationError {
             if case .unsafeResourceType = error {
                 return failure(
@@ -243,6 +288,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             sessions.removeAll()
             trace.removeAll()
             activeFlows.removeAll()
+            authenticationChallenges.removeAll()
             return (activeRecordings, openSessions)
         }
         for recording in captured.0 { _ = try? recording.stop(timeout: 5) }
@@ -331,6 +377,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             let recording = recordings.removeValue(forKey: name)
             trace.removeValue(forKey: name)
             activeFlows.removeValue(forKey: name)
+            authenticationChallenges.invalidate(session: name)
             return (session, recording)
         }
         guard let session = closing.0 else { return missingSession(request, name) }
@@ -422,6 +469,8 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         case .networkEmulate: return try session.hostEmulateNetwork(parameters: request.parameters)
         case .networkMockSet: return try session.hostSetNetworkMock(parameters: request.parameters)
         case .networkMockClear: return try session.hostClearNetworkMocks()
+        case .authLogin:
+            return try authenticate(request, sessionName: name, session: session)
         case .visualCompare:
             return try visualCompare(request, sessionName: name)
         case .reportCreate:
@@ -444,6 +493,187 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         case .ping, .shutdown, .profileClear, .sessionCreate, .sessionList, .sessionClose, .artifactList:
             throw HostError(code: .invalidCommand, message: "Command is not valid in this context.")
         }
+    }
+
+    private func authenticationResponse(
+        after command: CommandName, request: CommandRequest, sessionName: String,
+        session: Engine.Session, result: JSONValue
+    ) throws -> CommandResponse? {
+        guard [.visit, .inspect, .click, .wait, .back, .reload].contains(command) else { return nil }
+        let form = try AuthenticationForm(session.hostAuthenticationState())
+        guard form.detection != .none else {
+            authenticationChallenges.invalidate(session: sessionName)
+            return nil
+        }
+        guard form.detection == .confirmed else {
+            authenticationChallenges.invalidate(session: sessionName)
+            return .success(
+                id: request.id,
+                result: merge(result, with: .object(["authentication": form.publicValue]))
+            )
+        }
+        guard let credentialOrigin = form.credentialOrigin else {
+            return .success(
+                id: request.id,
+                result: merge(result, with: .object([
+                    "authentication": .object([
+                        "origin": .string(form.origin),
+                        "detection": .string("hint"),
+                        "credentialUseSupported": .bool(false),
+                    ]),
+                ]))
+            )
+        }
+        let challenge = authenticationChallenges.issue(session: sessionName, form: form)
+        let aliases: [AuthenticationAlias]
+        let vaultAvailable: Bool
+        let vaultStatus: String
+        do {
+            aliases = try authenticationBroker.aliases(for: credentialOrigin)
+            vaultAvailable = true
+            vaultStatus = "available"
+        } catch let error as AuthenticationError {
+            aliases = []
+            vaultAvailable = false
+            vaultStatus = error.code
+        } catch {
+            aliases = []
+            vaultAvailable = false
+            vaultStatus = "VAULT_OPERATION_FAILED"
+        }
+        #if os(macOS)
+        let credentialUseAvailable = true
+        let suggestion = "Ask the user to choose an account alias, then run `headless auth login --challenge ID --account ALIAS`."
+        #else
+        let credentialUseAvailable = false
+        let suggestion = "Saved credential use needs a trusted per-use confirmation surface on this platform."
+        #endif
+        let details: JSONValue = .object([
+            "challenge": .string(challenge.id),
+            "origin": .string(form.origin),
+            "detection": .string("confirmed"),
+            "accounts": .array(aliases.map(\.publicValue)),
+            "expiresInSeconds": .number(AuthenticationChallengeStore.lifetime),
+            "userPresenceRequired": .bool(true),
+            "credentialUseAvailable": .bool(credentialUseAvailable),
+            "vaultAvailable": .bool(vaultAvailable),
+            "vaultStatus": .string(vaultStatus),
+            "untrustedContent": .bool(true),
+            "originalActionReplayed": .bool(false),
+        ])
+        return failure(
+            request, "AUTH_REQUIRED", "Authentication is required for the current page.",
+            suggestion: suggestion,
+            details: details
+        )
+    }
+
+    private func authenticate(
+        _ request: CommandRequest, sessionName: String, session: Engine.Session
+    ) throws -> JSONValue {
+        let interactive = request.parameters["interactive"]?.boolValue ?? false
+        let alias = try request.parameters["account"]?.stringValue.map(CredentialAlias.init(rawValue:))
+        guard interactive != (alias != nil) else {
+            throw HostError(code: .operationFailed, message: "Choose either interactive login or one account alias.")
+        }
+        let currentForm = try AuthenticationForm(session.hostAuthenticationState())
+        let challengeID: String
+        if let requested = request.parameters["challenge"]?.stringValue {
+            challengeID = requested
+        } else if interactive, currentForm.detection == .confirmed,
+                  currentForm.credentialOrigin != nil {
+            challengeID = authenticationChallenges.issue(
+                session: sessionName, form: currentForm
+            ).id
+        } else {
+            throw AuthenticationError.challengeNotFound
+        }
+        let challenge = try authenticationChallenges.begin(
+            id: challengeID, session: sessionName, currentForm: currentForm
+        )
+        var consumed = false
+        defer { authenticationChallenges.finish(id: challengeID, consumed: consumed) }
+        let credential: AuthenticationCredential
+        do {
+            guard let credentialOrigin = challenge.form.credentialOrigin else {
+                throw AuthenticationError.originChanged
+            }
+            if interactive {
+                credential = try session.hostPromptCredential(origin: credentialOrigin)
+            } else if let alias {
+                credential = try authenticationBroker.credential(for: credentialOrigin, alias: alias)
+            } else {
+                throw AuthenticationError.accountNotFound
+            }
+        } catch let error as AuthenticationError {
+            throw error
+        } catch {
+            throw AuthenticationError.brokerFailed("credential retrieval")
+        }
+        defer { credential.password.clear() }
+        let saveCandidate = interactive ? try credential.copy() : nil
+        defer { saveCandidate?.password.clear() }
+        consumed = true
+        let approvedForm = try AuthenticationForm(session.hostAuthenticationState())
+        _ = try authenticationChallenges.validateActive(
+            id: challengeID, session: sessionName, currentForm: approvedForm
+        )
+        defer { session.hostFinishCredentialProtection(form: challenge.form) }
+        _ = try session.hostFillCredential(form: challenge.form, credential: credential)
+        let continuation: String
+        let deadline = ProcessInfo.processInfo.systemUptime + 5
+        while true {
+            Thread.sleep(forTimeInterval: 0.1)
+            let state: AuthenticationForm
+            do {
+                state = try AuthenticationForm(session.hostAuthenticationState())
+            } catch {
+                if ProcessInfo.processInfo.systemUptime >= deadline {
+                    continuation = "verification-unknown"
+                    break
+                }
+                continue
+            }
+            if state.origin != challenge.form.origin {
+                continuation = "redirected"
+                break
+            }
+            if state.detection == .none {
+                continuation = "authenticated"
+                break
+            }
+            if state.detection == .additionalVerification {
+                continuation = "additional-verification"
+                break
+            }
+            if state.detection == .passkey {
+                continuation = "passkey-required"
+                break
+            }
+            if ProcessInfo.processInfo.systemUptime >= deadline {
+                continuation = state.detection == .confirmed
+                    ? "credentials-rejected" : "verification-unknown"
+                break
+            }
+        }
+        var response: [String: JSONValue] = [
+            "origin": .string(challenge.form.origin),
+            "account": alias.map { .string($0.rawValue) } ?? .null,
+            "continuation": .string(continuation),
+            "passwordExposed": .bool(false),
+            "originalActionReplayed": .bool(false),
+            "saved": .bool(false),
+        ]
+        if interactive, continuation == "authenticated" || continuation == "redirected",
+           let saveCandidate, let credentialOrigin = challenge.form.credentialOrigin,
+           let saveAlias = try session.hostPromptCredentialSave(
+               origin: credentialOrigin, account: saveCandidate.account
+           ) {
+            try authenticationBroker.store(saveCandidate, for: credentialOrigin, alias: saveAlias)
+            response["account"] = .string(saveAlias.rawValue)
+            response["saved"] = .bool(true)
+        }
+        return .object(response)
     }
 
     private func captureInfo(_ session: Engine.Session, name: String) throws -> JSONValue {
@@ -659,9 +889,10 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
     }
 
     private func failure(
-        _ request: CommandRequest, _ code: String, _ message: String, suggestion: String? = nil
+        _ request: CommandRequest, _ code: String, _ message: String,
+        suggestion: String? = nil, details: JSONValue? = nil
     ) -> CommandResponse {
-        .failure(id: request.id, code: code, message: message, suggestion: suggestion)
+        .failure(id: request.id, code: code, message: message, suggestion: suggestion, details: details)
     }
 
     private func merge(_ first: JSONValue, with second: JSONValue) -> JSONValue {

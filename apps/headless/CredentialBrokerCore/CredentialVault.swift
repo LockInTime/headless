@@ -67,6 +67,7 @@ public enum CredentialVaultError: Error, Equatable, CustomStringConvertible {
     case capacityExceeded
     case vaultUnavailable
     case vaultLocked
+    case userPresenceUnavailable
     case userDenied
     case corruptMetadata
     case insecureMetadata
@@ -82,6 +83,7 @@ public enum CredentialVaultError: Error, Equatable, CustomStringConvertible {
         case .capacityExceeded: return "CREDENTIAL_LIMIT_REACHED"
         case .vaultUnavailable: return "VAULT_UNAVAILABLE"
         case .vaultLocked: return "VAULT_LOCKED"
+        case .userPresenceUnavailable: return "USER_PRESENCE_UNAVAILABLE"
         case .userDenied: return "USER_PRESENCE_DENIED"
         case .corruptMetadata: return "VAULT_METADATA_CORRUPT"
         case .insecureMetadata: return "VAULT_METADATA_INSECURE"
@@ -105,6 +107,8 @@ public enum CredentialVaultError: Error, Equatable, CustomStringConvertible {
             return "An approved operating-system credential vault is unavailable."
         case .vaultLocked:
             return "The operating-system credential vault is locked."
+        case .userPresenceUnavailable:
+            return "A trusted per-use user-presence mechanism is unavailable."
         case .userDenied:
             return "The user denied credential-vault authorization."
         case .corruptMetadata:
@@ -155,6 +159,7 @@ public final class SensitiveBytes: @unchecked Sendable {
 public protocol CredentialSecretStore {
     var backendName: String { get }
     func store(_ secret: SensitiveBytes, for record: CredentialRecord) throws
+    func load(recordID: String) throws -> SensitiveBytes
     func remove(recordID: String) throws
 }
 
@@ -242,6 +247,33 @@ public final class CredentialVaultController {
         }
     }
 
+    public func aliases(origin: CredentialOrigin) throws -> [AuthenticationAlias] {
+        let records = try withRecoveredState { transaction in
+            transaction.state.records.filter { $0.origin == origin }.sorted {
+                $0.alias.rawValue < $1.alias.rawValue
+            }
+        }
+        return try records.map { try AuthenticationAlias(alias: $0.alias, account: $0.account) }
+    }
+
+    public func resolve(
+        origin: CredentialOrigin, alias: CredentialAlias
+    ) throws -> AuthenticationCredential {
+        let record = try withRecoveredState { transaction -> CredentialRecord in
+            guard let record = transaction.state.records.first(where: {
+                $0.origin == origin
+                    && $0.alias.rawValue.caseInsensitiveCompare(alias.rawValue) == .orderedSame
+            }) else { throw CredentialVaultError.notFound }
+            return record
+        }
+        let secret = try secrets.load(recordID: record.id)
+        defer { secret.clear() }
+        return try AuthenticationCredential(
+            account: record.account,
+            password: AuthenticationSecret(secret.withUnsafeBytes { Array($0) })
+        )
+    }
+
     public func add(origin: CredentialOrigin, alias: CredentialAlias) throws -> JSONValue {
         try withRecoveredState { transaction in
             guard transaction.state.records.count < Self.maximumRecords else {
@@ -262,6 +294,13 @@ public final class CredentialVaultController {
             throw CredentialVaultError.operationFailed("password confirmation did not match")
         }
 
+        return try store(origin: origin, alias: alias, account: account, secret: secret)
+    }
+
+    public func store(
+        origin: CredentialOrigin, alias: CredentialAlias, account: String, secret: SensitiveBytes
+    ) throws -> JSONValue {
+        guard !secret.isEmpty else { throw CredentialVaultError.promptFailed }
         return try withRecoveredState { transaction in
             guard transaction.state.records.count < Self.maximumRecords else {
                 throw CredentialVaultError.capacityExceeded

@@ -97,12 +97,33 @@ final class WebKitQABridge: NSObject, WKScriptMessageHandler {
     private let lock = NSLock()
     private var acceptedEvents = 0
     private var didRejectEvents = false
+    private var protectsCredential = false
     private let maximumEventsPerDocument = 500
 
     func beginDocument() {
         lock.lock()
         acceptedEvents = 0
         didRejectEvents = false
+        lock.unlock()
+    }
+
+    func protectCredentialInput() {
+        lock.lock()
+        protectsCredential = true
+        lock.unlock()
+        _ = store.clear()
+    }
+
+    func didCommitDocument() {
+        lock.lock()
+        protectsCredential = false
+        lock.unlock()
+    }
+
+    func finishCredentialInput() {
+        _ = store.clear()
+        lock.lock()
+        protectsCredential = false
         lock.unlock()
     }
 
@@ -113,6 +134,10 @@ final class WebKitQABridge: NSObject, WKScriptMessageHandler {
 
     private func acceptEvent() -> Bool {
         lock.lock()
+        guard !protectsCredential else {
+            lock.unlock()
+            return false
+        }
         if acceptedEvents < maximumEventsPerDocument {
             acceptedEvents += 1
             lock.unlock()

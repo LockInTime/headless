@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import LocalAuthentication
 import Security
 
 public final class MacOSKeychainCredentialStore: CredentialSecretStore {
@@ -33,6 +34,25 @@ public final class MacOSKeychainCredentialStore: CredentialSecretStore {
             kSecValueData as String: password,
         ] as CFDictionary, nil)
         guard status == errSecSuccess else { throw mappedKeychainError(status) }
+    }
+
+    public func load(recordID: String) throws -> SensitiveBytes {
+        var query = baseQuery(recordID: recordID)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        let context = LAContext()
+        context.localizedReason = "Use the selected Headless credential"
+        context.interactionNotAllowed = false
+        query[kSecUseAuthenticationContext as String] = context
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, var data = result as? Data,
+              !data.isEmpty, data.count <= 4_096 else {
+            if status == errSecSuccess { throw CredentialVaultError.operationFailed("invalid Keychain value") }
+            throw mappedKeychainError(status)
+        }
+        defer { data.resetBytes(in: 0..<data.count) }
+        return SensitiveBytes(Array(data))
     }
 
     public func remove(recordID: String) throws {

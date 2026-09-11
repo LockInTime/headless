@@ -94,6 +94,7 @@ public enum CommandName: String, Codable, CaseIterable, Sendable {
     case networkEmulate = "network.emulate"
     case networkMockSet = "network.mock.set"
     case networkMockClear = "network.mock.clear"
+    case authLogin = "auth.login"
 }
 
 public struct CommandRequest: Codable, Equatable, Sendable {
@@ -216,6 +217,25 @@ public struct CommandRequest: Codable, Equatable, Sendable {
         case .ping, .shutdown, .profileClear, .sessionList, .sessionClose, .back, .reload,
              .captureInfo, .artifactList, .recordStatus, .qaReport, .qaClear:
             try allow([])
+        case .authLogin:
+            try allow(["challenge", "account", "interactive"])
+            if let challenge = try string("challenge", maximumBytes: 64),
+               UUID(uuidString: challenge) == nil {
+                throw ProtocolValidationError.invalidParameter("Invalid authentication challenge")
+            }
+            if let account = try string("account", maximumBytes: 64) {
+                do { _ = try CredentialAlias(rawValue: account) }
+                catch { throw ProtocolValidationError.invalidParameter("Invalid account alias") }
+            }
+            try boolean("interactive")
+            let hasAccount = parameters["account"] != nil
+            let interactive = parameters["interactive"]?.boolValue ?? false
+            guard hasAccount != interactive,
+                  interactive || parameters["challenge"] != nil else {
+                throw ProtocolValidationError.invalidParameter(
+                    "Choose either interactive login or one account alias"
+                )
+            }
         case .sessionCreate:
             try allow(["name"])
             if let name = try string("name", required: true, maximumBytes: 64) {
@@ -443,11 +463,13 @@ public struct CommandError: Codable, Equatable, Sendable {
     public let code: String
     public let message: String
     public let suggestion: String?
+    public let details: JSONValue?
 
-    public init(code: String, message: String, suggestion: String? = nil) {
+    public init(code: String, message: String, suggestion: String? = nil, details: JSONValue? = nil) {
         self.code = code
         self.message = message
         self.suggestion = suggestion
+        self.details = details
     }
 }
 
@@ -467,13 +489,16 @@ public struct CommandResponse: Codable, Equatable, Sendable {
         CommandResponse(id: id, version: headlessProtocolVersion, ok: true, result: result, error: nil)
     }
 
-    public static func failure(id: String, code: String, message: String, suggestion: String? = nil) -> CommandResponse {
+    public static func failure(
+        id: String, code: String, message: String, suggestion: String? = nil,
+        details: JSONValue? = nil
+    ) -> CommandResponse {
         CommandResponse(
             id: id,
             version: headlessProtocolVersion,
             ok: false,
             result: nil,
-            error: CommandError(code: code, message: message, suggestion: suggestion)
+            error: CommandError(code: code, message: message, suggestion: suggestion, details: details)
         )
     }
 }

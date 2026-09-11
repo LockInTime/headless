@@ -66,6 +66,54 @@ extension BrowserWindowController {
         return try callAgent("return globalThis.__headlessAgent.fill(args);", arguments: ["args": args])
     }
 
+    func agentAuthenticationState() throws -> JSONValue {
+        try callAgent("return globalThis.__headlessAgent.authentication();")
+    }
+
+    func agentFillCredential(
+        form: AuthenticationForm, credential: AuthenticationCredential
+    ) throws -> JSONValue {
+        guard try AuthenticationForm(agentAuthenticationState()) == form else {
+            throw AuthenticationError.formChanged
+        }
+        qaBridge.protectCredentialInput()
+        defer { credential.password.clear() }
+        let password = try credential.password.withUnsafeBytes { bytes -> String in
+            guard let base = bytes.baseAddress,
+                  let value = String(
+                    bytes: UnsafeBufferPointer(
+                        start: base.assumingMemoryBound(to: UInt8.self), count: bytes.count
+                    ), encoding: .utf8
+                  ) else { throw AuthenticationError.invalidBrokerResponse }
+            return value
+        }
+        guard let passwordTarget = form.passwordTarget else {
+            throw AuthenticationError.formChanged
+        }
+        var arguments: [String: Any] = [
+            "origin": form.origin,
+            "passwordTarget": passwordTarget,
+            "account": credential.account,
+            "password": password,
+        ]
+        if let accountTarget = form.accountTarget { arguments["accountTarget"] = accountTarget }
+        if let submitTarget = form.submitTarget { arguments["submitTarget"] = submitTarget }
+        return try callAgent(
+            "return globalThis.__headlessAgent.credentialFill(args);",
+            arguments: ["args": arguments]
+        )
+    }
+
+    func agentFinishCredentialProtection(form: AuthenticationForm) {
+        if let passwordTarget = form.passwordTarget {
+            _ = try? callAgent(
+                "return globalThis.__headlessAgent.finishCredentialFill(args);",
+                arguments: ["args": ["passwordTarget": passwordTarget]]
+            )
+        }
+        qaBridge.finishCredentialInput()
+    }
+
     func agentPress(parameters: [String: JSONValue]) throws -> JSONValue {
         guard let key = parameters["key"]?.stringValue, !key.isEmpty, key.count <= 32 else {
             throw HostError(code: .operationFailed, message: "Missing command parameter: key")
@@ -538,6 +586,21 @@ extension BrowserWindowController: BrowserEngineSession {
     }
     func hostPerformance() throws -> JSONValue { try agentPerformance() }
     func hostAnimations() throws -> JSONValue { try agentAnimations() }
+    func hostAuthenticationState() throws -> JSONValue { try agentAuthenticationState() }
+    func hostPromptCredential(origin: CredentialOrigin) throws -> AuthenticationCredential {
+        try promptCredential(origin: origin)
+    }
+    func hostPromptCredentialSave(origin: CredentialOrigin, account: String) throws -> CredentialAlias? {
+        try promptCredentialSave(origin: origin, account: account)
+    }
+    func hostFillCredential(
+        form: AuthenticationForm, credential: AuthenticationCredential
+    ) throws -> JSONValue {
+        try agentFillCredential(form: form, credential: credential)
+    }
+    func hostFinishCredentialProtection(form: AuthenticationForm) {
+        agentFinishCredentialProtection(form: form)
+    }
 }
 
 private func onMain<T>(_ body: @escaping () -> T) -> T {

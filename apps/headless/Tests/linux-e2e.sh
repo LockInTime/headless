@@ -4,21 +4,33 @@ set -eu
 export HEADLESS_ARTIFACT_DIR="/tmp/headless-artifacts-e2e-$$"
 export XDG_DATA_HOME="/tmp/headless-data-e2e-$$"
 export XDG_CONFIG_HOME="/tmp/headless-config-e2e-$$"
+export HEADLESS_HOST_LOG="/tmp/headless-host-e2e-$$.log"
+STEP="setup"
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
-mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/api"
+mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/api"
 cp /opt/headless/fixtures/dashboard.html "$FIXTURE_ROOT/designers/dashboard/index.html"
 cp /opt/headless/fixtures/next.html "$FIXTURE_ROOT/next/index.html"
 cp /opt/headless/fixtures/hostile.html "$FIXTURE_ROOT/hostile/index.html"
 cp /opt/headless/fixtures/large-document.html "$FIXTURE_ROOT/large-document/index.html"
 cp /opt/headless/fixtures/trusted-input.html "$FIXTURE_ROOT/trusted-input/index.html"
 cp /opt/headless/fixtures/auth-state.html "$FIXTURE_ROOT/auth-state/index.html"
+cp /opt/headless/fixtures/auth-login.html "$FIXTURE_ROOT/auth-login/index.html"
 cp /opt/headless/fixtures/api-diagnostic.json "$FIXTURE_ROOT/api/diagnostic"
 busybox httpd -f -p 127.0.0.1:41739 -h "$FIXTURE_ROOT" &
 FIXTURE_PID=$!
 
 cleanup() {
+  status=$?
+  trap - EXIT INT TERM
+  if [ "$status" -ne 0 ]; then
+    echo "Linux E2E failed during: $STEP" >&2
+    if [ -s "$HEADLESS_HOST_LOG" ]; then
+      echo "--- host log ---" >&2
+      cat "$HEADLESS_HOST_LOG" >&2
+    fi
+  fi
   headless stop >/dev/null 2>&1 || true
   kill "$FIXTURE_PID" >/dev/null 2>&1 || true
   rm -rf "$FIXTURE_ROOT"
@@ -26,6 +38,8 @@ cleanup() {
   rm -rf "$HEADLESS_ARTIFACT_DIR"
   rm -rf "$XDG_DATA_HOME"
   rm -rf "$XDG_CONFIG_HOME"
+  rm -f "$HEADLESS_HOST_LOG"
+  exit "$status"
 }
 trap cleanup EXIT INT TERM
 
@@ -54,6 +68,7 @@ echo "$CREDENTIAL_LIST" | grep -q 'VAULT_UNAVAILABLE'
 test ! -e "$HOME/.local/share/headless/credential-vault/credentials-index.json"
 /opt/headless/linux-credential-vault.sh
 
+STEP="runtime-discovery"
 headless runtime | grep -q '"executable":"/usr/lib/chromium/chromium"'
 headless runtime | grep -q '"transport":"inherited-devtools-pipe"'
 if SNAP_RUNTIME="$(HEADLESS_CHROMIUM_EXECUTABLE=/snap/bin/chromium headless runtime 2>&1)"; then
@@ -68,6 +83,7 @@ if RELATIVE_RUNTIME="$(HEADLESS_CHROMIUM_EXECUTABLE=relative/chromium headless r
 fi
 echo "$RELATIVE_RUNTIME" | grep -q 'must be absolute'
 
+STEP="settings"
 SETTINGS_LIST="$(headless config list)"
 echo "$SETTINGS_LIST" | grep -q '"key":"startup-presentation"'
 echo "$SETTINGS_LIST" | grep -q '"access":"agent-writable"'
@@ -93,6 +109,7 @@ if PRESENTATION_START="$(headless start --foreground 2>&1)"; then
 fi
 echo "$PRESENTATION_START" | grep -q 'UNSUPPORTED_CAPABILITY'
 
+STEP="host-start"
 headless start | grep -q '"ready":true'
 test "$(stat -c %a "$XDG_DATA_HOME/headless")" = "700"
 test "$(stat -c %a "$XDG_DATA_HOME/headless/chromium-profile")" = "700"
@@ -102,9 +119,38 @@ if RUNNING_PRESENTATION_START="$(headless start --foreground 2>&1)"; then
 fi
 echo "$RUNNING_PRESENTATION_START" | grep -q 'UNSUPPORTED_CAPABILITY'
 
+STEP="authentication-state-setup"
 headless visit 'http://127.0.0.1:41739/auth-state/?action=login' | grep -q 'Authentication State'
-headless inspect --text | grep -q 'Cookie state: signed-in'
-headless inspect --text | grep -q 'Storage state: signed-in'
+
+STEP="authentication-challenge"
+if AUTH_REQUIRED="$(headless visit 'http://127.0.0.1:41739/auth-login/' 2>&1)"; then
+  echo "confirmed login form did not require authentication" >&2
+  exit 1
+fi
+STEP="authentication-challenge-code"
+echo "$AUTH_REQUIRED" | grep -q '"code":"AUTH_REQUIRED"'
+STEP="authentication-challenge-origin"
+echo "$AUTH_REQUIRED" | grep -q '"origin":"http://127.0.0.1:41739"'
+STEP="authentication-challenge-accounts"
+echo "$AUTH_REQUIRED" | grep -q '"accounts":\[\]'
+STEP="authentication-challenge-presence"
+echo "$AUTH_REQUIRED" | grep -q '"userPresenceRequired":true'
+STEP="authentication-challenge-availability"
+echo "$AUTH_REQUIRED" | grep -q '"credentialUseAvailable":false'
+STEP="authentication-direct-account"
+headless fill @e1 -- 'fixture@example.test' | grep -q '"valueLength":20'
+STEP="authentication-direct-password"
+headless fill @e2 -- 'synthetic-direct-password' | grep -q '"valueLength":25'
+STEP="authentication-direct-submit"
+headless click @e3 | grep -q '"clicked"'
+STEP="authentication-direct-continuation"
+headless wait --text 'Signed in' | grep -q 'Signed in'
+STEP="authentication-no-implicit-save"
+test ! -e "$HOME/.local/share/headless/credential-vault/credentials-index.json"
+STEP="authentication-cookie-state"
+headless cookies list | grep -q '"name":"headless_auth_state"'
+STEP="authentication-storage-state"
+headless storage list --scope local | grep -q 'headless_auth_state'
 PROFILE_RESTART_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$PROFILE_RESTART_PID"
 headless stop | grep -q '"stopping":true'

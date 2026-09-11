@@ -131,6 +131,8 @@ public struct CLIParser {
         case "credentials":
             guard session == nil else { throw CLIParseError.invalidOption("--session") }
             return try parseCredentials(arguments)
+        case "auth":
+            return try parseAuth(arguments, session: session, jsonOutput: jsonOutput)
         case "status":
             try requireEmpty(arguments)
             return remote(.ping, session: session, jsonOutput: jsonOutput)
@@ -291,6 +293,32 @@ public struct CLIParser {
 
     private func requireNoCredentialArguments(_ arguments: [String]) throws {
         guard arguments.isEmpty else { throw CredentialCommandError.invalidArguments }
+    }
+
+    private func parseAuth(
+        _ arguments: [String], session: String?, jsonOutput: Bool
+    ) throws -> CLIInvocation {
+        guard arguments.first == "login" else {
+            throw CLIParseError.missingArgument("auth login")
+        }
+        var args = Array(arguments.dropFirst())
+        let challenge = try removeOption("--challenge", from: &args)
+        let account = try removeOption("--account", from: &args)
+        let interactive = removeFlag("--interactive", from: &args)
+        try requireEmpty(args)
+        guard interactive != (account != nil), interactive || challenge != nil else {
+            throw CLIParseError.missingArgument("--challenge ID --account ALIAS, or --interactive")
+        }
+        if let account { _ = try CredentialAlias(rawValue: account) }
+        var parameters: [String: JSONValue] = [:]
+        if let challenge { parameters["challenge"] = .string(challenge) }
+        if interactive { parameters["interactive"] = .bool(true) }
+        if let account { parameters["account"] = .string(account) }
+        return remote(
+            .authLogin, session: session,
+            parameters: parameters,
+            jsonOutput: jsonOutput
+        )
     }
 
     private func parseInspect(_ arguments: [String], session: String?, jsonOutput: Bool) throws -> CLIInvocation {
@@ -750,6 +778,7 @@ Commands:
   credentials add --origin URL --alias NAME --interactive
   credentials rename --origin URL --alias OLD --to NEW
   credentials remove --origin URL --alias NAME
+  auth login --challenge ID --account ALIAS | auth login --interactive
   session create [NAME] | session list | session close NAME
   visit URL
   inspect [--context summary|outline|text|actions|full] [--task TEXT]

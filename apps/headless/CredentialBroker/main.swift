@@ -1,6 +1,11 @@
 import CredentialBrokerCore
 import Foundation
 import HeadlessProtocol
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 private func printJSON(_ value: JSONValue) {
     guard let data = try? ProtocolCodec.encoder.encode(value) else {
@@ -11,7 +16,108 @@ private func printJSON(_ value: JSONValue) {
     FileHandle.standardOutput.write(Data([0x0A]))
 }
 
+private func trustedHostIsParent() -> Bool {
+    let broker = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+    let parentPath: String?
+    #if os(macOS)
+    var buffer = [CChar](repeating: 0, count: 4_096)
+    let count = proc_pidpath(getppid(), &buffer, UInt32(buffer.count))
+    parentPath = count > 0 ? String(cString: buffer) : nil
+    let expected = [
+        broker.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("MacOS/Headless"),
+        broker.deletingLastPathComponent().appendingPathComponent("headless-host"),
+    ]
+    #else
+    parentPath = try? FileManager.default.destinationOfSymbolicLink(
+        atPath: "/proc/\(getppid())/exe"
+    )
+    let expected = [broker.deletingLastPathComponent().appendingPathComponent("headless-host")]
+    #endif
+    guard let parentPath else { return false }
+    let parent = URL(fileURLWithPath: parentPath).resolvingSymlinksInPath().standardizedFileURL
+    return expected.contains {
+        parent == $0.resolvingSymlinksInPath().standardizedFileURL
+    }
+}
+
+private func runInternalResolve(_ arguments: [String]) throws {
+    guard trustedHostIsParent() else { throw CredentialVaultError.userDenied }
+    #if os(Linux)
+    // An unlocked Secret Service can answer without prompting. Until the Linux
+    // host has a trusted confirmation UI, saved use must fail closed.
+    throw CredentialVaultError.userPresenceUnavailable
+    #else
+    var values = arguments
+    func option(_ name: String) throws -> String {
+        guard let index = values.firstIndex(of: name), index + 1 < values.count else {
+            throw CredentialCommandError.invalidArguments
+        }
+        let value = values.remove(at: index + 1)
+        values.remove(at: index)
+        return value
+    }
+    let origin = try CredentialOrigin(rawValue: option("--origin"))
+    let alias = try CredentialAlias(rawValue: option("--alias"))
+    guard values.isEmpty else { throw CredentialCommandError.invalidArguments }
+    let controller = CredentialVaultController(
+        metadata: CredentialMetadataStore(), secrets: try makePlatformCredentialSecretStore()
+    )
+    let credential = try controller.resolve(origin: origin, alias: alias)
+    defer { credential.password.clear() }
+    var frame = try AuthenticationCredentialFrame.encode(credential)
+    FileHandle.standardOutput.write(frame)
+    frame.resetBytes(in: 0..<frame.count)
+    #endif
+}
+
+private func runInternalStore(_ arguments: [String]) throws {
+    guard trustedHostIsParent() else { throw CredentialVaultError.userDenied }
+    var values = arguments
+    func option(_ name: String) throws -> String {
+        guard let index = values.firstIndex(of: name), index + 1 < values.count else {
+            throw CredentialCommandError.invalidArguments
+        }
+        let value = values.remove(at: index + 1)
+        values.remove(at: index)
+        return value
+    }
+    let origin = try CredentialOrigin(rawValue: option("--origin"))
+    let alias = try CredentialAlias(rawValue: option("--alias"))
+    guard values.isEmpty else { throw CredentialCommandError.invalidArguments }
+    var frame = Data()
+    while frame.count <= AuthenticationCredentialFrame.maximumBytes {
+        let chunk = FileHandle.standardInput.readData(
+            ofLength: min(4_096, AuthenticationCredentialFrame.maximumBytes + 1 - frame.count)
+        )
+        if chunk.isEmpty { break }
+        frame.append(chunk)
+    }
+    guard frame.count <= AuthenticationCredentialFrame.maximumBytes else {
+        throw CredentialVaultError.operationFailed("credential frame exceeded its size limit")
+    }
+    defer { frame.resetBytes(in: 0..<frame.count) }
+    let credential = try AuthenticationCredentialFrame.decode(frame)
+    defer { credential.password.clear() }
+    let secret = SensitiveBytes(credential.password.withUnsafeBytes { Array($0) })
+    defer { secret.clear() }
+    let controller = CredentialVaultController(
+        metadata: CredentialMetadataStore(), secrets: try makePlatformCredentialSecretStore()
+    )
+    _ = try controller.store(
+        origin: origin, alias: alias, account: credential.account, secret: secret
+    )
+}
+
 do {
+    if CommandLine.arguments.dropFirst().first == "__resolve" {
+        try runInternalResolve(Array(CommandLine.arguments.dropFirst(2)))
+        exit(0)
+    }
+    if CommandLine.arguments.dropFirst().first == "__store" {
+        try runInternalStore(Array(CommandLine.arguments.dropFirst(2)))
+        exit(0)
+    }
     let invocation = try CLIParser().parse(Array(CommandLine.arguments.dropFirst()))
     guard case .credentials(let command)? = invocation.local, invocation.request == nil else {
         throw CredentialCommandError.invalidArguments
@@ -33,6 +139,16 @@ do {
     }
     printJSON(.object(["ok": .bool(true), "result": result]))
 } catch let error as CredentialVaultError {
+    if ["__resolve", "__store"].contains(CommandLine.arguments.dropFirst().first) {
+        switch error {
+        case .userDenied: exit(77)
+        case .vaultUnavailable: exit(78)
+        case .notFound: exit(79)
+        case .vaultLocked: exit(80)
+        case .userPresenceUnavailable: exit(81)
+        default: exit(70)
+        }
+    }
     printJSON(.object([
         "ok": .bool(false),
         "error": .object(["code": .string(error.code), "message": .string(error.description)]),

@@ -500,6 +500,10 @@ final class LinuxBrowserSession: @unchecked Sendable {
         ])
     }
 
+    func authenticationState() throws -> JSONValue {
+        try evaluate("return globalThis.__headlessAgent.authentication();")
+    }
+
     func press(parameters: [String: JSONValue]) throws -> JSONValue {
         guard let key = parameters["key"]?.stringValue, !key.isEmpty, key.count <= 32 else {
             throw HostError(code: .operationFailed, message: "Missing command parameter: key")

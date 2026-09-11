@@ -1,4 +1,5 @@
 #if os(Linux)
+import CHeadlessSecurePrompt
 import Dispatch
 import Foundation
 import Glibc
@@ -26,6 +27,12 @@ public final class LinuxSecretServiceCredentialStore: CredentialSecretStore {
             "store", "--label=Headless saved credential",
             "application", "com.headless.credentials.v1", "credential-id", record.id,
         ], secret: secret)
+    }
+
+    public func load(recordID: String) throws -> SensitiveBytes {
+        try lookup([
+            "lookup", "application", "com.headless.credentials.v1", "credential-id", recordID,
+        ])
     }
 
     public func remove(recordID: String) throws {
@@ -102,6 +109,63 @@ public final class LinuxSecretServiceCredentialStore: CredentialSecretStore {
         _ = errorCapture.text()
     }
 
+    private func lookup(_ arguments: [String]) throws -> SensitiveBytes {
+        let process = Process()
+        process.executableURL = executableURL
+        process.arguments = arguments
+        process.environment = Self.sanitizedEnvironment(
+            ProcessInfo.processInfo.environment,
+            runtimeDirectory: runtimeDirectory,
+            busAddress: busAddress
+        )
+        process.standardInput = FileHandle.nullDevice
+        let output = Pipe()
+        let errors = Pipe()
+        process.standardOutput = output
+        process.standardError = errors
+        let outputCapture = BoundedSecretCapture(maximumBytes: 4_097)
+        let errorCapture = BoundedErrorCapture()
+        let completion = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in completion.signal() }
+        outputCapture.start(reading: output.fileHandleForReading)
+        errorCapture.start(reading: errors.fileHandleForReading)
+        do { try process.run() }
+        catch {
+            output.fileHandleForWriting.closeFile()
+            errors.fileHandleForWriting.closeFile()
+            _ = try? outputCapture.data()
+            _ = errorCapture.text()
+            throw CredentialVaultError.vaultUnavailable
+        }
+        output.fileHandleForWriting.closeFile()
+        errors.fileHandleForWriting.closeFile()
+        guard completion.wait(timeout: .now() + 15) == .success else {
+            if process.isRunning { process.terminate() }
+            if completion.wait(timeout: .now() + 2) == .timedOut, process.isRunning {
+                _ = kill(process.processIdentifier, SIGKILL)
+                process.waitUntilExit()
+            }
+            _ = try? outputCapture.data()
+            _ = errorCapture.text()
+            throw CredentialVaultError.operationFailed("Secret Service timeout")
+        }
+        var data = try outputCapture.data()
+        defer { data.resetBytes(in: 0..<data.count) }
+        guard process.terminationReason == .exit, process.terminationStatus == 0 else {
+            throw Self.classifiedBackendError(errorCapture.text())
+        }
+        _ = errorCapture.text()
+        guard !data.isEmpty, data.count <= 4_097 else {
+            throw CredentialVaultError.operationFailed("invalid Secret Service value")
+        }
+        var bytes = Array(data)
+        if bytes.last == 0x0A { bytes.removeLast() }
+        guard !bytes.isEmpty, bytes.count <= 4_096 else {
+            throw CredentialVaultError.operationFailed("invalid Secret Service value")
+        }
+        return SensitiveBytes(bytes)
+    }
+
     private static func approvedExecutable() -> URL? {
         for path in ["/usr/bin/secret-tool"] {
             var info = stat()
@@ -154,6 +218,49 @@ public final class LinuxSecretServiceCredentialStore: CredentialSecretStore {
             return .userDenied
         }
         return .vaultUnavailable
+    }
+}
+
+private final class BoundedSecretCapture: @unchecked Sendable {
+    private let maximumBytes: Int
+    private let group = DispatchGroup()
+    private let lock = NSLock()
+    private var bytes: [UInt8] = []
+    private var overflowed = false
+
+    init(maximumBytes: Int) { self.maximumBytes = maximumBytes }
+
+    func start(reading handle: FileHandle) {
+        group.enter()
+        DispatchQueue.global(qos: .utility).async { [self] in
+            defer { group.leave() }
+            while true {
+                let data = handle.readData(ofLength: 4_096)
+                if data.isEmpty { return }
+                lock.lock()
+                let remaining = max(0, maximumBytes - bytes.count)
+                bytes.append(contentsOf: data.prefix(remaining))
+                if data.count > remaining { overflowed = true }
+                lock.unlock()
+            }
+        }
+    }
+
+    func data() throws -> Data {
+        group.wait()
+        lock.lock()
+        defer {
+            bytes.withUnsafeMutableBytes { buffer in
+                guard let base = buffer.baseAddress else { return }
+                headless_secure_clear(base.assumingMemoryBound(to: UInt8.self), buffer.count)
+            }
+            bytes.removeAll(keepingCapacity: false)
+            lock.unlock()
+        }
+        guard !overflowed else {
+            throw CredentialVaultError.operationFailed("invalid Secret Service value")
+        }
+        return Data(bytes)
     }
 }
 

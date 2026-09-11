@@ -78,6 +78,7 @@ credentials list [--origin URL]
 credentials add --origin URL --alias NAME --interactive
 credentials rename --origin URL --alias OLD --to NEW
 credentials remove --origin URL --alias NAME
+auth login --challenge ID --account ALIAS | auth login --interactive
 ```
 
 Credential commands are local-only and never enter the browser protocol or MCP.
@@ -94,8 +95,8 @@ underscores, or hyphens and are case-insensitively unique per origin.
 
 macOS stores passwords in the encrypted default user Keychain with an empty
 trusted-app list and passphrase protection on the decryption ACL. A fresh
-broker-owned native user-presence gate is added to retrieval by #157. The
-vault uses no shared access group. Local/ad-hoc builds are reported as
+broker-owned native user-presence gate applies to every retrieval. The vault
+uses no shared access group. Local/ad-hoc builds are reported as
 `local-unnotarized`; rebuilds may make macOS ask again. This deliberately uses
 the file-based default Keychain because Apple's biometric data-protection Keychain requires a
 provisioning-profile-authorized app identity. The file-based API is deprecated,
@@ -114,9 +115,43 @@ backup and recovery behavior. Index writes are atomic. A durable transaction
 journal rolls back interrupted additions and completes interrupted deletions
 on the next vault command. Renames atomically update only the nonsecret index.
 Unknown future index schemas require an explicit migration. Normal-vault
-aliases are unavailable to private contexts. Saved credential use and login
-challenges are implemented separately by issue #157; until then these commands
-manage records but do not autofill them.
+aliases are unavailable to private contexts. When Headless confirms a
+top-level, same-origin POST login form, the blocked command returns
+`AUTH_REQUIRED` with a 60-second, single-use challenge and only the aliases for
+that exact origin. The challenge is also bound to a per-document identity, so
+a same-origin reload invalidates it.
+`auth login` asks the operating-system vault to authorize the selected alias,
+fills inside the trusted host, submits once, and reports whether the flow
+redirected, needs additional verification or a passkey, rejected the
+credentials, or requires fresh inspection because verification is ambiguous.
+It never retries the original blocked action.
+
+`auth login --interactive` instead opens trusted input owned by Headless. On
+macOS this is a native secure dialog; on Linux it reads the username and hidden
+password from the foreground `/dev/tty`. It can create a challenge from the
+current confirmed form, so a challenge ID is optional. After Headless verifies
+that the form disappeared or redirected, it separately asks whether to save,
+with No as the default. Saving requires a user-entered alias and sends the
+candidate secret only through a bounded pipe to the trusted broker. Failed,
+unverified, additional-verification, and passkey continuations never offer to
+save. Raw `fill` remains available and never saves implicitly.
+
+Heuristic login hints do not create challenges. Cross-origin frames are not
+inspected or filled and are reported as an explicit continuation. Public HTTP
+origins cannot use saved credentials. Authentication metadata is marked as
+untrusted page-derived content. A denied
+or unavailable vault fails closed without filling; denial leaves the challenge
+available for a deliberate retry. Existing raw `fill` commands remain
+available for test credentials and never save values implicitly. Headless can
+redact those values from its own output and artifacts, but cannot remove a
+password that a user already supplied from a model provider's transcript.
+Saved entry does not put the password in an input-event payload. Page
+diagnostics are suppressed during credential submission, discarded afterward,
+and restored only after the password field is cleared or a new document commits.
+
+Linux can enroll and manage Secret Service records, but saved use currently returns `USER_PRESENCE_UNAVAILABLE`:
+an unlocked Secret Service does not guarantee a fresh prompt, and Headless does
+not silently weaken the per-use authorization policy.
 
 ## Navigation and interaction
 

@@ -652,6 +652,34 @@ wire-protocol version bump is unnecessary because config remains local-only.
 
 ---
 
+## 27. Interactive authentication keeps consent in the trusted host
+
+**Decision:** `auth login --interactive` obtains the username and password only
+through a host-owned native secure dialog on macOS or the foreground
+`/dev/tty` on Linux. It never accepts password arguments or protocol fields.
+The host fills once, verifies the resulting authentication state, and only
+then presents a separate save decision whose default is No. An approved save
+passes one bounded binary credential frame directly to the trusted broker over
+stdin; the browser control socket, MCP, JSON, environment, and process
+arguments continue to carry no secret value.
+
+Interactive login may create a challenge from the current confirmed,
+same-origin POST form. Existing challenge IDs remain session-, document-,
+origin-, expiry-, and replay-bound. Additional verification, passkeys, failed
+credentials, and unknown verification outcomes do not offer persistence. Raw
+`fill` remains compatible and never implies save consent.
+
+**Status:** implemented 2026-09-12 by
+[#157](https://github.com/LockInTime/headless/issues/157).
+
+**Consequences:** the candidate secret exists only in host memory for the
+login and immediate save decision and is cleared on every return path. Broker
+storage still applies exact-origin and case-insensitive alias uniqueness. The
+Linux terminal path enables interactive login but does not weaken the separate
+rule that durable saved-credential retrieval needs trusted per-use presence.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -672,5 +700,6 @@ wire-protocol version bump is unnecessary because config remains local-only.
 | 21  | Rust port of shared core, protocol layer first              | In progress                                               | 2026-08-22 |
 | 24  | Credential broker on the unsigned local tier                | Decided                                                   | 2026-09-10 |
 | 25  | Typed local settings registry; security policy stays fixed  | Implemented                                               | 2026-09-12 |
+| 27  | Interactive authentication keeps consent in trusted host    | Implemented                                               | 2026-09-12 |
 
 New decisions append here with the same format. 22 and 23 are claimed by open PRs #170 and #169.
