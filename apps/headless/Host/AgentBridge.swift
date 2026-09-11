@@ -13,9 +13,24 @@ struct ScreenshotArtifactData {
 
 extension BrowserWindowController {
     func agentVisit(_ url: URL, timeout: TimeInterval = 20) throws -> JSONValue {
-        onMain { self.navigate(to: url) }
-        Thread.sleep(forTimeInterval: 0.05)
-        return try agentWait(parameters: ["settled": .bool(true), "timeoutMs": .number(timeout * 1_000)])
+        let deadline = Date().addingTimeInterval(timeout)
+        guard onMain({ self.beginAgentNavigation(to: url) }) else {
+            throw HostError(code: .operationFailed, message: "Browser refused to start navigation")
+        }
+        while Date() < deadline {
+            let status = onMain { self.agentNavigationStatus() }
+            if status.failed {
+                throw HostError(code: .operationFailed, message: "Browser navigation failed")
+            }
+            if !status.pending {
+                let remainingMs = max(100, deadline.timeIntervalSinceNow * 1_000)
+                return try agentWait(parameters: [
+                    "settled": .bool(true), "timeoutMs": .number(remainingMs),
+                ])
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        throw HostError(code: .timedOut, message: "Timed out while waiting for navigation")
     }
 
     func agentInspect(parameters: [String: JSONValue]) throws -> JSONValue {

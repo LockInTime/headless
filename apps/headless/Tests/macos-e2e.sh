@@ -419,6 +419,14 @@ if [[ "$(frontmost_pid)" == "$BACKGROUND_PID" ]]; then
   fail
 fi
 "$CLI" stop >/dev/null
+for _ in {1..100}; do
+  ! kill -0 "$BACKGROUND_PID" >/dev/null 2>&1 && break
+  sleep 0.05
+done
+if kill -0 "$BACKGROUND_PID" >/dev/null 2>&1; then
+  echo "background override host did not stop" >&2
+  fail
+fi
 
 STEP="durable-authentication-profile"
 "$CLI" start --background | grep -q '"ready":true'

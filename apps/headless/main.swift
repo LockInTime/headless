@@ -242,6 +242,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     private var lastProgress: CGFloat = 0
     private var onStartPage = false
     private var pendingRestoredStartupURL: URL?
+    private var pendingAgentNavigation: WKNavigation?
+    private var pendingAgentNavigationFailed = false
     private var agentControlEnabled = false
     var onClose: (() -> Void)?
 
@@ -478,6 +480,18 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
         load(url)
     }
 
+    func beginAgentNavigation(to url: URL) -> Bool {
+        pendingRestoredStartupURL = nil
+        onStartPage = false
+        pendingAgentNavigationFailed = false
+        pendingAgentNavigation = webView.load(URLRequest(url: url))
+        return pendingAgentNavigation != nil
+    }
+
+    func agentNavigationStatus() -> (pending: Bool, failed: Bool) {
+        (pendingAgentNavigation != nil, pendingAgentNavigationFailed)
+    }
+
     private func load(_ url: URL) {
         onStartPage = false
         if url.isFileURL {
@@ -694,6 +708,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        completeAgentNavigation(navigation, failed: false)
         if let job = snapJob {
             snapJob = nil
             runSnapJob(job)
@@ -706,11 +721,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        completeAgentNavigation(navigation, failed: true)
         handleLoadError(error)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        completeAgentNavigation(navigation, failed: true)
         handleLoadError(error)
+    }
+
+    private func completeAgentNavigation(_ navigation: WKNavigation?, failed: Bool) {
+        guard let navigation, pendingAgentNavigation === navigation else { return }
+        pendingAgentNavigation = nil
+        pendingAgentNavigationFailed = failed
     }
 
     private func handleLoadError(_ error: Error) {
