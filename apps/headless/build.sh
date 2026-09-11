@@ -62,7 +62,8 @@ if [[ -z "${SDKROOT:-}" ]]; then
         Sources/HeadlessProtocol/Protocol.swift \
         Sources/HeadlessProtocol/CredentialCommands.swift \
         Sources/HeadlessProtocol/HostError.swift \
-        Sources/HeadlessProtocol/CaptureFormats.swift >/dev/null 2>&1; then
+        Sources/HeadlessProtocol/CaptureFormats.swift \
+        Sources/HeadlessProtocol/NavigationAllowlist.swift >/dev/null 2>&1; then
       export SDKROOT="$sdk"
       SDK_ARGS=(--sdk "$sdk")
       COMPATIBLE_SDK="$sdk"
