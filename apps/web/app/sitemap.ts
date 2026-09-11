@@ -5,7 +5,6 @@ import type { MetadataRoute } from "next";
 export default function sitemap(): MetadataRoute.Sitemap {
   const routes = [
     "/",
-    "/docs",
     "/docs/markdown",
     ...PRODUCT_DOC_ROUTES.map(({ href }) => href),
   ];

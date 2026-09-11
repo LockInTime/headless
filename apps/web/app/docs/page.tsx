@@ -16,6 +16,14 @@ export default function DocsPage() {
   return (
     <DocsShell
       activePath="/docs"
+      sections={[
+        { id: "first-run", label: "First run" },
+        { id: "workflow", label: "QA workflow" },
+        { id: "commands", label: "Command groups" },
+        { id: "context", label: "Context pruning" },
+        { id: "scrollable", label: "Scrollable evidence" },
+        { id: "safety", label: "Safety" },
+      ]}
       kicker="Headless documentation"
       title={
         <>
@@ -31,8 +39,8 @@ export default function DocsPage() {
         <p className="docs-label">01 / First run</p>
         <h2>Start a session.</h2>
         <p>
-          Start the host, create a session, then visit the app. The session
-          stays isolated until you close it.
+          Start the host, create a session, then visit the app.{" "}
+          {plainText(documentation.sessionModel)}
         </p>
         <CommandBlock>{documentation.firstRunCommands}</CommandBlock>
         <p>{plainText(documentation.startupPresentation)}</p>

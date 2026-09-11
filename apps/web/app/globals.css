@@ -1248,6 +1248,19 @@ h3,
   width: min(1180px, calc(100% - 48px));
   margin: 0 auto;
 }
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: 12px;
+  z-index: 20;
+  padding: 8px 12px;
+  background: var(--amber);
+  color: var(--ink-on-amber);
+  transform: translateY(-150%);
+}
+.skip-link:focus {
+  transform: none;
+}
 .docs-nav {
   height: 84px;
   display: flex;
@@ -1286,14 +1299,55 @@ h3,
   font-family: var(--font-mono), monospace;
   font-size: 12px;
 }
+.docs-nav-group,
+.docs-toc {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.docs-nav-group + .docs-nav-group,
+.docs-toc {
+  margin-top: 30px;
+}
 .docs-sidebar p {
   margin: 0 0 6px;
   color: var(--amber-ink);
   font-size: 9px;
   letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
-.docs-sidebar p:not(:first-child) {
-  margin-top: 30px;
+.command-filter {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 42px;
+}
+.command-filter label {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber-ink);
+}
+.command-filter input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+}
+.command-filter input:focus {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+.command-filter p {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
 }
 .docs-sidebar a:hover {
   color: var(--ink);
@@ -1934,8 +1988,12 @@ h3,
     padding-bottom: 12px;
     overflow-x: auto;
   }
-  .docs-sidebar p {
+  .docs-sidebar p,
+  .docs-toc {
     display: none;
+  }
+  .docs-nav-group {
+    display: contents;
   }
   .docs-sidebar a {
     flex: 0 0 auto;

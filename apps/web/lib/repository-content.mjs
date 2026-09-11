@@ -23,13 +23,19 @@ let benchmarkCache;
 let documentationCache;
 let productDocsCache;
 
+export const PRODUCT_DOC_CATEGORIES = [
+  { id: "documentation", label: "Documentation" },
+  { id: "trust", label: "Trust & support" },
+];
+
 export const PRODUCT_DOC_ROUTES = [
-  { href: "/docs/install", label: "Install" },
-  { href: "/docs/mcp", label: "MCP setup" },
-  { href: "/docs/commands", label: "Commands" },
-  { href: "/docs/security", label: "Security" },
-  { href: "/docs/platforms", label: "Platforms" },
-  { href: "/docs/changelog", label: "Changelog" },
+  { href: "/docs", label: "Overview", category: "documentation" },
+  { href: "/docs/install", label: "Install", category: "documentation" },
+  { href: "/docs/mcp", label: "MCP setup", category: "documentation" },
+  { href: "/docs/commands", label: "Commands", category: "documentation" },
+  { href: "/docs/security", label: "Security", category: "trust" },
+  { href: "/docs/platforms", label: "Platforms", category: "trust" },
+  { href: "/docs/changelog", label: "Changelog", category: "trust" },
 ];
 
 function fail(message) {
@@ -385,7 +391,30 @@ function commandGroup(commandReference, title) {
   const usage = fencedCode(section);
   const description = bulletItems(section)[0];
   if (!description) fail(`missing command description: ${title}`);
-  return { title, commands: commandNames(usage), description, usage };
+  return {
+    title,
+    id: title.toLowerCase().replaceAll(" ", "-"),
+    commands: commandNames(usage),
+    description,
+    usage,
+  };
+}
+
+function listCommandForms(groups) {
+  return groups.flatMap((group) =>
+    group.usage
+      .split("\n")
+      .filter((line) => line && !/^\s/.test(line))
+      .flatMap((line) => line.split(" | "))
+      .map((form) => form.trim())
+      .filter((form) => form && form !== "--version")
+      .map((form) => ({
+        group: group.title,
+        groupId: group.id,
+        form,
+        description: group.description,
+      })),
+  );
 }
 
 function markdownForDocumentation(content) {
@@ -404,6 +433,8 @@ ${content.introduction}
 \`\`\`sh
 ${content.firstRunCommands}
 \`\`\`
+
+${content.sessionModel}
 
 ${content.startupPresentation}
 
@@ -438,6 +469,15 @@ export function loadDocumentationContent() {
   if (documentationCache) return documentationCache;
   const readme = readRepositoryFile("README.md");
   const commandReference = readRepositoryFile("apps/headless/docs/COMMANDS.md");
+  const sessionModel = bulletItems(
+    extractSection(commandReference, "Host lifecycle"),
+  ).find(
+    (item) =>
+      item.includes("one browser profile") && item.includes("not an isolation"),
+  );
+  if (!sessionModel) {
+    fail("COMMANDS.md is missing the shared-profile session contract");
+  }
   const workflowSection = extractSection(readme, "Agent workflow");
   const workflowCommands = fencedCode(workflowSection)
     .split("\n")
@@ -469,6 +509,7 @@ export function loadDocumentationContent() {
   const content = {
     introduction: paragraphStarting(readme, "Persistent browser control"),
     firstRunCommands,
+    sessionModel,
     qaWorkflowCommands,
     startupPresentation: paragraphStarting(workflowSection, "On macOS"),
     contextPruning: paragraphStarting(
@@ -641,7 +682,11 @@ export function loadProductDocsContent() {
     version: packageDocument.version,
     protocolVersion: protocolMatch[1],
     install,
-    commands: { groups: commandGroups, count: commandForms },
+    commands: {
+      groups: commandGroups,
+      count: commandForms,
+      forms: listCommandForms(commandGroups),
+    },
     mcp: {
       copy: mcpCopy,
       commands: mcpCommands,
@@ -708,11 +753,32 @@ export function validateRepositoryContent() {
       fail(`benchmark method row is stale: ${workflow.label}`);
     }
   }
+  const docsShell = readRepositoryFile("apps/web/components/docs-shell.tsx");
+  const docsOverview = readRepositoryFile("apps/web/app/docs/page.tsx");
+  if (docsShell.includes(".slice(")) {
+    fail("docs navigation must not slice route arrays by position");
+  }
+  if (/stays isolated/i.test(docsOverview)) {
+    fail("docs overview must not describe sessions as isolated");
+  }
+  if (!docsOverview.includes("sessionModel")) {
+    fail("docs overview must render the COMMANDS.md session contract");
+  }
+  const categoryIds = new Set(PRODUCT_DOC_CATEGORIES.map((category) => category.id));
+  if (categoryIds.size !== PRODUCT_DOC_CATEGORIES.length) {
+    fail("documentation categories must have unique ids");
+  }
   for (const route of productDocs.routes) {
+    if (!categoryIds.has(route.category)) {
+      fail(`documentation route is missing a declared category: ${route.href}`);
+    }
     const page = readRepositoryFile(`apps/web/app${route.href}/page.tsx`);
     if (!page.includes("export const metadata")) {
       fail(`product documentation route lacks metadata: ${route.href}`);
     }
+  }
+  if (productDocs.commands.forms.length !== productDocs.commands.count) {
+    fail("command directory forms drifted from the generated command count");
   }
   for (const convention of ["not-found.tsx", "robots.ts", "sitemap.ts"]) {
     readRepositoryFile(`apps/web/app/${convention}`);

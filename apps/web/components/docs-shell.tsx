@@ -1,7 +1,10 @@
 import { HeadlessMark } from "@/components/headless-mark";
 import { LinkGlyph } from "@/components/link-glyph";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { PRODUCT_DOC_ROUTES } from "@/lib/repository-content.mjs";
+import {
+  PRODUCT_DOC_CATEGORIES,
+  PRODUCT_DOC_ROUTES,
+} from "@/lib/repository-content.mjs";
 import Link from "next/link";
 
 export function DocumentationTable({
@@ -42,6 +45,7 @@ export function DocsShell({
   lede,
   children,
   headingAction,
+  sections,
 }: {
   activePath: string;
   kicker: string;
@@ -49,9 +53,13 @@ export function DocsShell({
   lede: string;
   children: React.ReactNode;
   headingAction?: React.ReactNode;
+  sections?: Array<{ id: string; label: string }>;
 }) {
   return (
     <main className="docs-shell">
+      <a className="skip-link" href="#docs-content">
+        Skip to content
+      </a>
       <nav
         className="docs-nav docs-container"
         aria-label="Documentation navigation"
@@ -62,7 +70,10 @@ export function DocsShell({
         </Link>
         <div>
           <Link href="/">Overview</Link>
-          <Link className="active" href="/docs">
+          <Link
+            className={activePath.startsWith("/docs") ? "active" : ""}
+            href="/docs"
+          >
             Docs
           </Link>
           <a
@@ -77,32 +88,36 @@ export function DocsShell({
 
       <div className="docs-container docs-layout">
         <aside className="docs-sidebar" aria-label="Documentation sections">
-          <p>DOCUMENTATION</p>
-          <Link className={activePath === "/docs" ? "active" : ""} href="/docs">
-            Overview
-          </Link>
-          {PRODUCT_DOC_ROUTES.slice(0, 3).map((route) => (
-            <Link
-              className={activePath === route.href ? "active" : ""}
-              href={route.href}
-              key={route.href}
-            >
-              {route.label}
-            </Link>
+          {PRODUCT_DOC_CATEGORIES.map((category) => (
+            <div className="docs-nav-group" key={category.id}>
+              <p>{category.label}</p>
+              {PRODUCT_DOC_ROUTES.filter(
+                (route) => route.category === category.id,
+              ).map((route) => (
+                <Link
+                  className={activePath === route.href ? "active" : ""}
+                  href={route.href}
+                  key={route.href}
+                  aria-current={activePath === route.href ? "page" : undefined}
+                >
+                  {route.label}
+                </Link>
+              ))}
+            </div>
           ))}
-          <p>TRUST &amp; SUPPORT</p>
-          {PRODUCT_DOC_ROUTES.slice(3).map((route) => (
-            <Link
-              className={activePath === route.href ? "active" : ""}
-              href={route.href}
-              key={route.href}
-            >
-              {route.label}
-            </Link>
-          ))}
+          {sections && sections.length > 0 ? (
+            <nav className="docs-toc" aria-label="On this page">
+              <p>On this page</p>
+              {sections.map((section) => (
+                <a href={`#${section.id}`} key={section.id}>
+                  {section.label}
+                </a>
+              ))}
+            </nav>
+          ) : null}
         </aside>
 
-        <article className="docs-content">
+        <article className="docs-content" id="docs-content" tabIndex={-1}>
           <div className="docs-heading-row">
             <div className="docs-kicker">
               <span className="status-dot" /> {kicker}
