@@ -347,6 +347,59 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    func promptCredential(origin: CredentialOrigin) throws -> AuthenticationCredential {
+        try onAgentMain {
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Sign in to \(origin.rawValue)"
+            alert.informativeText = "The password is used only for this login unless you separately choose to save it."
+            let account = NSTextField(frame: NSRect(x: 0, y: 32, width: 320, height: 24))
+            account.placeholderString = "Username or email"
+            let password = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+            password.placeholderString = "Password"
+            let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 56))
+            accessory.addSubview(account)
+            accessory.addSubview(password)
+            alert.accessoryView = accessory
+            alert.addButton(withTitle: "Sign In")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else {
+                account.stringValue = ""
+                password.stringValue = ""
+                throw AuthenticationError.userPresenceDenied
+            }
+            let accountValue = account.stringValue
+            let passwordBytes = Array(password.stringValue.utf8)
+            account.stringValue = ""
+            password.stringValue = ""
+            return try AuthenticationCredential(
+                account: accountValue, password: AuthenticationSecret(passwordBytes)
+            )
+        }
+    }
+
+    func promptCredentialSave(
+        origin: CredentialOrigin, account: String
+    ) throws -> CredentialAlias? {
+        try onAgentMain {
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Save this credential?"
+            alert.informativeText = "\(account) for \(origin.rawValue). Saving is optional and requires an alias."
+            let alias = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+            alias.placeholderString = "Alias, for example work"
+            alert.accessoryView = alias
+            alert.addButton(withTitle: "Don't Save")
+            alert.addButton(withTitle: "Save")
+            guard alert.runModal() == .alertSecondButtonReturn else {
+                alias.stringValue = ""
+                return nil
+            }
+            defer { alias.stringValue = "" }
+            return try CredentialAlias(rawValue: alias.stringValue)
+        }
+    }
+
     // MARK: Chrome (what little there is)
 
     private func setTrafficLights(visible: Bool) {
@@ -860,9 +913,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
 
 // MARK: - App delegate
 
-private func onAgentMain<T>(_ body: @escaping () -> T) -> T {
-    if Thread.isMainThread { return body() }
-    return DispatchQueue.main.sync(execute: body)
+private func onAgentMain<T>(_ body: @escaping () throws -> T) rethrows -> T {
+    if Thread.isMainThread { return try body() }
+    return try DispatchQueue.main.sync(execute: body)
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {

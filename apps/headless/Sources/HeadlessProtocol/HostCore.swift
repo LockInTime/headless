@@ -45,6 +45,8 @@ public protocol BrowserEngineSession: AnyObject {
     func hostSetNetworkMock(parameters: [String: JSONValue]) throws -> JSONValue
     func hostClearNetworkMocks() throws -> JSONValue
     func hostAuthenticationState() throws -> JSONValue
+    func hostPromptCredential(origin: CredentialOrigin) throws -> AuthenticationCredential
+    func hostPromptCredentialSave(origin: CredentialOrigin, account: String) throws -> CredentialAlias?
     func hostFillCredential(form: AuthenticationForm, credential: AuthenticationCredential) throws -> JSONValue
     func hostFinishCredentialProtection(form: AuthenticationForm)
 }
@@ -54,6 +56,14 @@ public extension BrowserEngineSession {
 
     func hostAuthenticationState() throws -> JSONValue {
         .object(["origin": .string("http://localhost"), "detection": .string("none")])
+    }
+
+    func hostPromptCredential(origin: CredentialOrigin) throws -> AuthenticationCredential {
+        try SecureTerminalAuthenticationPrompt().readCredential()
+    }
+
+    func hostPromptCredentialSave(origin: CredentialOrigin, account: String) throws -> CredentialAlias? {
+        try SecureTerminalAuthenticationPrompt().confirmSave()
     }
 
     func hostFillCredential(
@@ -561,12 +571,23 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
     private func authenticate(
         _ request: CommandRequest, sessionName: String, session: Engine.Session
     ) throws -> JSONValue {
-        guard let challengeID = request.parameters["challenge"]?.stringValue,
-              let aliasValue = request.parameters["account"]?.stringValue else {
-            throw HostError(code: .missingParameter, message: "Challenge and account alias are required.")
+        let interactive = request.parameters["interactive"]?.boolValue ?? false
+        let alias = try request.parameters["account"]?.stringValue.map(CredentialAlias.init(rawValue:))
+        guard interactive != (alias != nil) else {
+            throw HostError(code: .operationFailed, message: "Choose either interactive login or one account alias.")
         }
-        let alias = try CredentialAlias(rawValue: aliasValue)
         let currentForm = try AuthenticationForm(session.hostAuthenticationState())
+        let challengeID: String
+        if let requested = request.parameters["challenge"]?.stringValue {
+            challengeID = requested
+        } else if interactive, currentForm.detection == .confirmed,
+                  currentForm.credentialOrigin != nil {
+            challengeID = authenticationChallenges.issue(
+                session: sessionName, form: currentForm
+            ).id
+        } else {
+            throw AuthenticationError.challengeNotFound
+        }
         let challenge = try authenticationChallenges.begin(
             id: challengeID, session: sessionName, currentForm: currentForm
         )
@@ -577,14 +598,22 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             guard let credentialOrigin = challenge.form.credentialOrigin else {
                 throw AuthenticationError.originChanged
             }
-            credential = try authenticationBroker.credential(for: credentialOrigin, alias: alias)
+            if interactive {
+                credential = try session.hostPromptCredential(origin: credentialOrigin)
+            } else if let alias {
+                credential = try authenticationBroker.credential(for: credentialOrigin, alias: alias)
+            } else {
+                throw AuthenticationError.accountNotFound
+            }
         } catch let error as AuthenticationError {
             throw error
         } catch {
             throw AuthenticationError.brokerFailed("credential retrieval")
         }
-        consumed = true
         defer { credential.password.clear() }
+        let saveCandidate = interactive ? try credential.copy() : nil
+        defer { saveCandidate?.password.clear() }
+        consumed = true
         let approvedForm = try AuthenticationForm(session.hostAuthenticationState())
         _ = try authenticationChallenges.validateActive(
             id: challengeID, session: sessionName, currentForm: approvedForm
@@ -609,6 +638,10 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
                 continuation = "redirected"
                 break
             }
+            if state.detection == .none {
+                continuation = "authenticated"
+                break
+            }
             if state.detection == .additionalVerification {
                 continuation = "additional-verification"
                 break
@@ -623,13 +656,24 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
                 break
             }
         }
-        return .object([
+        var response: [String: JSONValue] = [
             "origin": .string(challenge.form.origin),
-            "account": .string(alias.rawValue),
+            "account": alias.map { .string($0.rawValue) } ?? .null,
             "continuation": .string(continuation),
             "passwordExposed": .bool(false),
             "originalActionReplayed": .bool(false),
-        ])
+            "saved": .bool(false),
+        ]
+        if interactive, continuation == "authenticated" || continuation == "redirected",
+           let saveCandidate, let credentialOrigin = challenge.form.credentialOrigin,
+           let saveAlias = try session.hostPromptCredentialSave(
+               origin: credentialOrigin, account: saveCandidate.account
+           ) {
+            try authenticationBroker.store(saveCandidate, for: credentialOrigin, alias: saveAlias)
+            response["account"] = .string(saveAlias.rawValue)
+            response["saved"] = .bool(true)
+        }
+        return .object(response)
     }
 
     private func captureInfo(_ session: Engine.Session, name: String) throws -> JSONValue {

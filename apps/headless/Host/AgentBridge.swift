@@ -587,6 +587,12 @@ extension BrowserWindowController: BrowserEngineSession {
     func hostPerformance() throws -> JSONValue { try agentPerformance() }
     func hostAnimations() throws -> JSONValue { try agentAnimations() }
     func hostAuthenticationState() throws -> JSONValue { try agentAuthenticationState() }
+    func hostPromptCredential(origin: CredentialOrigin) throws -> AuthenticationCredential {
+        try promptCredential(origin: origin)
+    }
+    func hostPromptCredentialSave(origin: CredentialOrigin, account: String) throws -> CredentialAlias? {
+        try promptCredentialSave(origin: origin, account: account)
+    }
     func hostFillCredential(
         form: AuthenticationForm, credential: AuthenticationCredential
     ) throws -> JSONValue {

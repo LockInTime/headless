@@ -113,12 +113,30 @@ public final class CredentialBrokerProcessClient: @unchecked Sendable, Authentic
         return try AuthenticationCredentialFrame.decode(output)
     }
 
-    private func run(_ arguments: [String], maximumOutputBytes: Int) throws -> Data {
+    public func store(
+        _ credential: AuthenticationCredential, for origin: CredentialOrigin, alias: CredentialAlias
+    ) throws {
+        var frame = try AuthenticationCredentialFrame.encode(credential)
+        defer { frame.resetBytes(in: 0..<frame.count) }
+        _ = try run(
+            ["__store", "--origin", origin.rawValue, "--alias", alias.rawValue],
+            maximumOutputBytes: 1, input: frame
+        )
+    }
+
+    private func run(
+        _ arguments: [String], maximumOutputBytes: Int, input: Data? = nil
+    ) throws -> Data {
         let process = Process()
         process.executableURL = executableURL
         process.arguments = arguments
         process.environment = Self.sanitizedEnvironment(ProcessInfo.processInfo.environment)
-        process.standardInput = FileHandle.nullDevice
+        let inputPipe = input.map { _ in Pipe() }
+        if let inputPipe {
+            process.standardInput = inputPipe
+        } else {
+            process.standardInput = FileHandle.nullDevice
+        }
         process.standardError = FileHandle.nullDevice
         let output = Pipe()
         process.standardOutput = output
@@ -126,6 +144,10 @@ public final class CredentialBrokerProcessClient: @unchecked Sendable, Authentic
         process.terminationHandler = { _ in completion.signal() }
         do { try process.run() }
         catch { throw AuthenticationError.vaultUnavailable }
+        if let input, let inputPipe {
+            inputPipe.fileHandleForWriting.write(input)
+            try? inputPipe.fileHandleForWriting.close()
+        }
         let capture = BoundedBrokerOutput(maximumBytes: maximumOutputBytes)
         capture.start(output.fileHandleForReading)
         guard completion.wait(timeout: .now() + 30) == .success else {

@@ -235,6 +235,11 @@ private final class TestBrowserSession: BrowserEngineSession {
     ])
     private(set) var filledCredentialAccount: String?
     var authenticationStateAfterCredentialFill: JSONValue?
+    var promptedAccount = "interactive@example.test"
+    var promptedPassword = "interactive-secret"
+    var saveAlias: CredentialAlias?
+    private(set) var credentialPromptCount = 0
+    private(set) var savePromptCount = 0
 
     func hostEnableAgentControl() { agentControlEnableCount += 1 }
     func hostVisit(_ url: URL) throws -> JSONValue { .object(["url": .string(url.absoluteString)]) }
@@ -276,6 +281,17 @@ private final class TestBrowserSession: BrowserEngineSession {
     func hostPerformance() throws -> JSONValue { .object(["metrics": .array([])]) }
     func hostAnimations() throws -> JSONValue { .object(["animations": .array([])]) }
     func hostAuthenticationState() throws -> JSONValue { authenticationState }
+    func hostPromptCredential(origin: CredentialOrigin) throws -> AuthenticationCredential {
+        credentialPromptCount += 1
+        return try AuthenticationCredential(
+            account: promptedAccount,
+            password: AuthenticationSecret(Array(promptedPassword.utf8))
+        )
+    }
+    func hostPromptCredentialSave(origin: CredentialOrigin, account: String) throws -> CredentialAlias? {
+        savePromptCount += 1
+        return saveAlias
+    }
     func hostFillCredential(
         form: AuthenticationForm, credential: AuthenticationCredential
     ) throws -> JSONValue {
@@ -294,6 +310,9 @@ private final class TestAuthenticationBroker: @unchecked Sendable, Authenticatio
     let account: String
     let password: [UInt8]
     var credentialError: AuthenticationError?
+    private(set) var storedAlias: CredentialAlias?
+    private(set) var storedAccount: String?
+    private(set) var storedPassword: [UInt8]?
 
     init(origin: CredentialOrigin, alias: CredentialAlias, account: String, password: String) {
         self.origin = origin
@@ -317,6 +336,15 @@ private final class TestAuthenticationBroker: @unchecked Sendable, Authenticatio
         return try AuthenticationCredential(
             account: account, password: AuthenticationSecret(password)
         )
+    }
+
+    func store(
+        _ credential: AuthenticationCredential, for origin: CredentialOrigin, alias: CredentialAlias
+    ) throws {
+        guard origin == self.origin else { throw AuthenticationError.originChanged }
+        storedAlias = alias
+        storedAccount = credential.account
+        storedPassword = credential.password.withUnsafeBytes { Array($0) }
     }
 }
 
@@ -2755,8 +2783,20 @@ struct ProtocolTests {
             "auth login should send only the alias"
         )
         try login.request?.validate()
+        let interactive = try CLIParser().parse(["auth", "login", "--interactive"])
+        try expect(
+            interactive.request?.parameters == ["interactive": .bool(true)],
+            "interactive auth must not put credentials or a synthetic challenge on the socket"
+        )
+        try interactive.request?.validate()
         try expectThrows("auth login should require a challenge") {
             _ = try CLIParser().parse(["auth", "login", "--account", "personal"])
+        }
+        try expectThrows("auth login should reject conflicting modes") {
+            _ = try CLIParser().parse([
+                "auth", "login", "--interactive", "--challenge",
+                "53a0f495-7d21-42ae-a243-c1bc97af4630", "--account", "personal",
+            ])
         }
         try expectThrows("auth login should reject invalid aliases") {
             _ = try CLIParser().parse([
@@ -2925,6 +2965,44 @@ struct ProtocolTests {
             parameters: ["challenge": .string(challenge), "account": .string(alias.rawValue)]
         ))
         try expect(replay.error?.code == "AUTH_CHALLENGE_CONSUMED", "challenge replay must fail")
+
+        session.authenticationState = .object([
+            "origin": .string(origin.rawValue), "detection": .string("confirmed"),
+            "document": .string("fedcba9876543210fedcba9876543210"),
+            "accountTarget": .string("@e1"), "passwordTarget": .string("@e2"),
+            "submitTarget": .string("@e3"),
+        ])
+        session.authenticationStateAfterCredentialFill = .object([
+            "origin": .string(origin.rawValue), "detection": .string("none"),
+        ])
+        session.saveAlias = nil
+        let declinedSave = core.handle(CommandRequest(
+            command: .authLogin, parameters: ["interactive": .bool(true)]
+        ))
+        guard declinedSave.ok, case .object(let declinedResult) = declinedSave.result else {
+            throw TestFailure(description: "interactive login with declined save should succeed")
+        }
+        try expect(declinedResult["continuation"] == .string("authenticated"), "removed form should verify login")
+        try expect(declinedResult["saved"] == .bool(false), "save must default to declined")
+        try expect(broker.storedAlias == nil, "declining save must not write the vault")
+
+        session.authenticationState = .object([
+            "origin": .string(origin.rawValue), "detection": .string("confirmed"),
+            "document": .string("abcdef0123456789abcdef0123456789"),
+            "accountTarget": .string("@e1"), "passwordTarget": .string("@e2"),
+            "submitTarget": .string("@e3"),
+        ])
+        session.saveAlias = try CredentialAlias(rawValue: "interactive")
+        let saved = core.handle(CommandRequest(
+            command: .authLogin, parameters: ["interactive": .bool(true)]
+        ))
+        guard saved.ok, case .object(let savedResult) = saved.result else {
+            throw TestFailure(description: "interactive login and save should succeed")
+        }
+        try expect(savedResult["saved"] == .bool(true), "explicit consent should save")
+        try expect(broker.storedAlias?.rawValue == "interactive", "save should retain the chosen alias")
+        try expect(broker.storedAccount == session.promptedAccount, "save should retain the entered account")
+        try expect(broker.storedPassword == Array(session.promptedPassword.utf8), "save should retain the entered secret")
     }
 
     static func sharedHostCoreDispatch() throws {

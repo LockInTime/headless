@@ -304,14 +304,19 @@ public struct CLIParser {
         var args = Array(arguments.dropFirst())
         let challenge = try removeOption("--challenge", from: &args)
         let account = try removeOption("--account", from: &args)
+        let interactive = removeFlag("--interactive", from: &args)
         try requireEmpty(args)
-        guard let challenge, let account else {
-            throw CLIParseError.missingArgument("--challenge ID --account ALIAS")
+        guard interactive != (account != nil), interactive || challenge != nil else {
+            throw CLIParseError.missingArgument("--challenge ID --account ALIAS, or --interactive")
         }
-        _ = try CredentialAlias(rawValue: account)
+        if let account { _ = try CredentialAlias(rawValue: account) }
+        var parameters: [String: JSONValue] = [:]
+        if let challenge { parameters["challenge"] = .string(challenge) }
+        if interactive { parameters["interactive"] = .bool(true) }
+        if let account { parameters["account"] = .string(account) }
         return remote(
             .authLogin, session: session,
-            parameters: ["challenge": .string(challenge), "account": .string(account)],
+            parameters: parameters,
             jsonOutput: jsonOutput
         )
     }
@@ -773,7 +778,7 @@ Commands:
   credentials add --origin URL --alias NAME --interactive
   credentials rename --origin URL --alias OLD --to NEW
   credentials remove --origin URL --alias NAME
-  auth login --challenge ID --account ALIAS
+  auth login --challenge ID --account ALIAS | auth login --interactive
   session create [NAME] | session list | session close NAME
   visit URL
   inspect [--context summary|outline|text|actions|full] [--task TEXT]
