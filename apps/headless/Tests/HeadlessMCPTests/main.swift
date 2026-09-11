@@ -66,6 +66,7 @@ func run() throws {
         #"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["credentials","add","synthetic-password"]}}}"#,
         #"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["credentials","list"]}}}"#,
         #"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["start"]}}}"#,
+        #"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["config","list"]}}}"#,
     ]
 
     try process.run()
@@ -81,7 +82,7 @@ func run() throws {
         let value = try JSONSerialization.jsonObject(with: Data(line.utf8))
         return try object(value, "MCP response was not a JSON object")
     }
-    try expect(responses.count == 11, "expected eleven MCP responses, received \(responses.count)")
+    try expect(responses.count == 12, "expected twelve MCP responses, received \(responses.count)")
 
     let initialize = try object(responses[0]["result"], "initialize result was absent")
     try expect(initialize["protocolVersion"] as? String == "2025-06-18", "initialize protocol version changed")
@@ -176,6 +177,14 @@ func run() throws {
         throw TestFailure(description: "local-command rejection text was absent")
     }
     try expect(localText.contains("browser commands only"), "local-command rejection guidance changed")
+
+    let configCall = try object(responses[11]["result"], "config rejection result was absent")
+    try expect(configCall["isError"] as? Bool == true, "config command was accepted over MCP")
+    guard let configContent = configCall["content"] as? [[String: Any]],
+          let configText = configContent.first?["text"] as? String else {
+        throw TestFailure(description: "config rejection text was absent")
+    }
+    try expect(configText.contains("browser commands only"), "config rejection guidance changed")
 }
 
 do {

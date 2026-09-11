@@ -23,8 +23,8 @@ headless <command> -- --value       # stop option parsing; literal values
 version | --version
 start [--background|--foreground] | status | stop | runtime
 profile clear
-config get startup-presentation
-config set startup-presentation background|foreground
+config list | config describe KEY | config get KEY
+config set KEY VALUE | config reset KEY
 session create [NAME] | session list | session close NAME
 capabilities
 ```
@@ -32,11 +32,44 @@ capabilities
 - `start` launches the host if it is not already running. `status` and `stop`
   control it afterwards. `runtime` reports which engine is active and where it
   came from.
-- `config startup-presentation` is macOS only; other engines reject it.
+- `config list` discovers agent-visible settings. `config describe KEY` reports
+  its type, default, platform scope, access class, effect timing, current value,
+  and whether the current platform supports it. `config get`, `set`, and
+  `reset` read, change, or restore a built-in default.
+- `startup-presentation` is an `agent-writable` macOS enum with `background`
+  and `foreground` values. It takes effect on the next host start. Linux lists
+  and describes it as unsupported, then rejects `get`, `set`, and `reset` with
+  `UNSUPPORTED_CAPABILITY`.
 - Sessions are windows (macOS) or tabs (Linux) sharing **one browser profile**.
   Cookies and local storage are shared across sessions and survive host and
   machine restarts. `profile clear` closes every session and permanently
   removes normal-profile cookies, storage, caches, and permissions.
+
+## Settings
+
+Settings are local CLI operations and never enter the browser protocol or MCP.
+Each registry definition has a typed value, validated default, platform scope,
+effect timing, and one access class:
+
+- `agent-readable` is visible to agent callers but cannot be changed by them.
+- `agent-writable` is visible and mutable by agent callers.
+- `user-only` is omitted from `list` and rejected as unknown by `describe`,
+  `get`, `set`, and `reset` through the agent CLI. A future trusted native or
+  OS-authenticated surface is required to access it.
+
+On macOS, the registry uses the `com.headless.app` preferences domain and keeps
+the existing `AgentStartupPresentation` storage key, avoiding migration or
+resurrection of a stale value. Linux uses
+`$XDG_CONFIG_HOME/headless/settings.json`, falling back to
+`~/.config/headless/settings.json`. The Linux backend is bounded and versioned,
+requires current-user ownership with `0700` directory and `0600` regular files,
+rejects links and malformed state, serializes writers, and atomically replaces
+and synchronizes the file.
+
+Security invariants are not settings. The registry cannot enable arbitrary
+JavaScript, a TCP listener, unsafe schemes, downloads, sandbox bypasses,
+sensitive-diagnostic bypasses, or credential authorization. Those boundaries
+remain fixed and fail closed.
 
 ## Credential vault
 

@@ -559,7 +559,7 @@ without a password manager.
 - Rebuilds and signing-identity changes may re-prompt or look like a
   different app. Document that. Do not invent a self-signed cert as public
   trust.
-- Prompt injection can still *name* an alias. Per-use user presence is what
+- Prompt injection can still _name_ an alias. Per-use user presence is what
   makes that fail closed on this tier.
 - Login cookies are as stealable as in any persistent browser. Treat them as
   session secrets in the threat model, separate from vault passwords.
@@ -616,6 +616,42 @@ new decision. Do not turn #166 on just because notarization started working.
 
 ---
 
+## 25. Typed settings are local, classified, and policy-free
+
+**Decision:** application preferences use one typed registry that declares
+each key's type, default, platform scope, effect timing, access class, storage
+identity, and validation. The local CLI provides `config list`, `describe`,
+`get`, `set`, and `reset`; these commands never enter the browser protocol or
+MCP surface. Agent callers cannot discover user-only keys, cannot mutate
+agent-readable keys, and can mutate only agent-writable keys. A future trusted
+native surface may operate as the user, but ordinary CLI or PTY presence is not
+proof of a human.
+
+macOS stores preferences in the existing `com.headless.app` UserDefaults
+domain. The initial `startup-presentation` definition deliberately retains its
+existing physical `AgentStartupPresentation` key, so adopting the registry
+does not copy, lose, or resurrect a prior value. Linux uses a bounded,
+versioned XDG config file under a `0700` Headless directory, with a `0600`
+lock and data file, descriptor-relative no-follow operations, strict decoding,
+locking, atomic replacement, and file plus directory synchronization.
+
+**Status:** implemented 2026-09-12 by
+[#153](https://github.com/LockInTime/headless/issues/153).
+
+**Rationale:** settings need one discoverable contract before more preferences
+arrive, but moving host security boundaries into a writable preference would
+turn policy into an opt-out. Access classification is enforced below parsing,
+not merely documented. User-only authorization remains in a trusted native or
+broker path, and credential secrets and approvals remain outside this store.
+
+**Consequences:** safety invariants, diagnostic gates, sandbox behavior,
+allowed navigation schemes, downloads, arbitrary JavaScript, remote control,
+and credential authorization are not settings. Corrupt or insecure persisted
+state fails closed. Adding a setting requires a registry entry and tests; a
+wire-protocol version bump is unnecessary because config remains local-only.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -635,5 +671,6 @@ new decision. Do not turn #166 on just because notarization started working.
 | 20  | Omit passkeys unless Apple provisions Developer ID release  | Implemented                                               | 2026-08-12 |
 | 21  | Rust port of shared core, protocol layer first              | In progress                                               | 2026-08-22 |
 | 24  | Credential broker on the unsigned local tier                | Decided                                                   | 2026-09-10 |
+| 25  | Typed local settings registry; security policy stays fixed  | Implemented                                               | 2026-09-12 |
 
 New decisions append here with the same format. 22 and 23 are claimed by open PRs #170 and #169.

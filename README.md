@@ -97,9 +97,22 @@ On macOS, agent startup opens visible browser windows behind the app currently
 in use. Change the persistent default with `headless config set
 startup-presentation foreground` or restore background startup with `headless
 config set startup-presentation background`; inspect it with `headless config
-get startup-presentation`. `headless start --foreground` and `headless start
+get startup-presentation`. Use `config list` to discover settings, `config
+describe KEY` for type and policy metadata, and `config reset KEY` to restore a
+built-in default. `headless start --foreground` and `headless start
 --background` are one-launch overrides. Settings and overrides apply only when
 launching a new host and do not reorder an already-running host.
+
+Settings declare their value type, default, supported platforms, access class,
+and when changes take effect. `agent-readable` settings can be inspected but
+not changed by an agent, `agent-writable` settings can also be changed, and
+`user-only` settings are omitted from every agent CLI operation. The registry
+is local-only and is not available through MCP or the browser protocol. macOS
+retains the existing `com.headless.app` / `AgentStartupPresentation` preference;
+Linux uses a bounded, versioned file in a private XDG configuration directory.
+Security invariants such as sandboxing, navigation restrictions, diagnostic
+gates, download denial, and the absence of arbitrary JavaScript and TCP control
+are fixed policy, not settings.
 
 Inspection is progressively disclosed instead of forcing an entire page into an
 agent prompt. Start with `--context summary`, use `--context outline` to receive

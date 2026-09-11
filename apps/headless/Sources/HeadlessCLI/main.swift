@@ -21,52 +21,6 @@ private func printResponse(_ response: CommandResponse) throws {
     FileHandle.standardOutput.write(try ProtocolCodec.encodeLine(response))
 }
 
-private enum StartupPresentationPreference {
-    static let builtInDefault = AgentStartupPresentation.background
-    private static let domain = "com.headless.app"
-    private static let key = "AgentStartupPresentation"
-
-    static var configured: AgentStartupPresentation? {
-        guard let defaults = UserDefaults(suiteName: domain),
-              let value = defaults.string(forKey: key) else { return nil }
-        return AgentStartupPresentation(rawValue: value)
-    }
-
-    static var effective: AgentStartupPresentation {
-        configured ?? builtInDefault
-    }
-
-    static func requireSupportedPlatform() throws {
-        #if !os(macOS)
-        throw StartupPresentationPreferenceError.unsupported
-        #endif
-    }
-
-    static func set(_ presentation: AgentStartupPresentation) throws {
-        guard let defaults = UserDefaults(suiteName: domain) else {
-            throw StartupPresentationPreferenceError.unavailable
-        }
-        defaults.set(presentation.rawValue, forKey: key)
-        guard defaults.synchronize() else {
-            throw StartupPresentationPreferenceError.writeFailed
-        }
-    }
-}
-
-private enum StartupPresentationPreferenceError: Error, Equatable, CustomStringConvertible {
-    case unsupported
-    case unavailable
-    case writeFailed
-
-    var description: String {
-        switch self {
-        case .unsupported: return "Startup presentation preferences are supported only on macOS."
-        case .unavailable: return "Could not open the Headless preferences domain."
-        case .writeFailed: return "Could not persist the startup presentation preference."
-        }
-    }
-}
-
 private struct HostLauncher {
     let client = LocalSocketClient()
 
@@ -76,7 +30,7 @@ private struct HostLauncher {
 
     func start(presentation: AgentStartupPresentation? = nil) throws -> CommandResponse {
         #if !os(macOS)
-        if presentation != nil { throw StartupPresentationPreferenceError.unsupported }
+        if presentation != nil { throw SettingsError.unsupportedPlatform("startup-presentation") }
         #endif
         if let response = ping(), response.ok { return response }
         #if os(Linux)
@@ -91,7 +45,11 @@ private struct HostLauncher {
         var environment = ProcessInfo.processInfo.environment
         environment["HEADLESS_AGENT_HOST"] = "1"
         #if os(macOS)
-        let effectivePresentation = presentation ?? StartupPresentationPreference.effective
+        let configuredPresentation = try SettingsStore.production().effectiveRawValue("startup-presentation")
+        guard let storedPresentation = AgentStartupPresentation(rawValue: configuredPresentation) else {
+            throw SettingsError.corruptStorage
+        }
+        let effectivePresentation = presentation ?? storedPresentation
         #else
         let effectivePresentation = AgentStartupPresentation.background
         #endif
@@ -251,21 +209,20 @@ do {
             #endif
         case .start(let presentation):
             try printResponse(try HostLauncher().start(presentation: presentation))
-        case .getStartupPresentation:
-            try StartupPresentationPreference.requireSupportedPlatform()
-            let configured = StartupPresentationPreference.configured
-            printJSON(.object([
-                "builtInDefault": .string(StartupPresentationPreference.builtInDefault.rawValue),
-                "configured": configured.map { .string($0.rawValue) } ?? .null,
-                "startupPresentation": .string(StartupPresentationPreference.effective.rawValue),
-            ]))
-        case .setStartupPresentation(let presentation):
-            try StartupPresentationPreference.requireSupportedPlatform()
-            try StartupPresentationPreference.set(presentation)
-            printJSON(.object([
-                "startupPresentation": .string(presentation.rawValue),
-                "takesEffect": .string("next-host-start"),
-            ]))
+        case .config(let command):
+            let settings = try SettingsStore.production()
+            switch command {
+            case .list:
+                printJSON(try settings.list())
+            case .describe(let key):
+                printJSON(try settings.describe(key))
+            case .get(let key):
+                printJSON(try settings.get(key))
+            case .set(let key, let value):
+                printJSON(try settings.set(key, rawValue: value))
+            case .reset(let key):
+                printJSON(try settings.reset(key))
+            }
         case .credentials(let command):
             try CredentialBrokerLauncher().run(command)
         }
@@ -313,10 +270,16 @@ do {
     )
     try? printResponse(response)
     exit(69)
-} catch let error as StartupPresentationPreferenceError {
+} catch let error as SettingsError {
+    let code: String
+    switch error {
+    case .unsupportedPlatform: code = "UNSUPPORTED_CAPABILITY"
+    case .unknownKey, .invalidValue, .accessDenied: code = "INVALID_CONFIGURATION"
+    case .insecureStorage, .corruptStorage, .operationFailed: code = "CONFIGURATION_FAILED"
+    }
     let response = CommandResponse.failure(
         id: "unknown",
-        code: error == .unsupported ? "UNSUPPORTED_CAPABILITY" : "CONFIGURATION_FAILED",
+        code: code,
         message: error.description
     )
     try? printResponse(response)

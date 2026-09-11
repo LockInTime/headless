@@ -144,8 +144,29 @@ restore_last_url
 echo "▸ unavailable restored URL fell back to the start page"
 
 STEP="start-host"
-"$CLI" config set startup-presentation background | grep -q '"startupPresentation":"background"'
-"$CLI" config get startup-presentation | grep -q '"startupPresentation":"background"'
+SETTINGS_LIST="$("$CLI" config list)"
+echo "$SETTINGS_LIST" | grep -q '"key":"startup-presentation"'
+echo "$SETTINGS_LIST" | grep -q '"access":"agent-writable"'
+echo "$SETTINGS_LIST" | grep -q '"supportedOnCurrentPlatform":true'
+SETTINGS_DESCRIPTION="$("$CLI" config describe startup-presentation)"
+echo "$SETTINGS_DESCRIPTION" | grep -q '"allowedValues":\["background","foreground"\]'
+echo "$SETTINGS_DESCRIPTION" | grep -q '"restartBehavior":"next-host-start"'
+echo "$SETTINGS_DESCRIPTION" | grep -q '"summary":"Choose whether an agent-started macOS host activates in front of the current app."'
+RESET_PRESENTATION="$("$CLI" config reset startup-presentation)"
+echo "$RESET_PRESENTATION" | grep -q '"configured":false'
+echo "$RESET_PRESENTATION" | grep -q '"startupPresentation":"background"'
+DEFAULT_PRESENTATION="$("$CLI" config get startup-presentation)"
+echo "$DEFAULT_PRESENTATION" | grep -q '"builtInDefault":"background"'
+echo "$DEFAULT_PRESENTATION" | grep -q '"configured":null'
+echo "$DEFAULT_PRESENTATION" | grep -q '"startupPresentation":"background"'
+SET_PRESENTATION="$("$CLI" config set startup-presentation background)"
+echo "$SET_PRESENTATION" | grep -q '"configured":true'
+echo "$SET_PRESENTATION" | grep -q '"takesEffect":"next-host-start"'
+echo "$SET_PRESENTATION" | grep -q '"startupPresentation":"background"'
+test "$(defaults read "$DEFAULTS_DOMAIN" "$PRESENTATION_KEY")" = "background"
+CONFIGURED_PRESENTATION="$("$CLI" config get startup-presentation)"
+echo "$CONFIGURED_PRESENTATION" | grep -q '"configured":"background"'
+echo "$CONFIGURED_PRESENTATION" | grep -q '"startupPresentation":"background"'
 START_RESULT="$("$CLI" start)" || {
   print -r -u2 -- "headless start failed:"
   print -r -u2 -- "$START_RESULT"
@@ -389,6 +410,7 @@ for _ in {1..100}; do
 done
 "$CLI" config set startup-presentation foreground | grep -q '"startupPresentation":"foreground"'
 "$CLI" config get startup-presentation | grep -q '"startupPresentation":"foreground"'
+test "$(defaults read "$DEFAULTS_DOMAIN" "$PRESENTATION_KEY")" = "foreground"
 FOREGROUND_RESULT="$("$CLI" start)"
 FOREGROUND_PID="$(echo "$FOREGROUND_RESULT" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$FOREGROUND_PID"
