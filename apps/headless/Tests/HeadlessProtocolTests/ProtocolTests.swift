@@ -1,5 +1,6 @@
 import HeadlessProtocol
 import CredentialBrokerCore
+import Dispatch
 import Foundation
 #if canImport(Darwin)
 import Darwin
@@ -23,6 +24,65 @@ private func expectThrows(_ message: String, _ body: () throws -> Void) throws {
         throw TestFailure(description: message)
     } catch {
         return
+    }
+}
+
+private func expectSettingsError(
+    _ expected: SettingsError, _ message: String, _ body: () throws -> Void
+) throws {
+    do {
+        try body()
+        throw TestFailure(description: message)
+    } catch let error as SettingsError {
+        try expect(error == expected, "\(message): received \(error)")
+    } catch is TestFailure {
+        throw TestFailure(description: message)
+    } catch {
+        throw TestFailure(description: "\(message): received \(error)")
+    }
+}
+
+private func settingsObject(_ value: JSONValue, _ message: String) throws -> [String: JSONValue] {
+    guard case .object(let object) = value else { throw TestFailure(description: message) }
+    return object
+}
+
+private func settingsArray(_ value: JSONValue?, _ message: String) throws -> [JSONValue] {
+    guard case .array(let values)? = value else { throw TestFailure(description: message) }
+    return values
+}
+
+private final class TestSettingsBackend: @unchecked Sendable, SettingsBackend {
+    private let lock = NSLock()
+    private var values: [String: String]
+
+    init(values: [String: String] = [:]) {
+        self.values = values
+    }
+
+    func configuredValue(for definition: SettingDefinition) throws -> String? {
+        lock.withLock { values[definition.key] }
+    }
+
+    func setConfiguredValue(_ value: String, for definition: SettingDefinition) throws {
+        lock.withLock { values[definition.key] = value }
+    }
+
+    func resetConfiguredValue(for definition: SettingDefinition) throws {
+        _ = lock.withLock { values.removeValue(forKey: definition.key) }
+    }
+}
+
+private final class ConcurrentSettingsErrors: @unchecked Sendable {
+    private let lock = NSLock()
+    private var errors: [String] = []
+
+    func append(_ error: Error) {
+        lock.withLock { errors.append(String(describing: error)) }
+    }
+
+    var messages: [String] {
+        lock.withLock { errors }
     }
 }
 
@@ -840,9 +900,13 @@ struct ProtocolTests {
             (["start"], .start(presentation: nil)),
             (["start", "--background"], .start(presentation: .background)),
             (["start", "--foreground"], .start(presentation: .foreground)),
-            (["config", "get", "startup-presentation"], .getStartupPresentation),
-            (["config", "set", "startup-presentation", "background"], .setStartupPresentation(.background)),
-            (["config", "set", "startup-presentation", "foreground"], .setStartupPresentation(.foreground)),
+            (["config", "get", "startup-presentation"], .config(.get("startup-presentation"))),
+            (["config", "set", "startup-presentation", "background"], .config(.set(
+                key: "startup-presentation", value: "background"
+            ))),
+            (["config", "set", "startup-presentation", "foreground"], .config(.set(
+                key: "startup-presentation", value: "foreground"
+            ))),
             (["credentials", "list"], .credentials(.list(origin: nil))),
             (["credentials", "list", "--origin", "https://example.com"], .credentials(.list(
                 origin: try CredentialOrigin(rawValue: "https://example.com")
@@ -866,9 +930,6 @@ struct ProtocolTests {
         try expectThrows("start should reject unknown options") {
             _ = try CLIParser().parse(["start", "--front"])
         }
-        try expectThrows("startup presentation should reject unknown values") {
-            _ = try CLIParser().parse(["config", "set", "startup-presentation", "automatic"])
-        }
         try expectThrows("credential commands must reject browser sessions") {
             _ = try CLIParser().parse(["--session", "qa", "credentials", "list"])
         }
@@ -887,6 +948,417 @@ struct ProtocolTests {
         try expect(emulation.request?.parameters["latencyMs"] == .number(100), "emulation latency should parse")
         try expectThrows("unknown trailing arguments should not be ignored") {
             _ = try CLIParser().parse(["performance", "get", "extra"])
+        }
+    }
+
+    static func configCLICommandsAndArity() throws {
+        let commands: [([String], ConfigCLICommand)] = [
+            (["config", "list"], .list),
+            (["config", "describe", "startup-presentation"], .describe("startup-presentation")),
+            (["config", "get", "startup-presentation"], .get("startup-presentation")),
+            (["config", "set", "startup-presentation", "foreground"], .set(
+                key: "startup-presentation", value: "foreground"
+            )),
+            (["config", "reset", "startup-presentation"], .reset("startup-presentation")),
+        ]
+        for (arguments, command) in commands {
+            let invocation = try CLIParser().parse(arguments)
+            try expect(
+                invocation.local == .config(command) && invocation.request == nil,
+                "\(arguments.joined(separator: " ")) should remain local"
+            )
+            try expect(invocation.jsonOutput, "config commands should always produce JSON")
+
+            var withSession = arguments
+            withSession.insert(contentsOf: ["--session", "qa"], at: 0)
+            try expectThrows("\(arguments[1]) should reject browser sessions") {
+                _ = try CLIParser().parse(withSession)
+            }
+        }
+
+        let invalidCommands = [
+            ["config"],
+            ["config", "list", "extra"],
+            ["config", "describe"],
+            ["config", "describe", "startup-presentation", "extra"],
+            ["config", "get"],
+            ["config", "get", "startup-presentation", "extra"],
+            ["config", "set"],
+            ["config", "set", "startup-presentation"],
+            ["config", "set", "startup-presentation", "foreground", "extra"],
+            ["config", "reset"],
+            ["config", "reset", "startup-presentation", "extra"],
+            ["config", "unknown"],
+        ]
+        for arguments in invalidCommands {
+            try expectThrows("config should reject invalid arity: \(arguments.joined(separator: " "))") {
+                _ = try CLIParser().parse(arguments)
+            }
+        }
+        try expectThrows("a literal session option must not bypass config arity validation") {
+            _ = try CLIParser().parse(["config", "list", "--", "--session", "qa"])
+        }
+    }
+
+    static func settingsRegistryAndAccess() throws {
+        let platforms: Set<SettingPlatform> = [.macOS, .linux]
+        let definitions = [
+            SettingDefinition(
+                key: "z-string", valueType: .string(maximumLength: 8), defaultValue: "value",
+                platforms: platforms, restartBehavior: .immediate, access: .agentWritable,
+                summary: "Bounded string"
+            ),
+            SettingDefinition(
+                key: "a-boolean", valueType: .boolean, defaultValue: "false",
+                platforms: platforms, restartBehavior: .immediate, access: .agentWritable,
+                summary: "Boolean"
+            ),
+            SettingDefinition(
+                key: "m-integer", valueType: .integer(1...3), defaultValue: "2",
+                platforms: platforms, restartBehavior: .nextHostStart, access: .agentReadable,
+                summary: "Bounded integer"
+            ),
+            SettingDefinition(
+                key: "n-enum", valueType: .enumeration(["first", "second"]), defaultValue: "first",
+                platforms: platforms, restartBehavior: .immediate, access: .agentWritable,
+                summary: "Enumeration"
+            ),
+            SettingDefinition(
+                key: "private-policy", valueType: .boolean, defaultValue: "false",
+                platforms: platforms, restartBehavior: .immediate, access: .userOnly,
+                summary: "User-only policy"
+            ),
+        ]
+        let registry = SettingsRegistry(definitions: definitions)
+        try expect(
+            registry.definitions.map(\.key) == [
+                "a-boolean", "m-integer", "n-enum", "private-policy", "z-string",
+            ],
+            "registry definitions should have deterministic key order"
+        )
+        try expect(registry.helpLines.count == 4, "agent help should omit user-only definitions")
+        try expect(registry.helpLines[0].contains("boolean"), "boolean metadata should reach generated help")
+        try expect(registry.helpLines[1].contains("integer"), "integer metadata should reach generated help")
+        try expect(registry.helpLines[2].contains("first|second"), "enum values should reach generated help")
+        try expect(registry.helpLines[3].contains("string"), "string metadata should reach generated help")
+        try expect(
+            !registry.helpLines.joined(separator: "\n").contains("private-policy"),
+            "user-only keys must not leak through generated agent help"
+        )
+
+        let backend = TestSettingsBackend()
+        let settings = SettingsStore(registry: registry, platform: .macOS, backend: backend)
+        let agentList = try settingsObject(try settings.list(), "settings list should be an object")
+        let agentEntries = try settingsArray(agentList["settings"], "settings list should contain an array")
+        let encodedAgentList = String(
+            decoding: try ProtocolCodec.encoder.encode(JSONValue.array(agentEntries)), as: UTF8.self
+        )
+        try expect(agentEntries.count == 4, "agent listing should omit user-only settings")
+        try expect(!encodedAgentList.contains("private-policy"), "user-only keys must not leak through list")
+        try expectSettingsError(.unknownKey("private-policy"), "user-only describe should be indistinguishable from unknown") {
+            _ = try settings.describe("private-policy", caller: .agent)
+        }
+        try expectSettingsError(.unknownKey("private-policy"), "user-only get should be indistinguishable from unknown") {
+            _ = try settings.get("private-policy", caller: .agent)
+        }
+        try expectSettingsError(.unknownKey("private-policy"), "user-only set should be indistinguishable from unknown") {
+            _ = try settings.set("private-policy", rawValue: "true", caller: .agent)
+        }
+        try expectSettingsError(.unknownKey("private-policy"), "user-only reset should be indistinguishable from unknown") {
+            _ = try settings.reset("private-policy", caller: .agent)
+        }
+        try expectSettingsError(.accessDenied("m-integer"), "agent-readable settings must reject writes") {
+            _ = try settings.set("m-integer", rawValue: "3", caller: .agent)
+        }
+        try expectSettingsError(.accessDenied("m-integer"), "agent-readable settings must reject reset") {
+            _ = try settings.reset("m-integer", caller: .agent)
+        }
+
+        let userList = try settingsObject(try settings.list(caller: .user), "user settings list should be an object")
+        try expect(
+            try settingsArray(userList["settings"], "user settings list should contain an array").count == 5,
+            "user callers should see user-only settings"
+        )
+        _ = try settings.set("private-policy", rawValue: "true", caller: .user)
+        try expect(try settings.effectiveRawValue("private-policy", caller: .user) == "true", "user callers should mutate user-only settings")
+
+        _ = try settings.set("a-boolean", rawValue: "true")
+        _ = try settings.set("n-enum", rawValue: "second")
+        _ = try settings.set("z-string", rawValue: "12345678")
+        try expectSettingsError(.invalidValue("TRUE"), "boolean values should be strict") {
+            _ = try settings.set("a-boolean", rawValue: "TRUE")
+        }
+        try expectSettingsError(.invalidValue("4"), "integers should remain bounded") {
+            _ = try settings.set("m-integer", rawValue: "4", caller: .user)
+        }
+        try expectSettingsError(.invalidValue("third"), "enums should reject unknown values") {
+            _ = try settings.set("n-enum", rawValue: "third")
+        }
+        try expectSettingsError(.invalidValue("123456789"), "strings should remain bounded") {
+            _ = try settings.set("z-string", rawValue: "123456789")
+        }
+
+        let startupBackend = TestSettingsBackend()
+        let macSettings = SettingsStore(platform: .macOS, backend: startupBackend)
+        let listed = try settingsObject(try macSettings.list(), "startup list should be an object")
+        let startupEntries = try settingsArray(listed["settings"], "startup list should contain settings")
+        try expect(startupEntries.count == 1, "shared registry should expose one setting")
+        let defaultEntry = try settingsObject(startupEntries[0], "startup entry should be an object")
+        try expect(defaultEntry["startupPresentation"] == .string("background"), "list should preserve startupPresentation")
+        try expect(defaultEntry["builtInDefault"] == .string("background"), "list should preserve builtInDefault")
+        try expect(defaultEntry["configured"] == .null, "list should distinguish the built-in default")
+        try expect(defaultEntry["supportedOnCurrentPlatform"] == .bool(true), "list should report platform support")
+
+        let described = try settingsObject(try macSettings.describe("startup-presentation"), "describe should be an object")
+        try expect(described["summary"] != nil, "describe should include the setting summary")
+        try expect(described["restartBehavior"] == .string("next-host-start"), "describe should expose restart behavior")
+        let initial = try settingsObject(try macSettings.get("startup-presentation"), "get should be an object")
+        try expect(initial["value"] == .string("background"), "get should return the default")
+        let changed = try settingsObject(
+            try macSettings.set("startup-presentation", rawValue: "foreground"), "set should be an object"
+        )
+        try expect(changed["startupPresentation"] == .string("foreground"), "set should preserve startupPresentation")
+        try expect(changed["configured"] == .bool(true), "set should report configured state")
+        try expect(changed["takesEffect"] == .string("next-host-start"), "set should preserve takesEffect")
+        let configured = try settingsObject(try macSettings.get("startup-presentation"), "configured get should be an object")
+        try expect(configured["configured"] == .string("foreground"), "get should return the configured value")
+        let reset = try settingsObject(try macSettings.reset("startup-presentation"), "reset should be an object")
+        try expect(reset["startupPresentation"] == .string("background"), "reset should restore the default")
+        try expect(reset["configured"] == .bool(false), "reset should report an unconfigured value")
+
+        let linuxSettings = SettingsStore(platform: .linux, backend: TestSettingsBackend())
+        let linuxDescription = try settingsObject(
+            try linuxSettings.describe("startup-presentation"), "unsupported describe should remain discoverable"
+        )
+        try expect(linuxDescription["supportedOnCurrentPlatform"] == .bool(false), "describe should report unsupported settings")
+        for operation in [
+            { _ = try linuxSettings.get("startup-presentation") },
+            { _ = try linuxSettings.set("startup-presentation", rawValue: "foreground") },
+            { _ = try linuxSettings.reset("startup-presentation") },
+        ] {
+            try expectSettingsError(
+                .unsupportedPlatform("startup-presentation"),
+                "known settings should fail explicitly on unsupported platforms", operation
+            )
+        }
+    }
+
+    static func userDefaultsSettingsCompatibility() throws {
+        let suite = "com.headless.tests.settings.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            throw TestFailure(description: "isolated UserDefaults suite should be available")
+        }
+        defaults.removePersistentDomain(forName: suite)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            _ = defaults.synchronize()
+        }
+        defaults.set("foreground", forKey: "AgentStartupPresentation")
+        defaults.set("preserve-me", forKey: "LastURL")
+        try expect(defaults.synchronize(), "legacy defaults should synchronize")
+
+        let backend = try UserDefaultsSettingsBackend(suiteName: suite)
+        let settings = SettingsStore(platform: .macOS, backend: backend)
+        try expect(
+            try settings.effectiveRawValue("startup-presentation") == "foreground",
+            "the physical legacy key should remain the canonical source"
+        )
+        _ = try settings.set("startup-presentation", rawValue: "background")
+        try expect(
+            defaults.string(forKey: "AgentStartupPresentation") == "background",
+            "set should update the existing physical key"
+        )
+        try expect(defaults.object(forKey: "HeadlessSetting.startup-presentation") == nil, "set should not create a shadow key")
+        _ = try settings.reset("startup-presentation")
+        try expect(defaults.object(forKey: "AgentStartupPresentation") == nil, "reset should remove the physical key")
+        try expect(defaults.string(forKey: "LastURL") == "preserve-me", "reset should preserve unrelated defaults")
+        try expect(
+            try settings.effectiveRawValue("startup-presentation") == "background",
+            "reset should not resurrect the legacy value"
+        )
+    }
+
+    static func fileSettingsBackendSecurityAndPersistence() throws {
+        func privateRoot(_ label: String) -> URL {
+            URL(fileURLWithPath: "/tmp/headless-settings-\(label)-\(UUID().uuidString)")
+        }
+        func writeRaw(_ text: String, root: URL) throws {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try expect(chmod(root.path, 0o700) == 0, "test root should be private")
+            let file = root.appendingPathComponent("settings.json")
+            try Data(text.utf8).write(to: file)
+            try expect(chmod(file.path, 0o600) == 0, "test settings file should be private")
+        }
+        func expectCorrupt(_ label: String, contents: String) throws {
+            let root = privateRoot(label)
+            defer { try? FileManager.default.removeItem(at: root) }
+            try writeRaw(contents, root: root)
+            let backend = try FileSettingsBackend(rootURL: root)
+            let settings = SettingsStore(platform: .macOS, backend: backend)
+            try expectSettingsError(.corruptStorage, "\(label) storage should fail closed") {
+                _ = try settings.get("startup-presentation")
+            }
+        }
+
+        let xdgRoot = privateRoot("xdg")
+        defer { try? FileManager.default.removeItem(at: xdgRoot) }
+        let xdgBackend = try FileSettingsBackend(environment: ["XDG_CONFIG_HOME": xdgRoot.path])
+        try expect(
+            xdgBackend.rootURL == xdgRoot.appendingPathComponent("headless", isDirectory: true),
+            "an absolute XDG config home should select the Headless settings directory"
+        )
+        try expectSettingsError(.insecureStorage, "relative XDG config homes should fail closed") {
+            _ = try FileSettingsBackend(environment: ["XDG_CONFIG_HOME": "relative/config"])
+        }
+
+        let root = privateRoot("persistence")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = SettingsStore(
+            platform: .macOS, backend: try FileSettingsBackend(rootURL: root)
+        )
+        _ = try first.set("startup-presentation", rawValue: "foreground")
+        let second = SettingsStore(
+            platform: .macOS, backend: try FileSettingsBackend(rootURL: root)
+        )
+        try expect(try second.effectiveRawValue("startup-presentation") == "foreground", "settings should persist across backend instances")
+        let rootMode = try FileManager.default.attributesOfItem(atPath: root.path)[.posixPermissions] as? NSNumber
+        let fileMode = try FileManager.default.attributesOfItem(
+            atPath: root.appendingPathComponent("settings.json").path
+        )[.posixPermissions] as? NSNumber
+        try expect(rootMode?.intValue == 0o700, "settings directory should be mode 0700")
+        try expect(fileMode?.intValue == 0o600, "settings file should be mode 0600")
+        _ = try second.reset("startup-presentation")
+        let third = SettingsStore(platform: .macOS, backend: try FileSettingsBackend(rootURL: root))
+        try expect(try third.effectiveRawValue("startup-presentation") == "background", "reset should persist the default state")
+
+        try expectCorrupt("malformed", contents: "not-json")
+        try expectCorrupt("unknown-key", contents: #"{"schemaVersion":1,"values":{"unknown":"value"}}"#)
+        try expectCorrupt(
+            "invalid-value", contents: #"{"schemaVersion":1,"values":{"startup-presentation":"automatic"}}"#
+        )
+        try expectCorrupt(
+            "unknown-schema", contents: #"{"schemaVersion":2,"values":{"startup-presentation":"foreground"}}"#
+        )
+        try expectCorrupt(
+            "duplicate-key",
+            contents: #"{"schemaVersion":1,"values":{"startup-presentation":"background","startup-presentation":"foreground"}}"#
+        )
+
+        let oversizedRoot = privateRoot("oversized")
+        defer { try? FileManager.default.removeItem(at: oversizedRoot) }
+        try writeRaw(String(repeating: "x", count: FileSettingsBackend.maximumFileBytes + 1), root: oversizedRoot)
+        let oversized = SettingsStore(platform: .macOS, backend: try FileSettingsBackend(rootURL: oversizedRoot))
+        try expectSettingsError(.corruptStorage, "oversized storage should fail closed") {
+            _ = try oversized.get("startup-presentation")
+        }
+
+        let linkedRoot = privateRoot("symlink-root")
+        let realRoot = privateRoot("symlink-target")
+        defer {
+            try? FileManager.default.removeItem(at: linkedRoot)
+            try? FileManager.default.removeItem(at: realRoot)
+        }
+        try FileManager.default.createDirectory(at: realRoot, withIntermediateDirectories: true)
+        try expect(chmod(realRoot.path, 0o700) == 0, "symlink target should be private")
+        try FileManager.default.createSymbolicLink(at: linkedRoot, withDestinationURL: realRoot)
+        let rootSymlink = SettingsStore(platform: .macOS, backend: try FileSettingsBackend(rootURL: linkedRoot))
+        try expectSettingsError(.insecureStorage, "symlinked settings roots should be rejected") {
+            _ = try rootSymlink.get("startup-presentation")
+        }
+
+        let fileLinkRoot = privateRoot("symlink-file")
+        let linkTarget = privateRoot("file-target")
+        defer {
+            try? FileManager.default.removeItem(at: fileLinkRoot)
+            try? FileManager.default.removeItem(at: linkTarget)
+        }
+        let linkInitializer = SettingsStore(platform: .macOS, backend: try FileSettingsBackend(rootURL: fileLinkRoot))
+        _ = try linkInitializer.set("startup-presentation", rawValue: "foreground")
+        try FileManager.default.removeItem(at: fileLinkRoot.appendingPathComponent("settings.json"))
+        try Data(#"{"schemaVersion":1,"values":{}}"#.utf8).write(to: linkTarget)
+        try expect(chmod(linkTarget.path, 0o600) == 0, "symlink target file should be private")
+        try FileManager.default.createSymbolicLink(
+            at: fileLinkRoot.appendingPathComponent("settings.json"), withDestinationURL: linkTarget
+        )
+        try expectSettingsError(.insecureStorage, "symlinked settings files should be rejected") {
+            _ = try linkInitializer.get("startup-presentation")
+        }
+
+        let hardLinkRoot = privateRoot("hardlink")
+        let secondLink = privateRoot("hardlink-copy")
+        defer {
+            try? FileManager.default.removeItem(at: hardLinkRoot)
+            try? FileManager.default.removeItem(at: secondLink)
+        }
+        let hardLinkSettings = SettingsStore(platform: .macOS, backend: try FileSettingsBackend(rootURL: hardLinkRoot))
+        _ = try hardLinkSettings.set("startup-presentation", rawValue: "foreground")
+        try FileManager.default.linkItem(
+            at: hardLinkRoot.appendingPathComponent("settings.json"), to: secondLink
+        )
+        try expectSettingsError(.insecureStorage, "multiply-linked settings files should be rejected") {
+            _ = try hardLinkSettings.get("startup-presentation")
+        }
+
+        let permissiveRoot = privateRoot("permissive-root")
+        defer { try? FileManager.default.removeItem(at: permissiveRoot) }
+        try writeRaw(#"{"schemaVersion":1,"values":{}}"#, root: permissiveRoot)
+        try expect(chmod(permissiveRoot.path, 0o755) == 0, "test root should become permissive")
+        let permissiveRootSettings = SettingsStore(
+            platform: .macOS, backend: try FileSettingsBackend(rootURL: permissiveRoot)
+        )
+        try expectSettingsError(.insecureStorage, "permissive settings roots should be rejected") {
+            _ = try permissiveRootSettings.get("startup-presentation")
+        }
+
+        let permissiveFileRoot = privateRoot("permissive-file")
+        defer { try? FileManager.default.removeItem(at: permissiveFileRoot) }
+        try writeRaw(#"{"schemaVersion":1,"values":{}}"#, root: permissiveFileRoot)
+        try expect(
+            chmod(permissiveFileRoot.appendingPathComponent("settings.json").path, 0o644) == 0,
+            "test file should become permissive"
+        )
+        let permissiveFileSettings = SettingsStore(
+            platform: .macOS, backend: try FileSettingsBackend(rootURL: permissiveFileRoot)
+        )
+        try expectSettingsError(.insecureStorage, "permissive settings files should be rejected") {
+            _ = try permissiveFileSettings.get("startup-presentation")
+        }
+    }
+
+    static func fileSettingsBackendConcurrentWriters() throws {
+        let root = URL(fileURLWithPath: "/tmp/headless-settings-concurrent-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let definitions = (0..<12).map { index in
+            SettingDefinition(
+                key: String(format: "writer-%02d", index), valueType: .integer(0...100),
+                defaultValue: "0", platforms: [.macOS, .linux], restartBehavior: .immediate,
+                access: .agentWritable, summary: "Concurrent writer"
+            )
+        }
+        let registry = SettingsRegistry(definitions: definitions)
+        let errors = ConcurrentSettingsErrors()
+        DispatchQueue.concurrentPerform(iterations: definitions.count) { index in
+            do {
+                let backend = try FileSettingsBackend(rootURL: root, registry: registry)
+                let settings = SettingsStore(registry: registry, platform: .macOS, backend: backend)
+                _ = try settings.set(definitions[index].key, rawValue: String(index + 1))
+            } catch {
+                errors.append(error)
+            }
+        }
+        try expect(
+            errors.messages.isEmpty,
+            "concurrent writers should all complete: \(errors.messages.joined(separator: ", "))"
+        )
+        let reader = SettingsStore(
+            registry: registry, platform: .macOS,
+            backend: try FileSettingsBackend(rootURL: root, registry: registry)
+        )
+        for (index, definition) in definitions.enumerated() {
+            try expect(
+                try reader.effectiveRawValue(definition.key) == String(index + 1),
+                "concurrent writes should not lose \(definition.key)"
+            )
         }
     }
 
@@ -1507,6 +1979,9 @@ struct ProtocolTests {
         guard case .object(let document) = capabilitiesDocument,
               case .array(let rawCommands)? = document["commands"],
               case .object(let engines)? = document["engines"],
+              case .array(let localCommands)? = document["localCommands"],
+              case .object(let settings)? = document["settings"],
+              case .array(let settingDefinitions)? = settings["definitions"],
               case .object(let security)? = document["security"] else {
             throw TestFailure(description: "capabilities document shape")
         }
@@ -1514,6 +1989,23 @@ struct ProtocolTests {
         let expected = CommandName.allCases.map(\.rawValue)
         try expect(commands.count == expected.count, "capabilities should not omit or duplicate commands")
         try expect(Set(commands) == Set(expected), "capabilities should match CommandName.allCases")
+        let localCommandNames = Set(localCommands.compactMap(\.stringValue))
+        try expect(
+            localCommandNames.isSuperset(of: [
+                "config.describe", "config.get", "config.list", "config.reset", "config.set",
+            ]),
+            "capabilities should advertise every local config command"
+        )
+        try expect(
+            settingDefinitions == SettingsRegistry.shared.definitions.compactMap {
+                $0.access == .userOnly ? nil : $0.document
+            },
+            "capability setting definitions should come from the registry"
+        )
+        try expect(
+            settings["securityInvariantsConfigurable"] == .bool(false),
+            "capabilities must keep security invariants outside settings"
+        )
         try expect(
             engines.count == BrowserEngineName.allCases.count,
             "capabilities should contain exactly one profile for every engine"
@@ -2280,6 +2772,11 @@ struct ProtocolTests {
             ("CLI P1 artifacts", cliP1Artifacts),
             ("CLI P2 commands and boundaries", cliP2CommandsAndBoundaries),
             ("CLI command matrix", cliCommandMatrix),
+            ("config CLI commands and arity", configCLICommandsAndArity),
+            ("settings registry and access", settingsRegistryAndAccess),
+            ("UserDefaults settings compatibility", userDefaultsSettingsCompatibility),
+            ("file settings backend security and persistence", fileSettingsBackendSecurityAndPersistence),
+            ("file settings backend concurrent writers", fileSettingsBackendConcurrentWriters),
             ("credential command security", credentialCommandSecurity),
             ("credential vault lifecycle", credentialVaultLifecycle),
             ("credential confirmation", credentialVaultRejectsMismatchedConfirmation),

@@ -1,8 +1,16 @@
 import Foundation
 
-public enum AgentStartupPresentation: String, Equatable, Sendable {
+public enum AgentStartupPresentation: String, CaseIterable, Equatable, Sendable {
     case background
     case foreground
+}
+
+public enum ConfigCLICommand: Equatable, Sendable {
+    case list
+    case describe(String)
+    case get(String)
+    case set(key: String, value: String)
+    case reset(String)
 }
 
 public enum LocalCommand: Equatable, Sendable {
@@ -11,8 +19,7 @@ public enum LocalCommand: Equatable, Sendable {
     case capabilities
     case runtime
     case start(presentation: AgentStartupPresentation?)
-    case getStartupPresentation
-    case setStartupPresentation(AgentStartupPresentation)
+    case config(ConfigCLICommand)
     case credentials(CredentialCLICommand)
 }
 
@@ -104,16 +111,20 @@ public struct CLIParser {
                 throw CLIParseError.invalidOption(arguments.first ?? "start")
             }
         case "config":
+            guard session == nil else { throw CLIParseError.invalidOption("--session") }
             switch arguments {
-            case ["get", "startup-presentation"]:
-                return CLIInvocation(local: .getStartupPresentation, jsonOutput: true)
-            case let values where values.count == 3
-                && values[0] == "set" && values[1] == "startup-presentation":
-                let value = values[2]
-                guard let presentation = AgentStartupPresentation(rawValue: value) else {
-                    throw CLIParseError.invalidOption(value)
-                }
-                return CLIInvocation(local: .setStartupPresentation(presentation), jsonOutput: true)
+            case ["list"]:
+                return CLIInvocation(local: .config(.list), jsonOutput: true)
+            case let values where values.count == 2 && values[0] == "describe":
+                return CLIInvocation(local: .config(.describe(values[1])), jsonOutput: true)
+            case let values where values.count == 2 && values[0] == "get":
+                return CLIInvocation(local: .config(.get(values[1])), jsonOutput: true)
+            case let values where values.count == 3 && values[0] == "set":
+                return CLIInvocation(
+                    local: .config(.set(key: values[1], value: values[2])), jsonOutput: true
+                )
+            case let values where values.count == 2 && values[0] == "reset":
+                return CLIInvocation(local: .config(.reset(values[1])), jsonOutput: true)
             default:
                 throw CLIParseError.invalidOption(arguments.first ?? "config")
             }
@@ -733,8 +744,8 @@ Commands:
   version | --version
   start [--background|--foreground] | status | stop | runtime
   profile clear
-  config get startup-presentation
-  config set startup-presentation background|foreground
+  config list | config describe KEY | config get KEY
+  config set KEY VALUE | config reset KEY
   credentials list [--origin URL]
   credentials add --origin URL --alias NAME --interactive
   credentials rename --origin URL --alias OLD --to NEW
@@ -775,4 +786,7 @@ Commands:
 Global options:
   --session NAME   target a named browser session
   --               stop parsing global options; quote multi-word fill values
+
+Settings:
+\(SettingsRegistry.shared.helpLines.joined(separator: "\n"))
 """

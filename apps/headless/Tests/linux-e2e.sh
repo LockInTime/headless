@@ -3,6 +3,7 @@ set -eu
 
 export HEADLESS_ARTIFACT_DIR="/tmp/headless-artifacts-e2e-$$"
 export XDG_DATA_HOME="/tmp/headless-data-e2e-$$"
+export XDG_CONFIG_HOME="/tmp/headless-config-e2e-$$"
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
@@ -24,6 +25,7 @@ cleanup() {
   rm -rf "$INSTALL_ROOT"
   rm -rf "$HEADLESS_ARTIFACT_DIR"
   rm -rf "$XDG_DATA_HOME"
+  rm -rf "$XDG_CONFIG_HOME"
 }
 trap cleanup EXIT INT TERM
 
@@ -66,11 +68,25 @@ if RELATIVE_RUNTIME="$(HEADLESS_CHROMIUM_EXECUTABLE=relative/chromium headless r
 fi
 echo "$RELATIVE_RUNTIME" | grep -q 'must be absolute'
 
-if PRESENTATION_CONFIG="$(headless config get startup-presentation 2>&1)"; then
-  echo "macOS startup presentation configuration was accepted on Linux" >&2
-  exit 1
-fi
-echo "$PRESENTATION_CONFIG" | grep -q 'UNSUPPORTED_CAPABILITY'
+SETTINGS_LIST="$(headless config list)"
+echo "$SETTINGS_LIST" | grep -q '"key":"startup-presentation"'
+echo "$SETTINGS_LIST" | grep -q '"access":"agent-writable"'
+echo "$SETTINGS_LIST" | grep -q '"supportedOnCurrentPlatform":false'
+SETTINGS_DESCRIPTION="$(headless config describe startup-presentation)"
+echo "$SETTINGS_DESCRIPTION" | grep -q '"allowedValues":\["background","foreground"\]'
+echo "$SETTINGS_DESCRIPTION" | grep -q '"supportedOnCurrentPlatform":false'
+test "$(stat -c %a "$XDG_CONFIG_HOME/headless")" = "700"
+test "$(stat -c %a "$XDG_CONFIG_HOME/headless/settings.lock")" = "600"
+for PRESENTATION_COMMAND in \
+  "get startup-presentation" \
+  "set startup-presentation foreground" \
+  "reset startup-presentation"; do
+  if PRESENTATION_CONFIG="$(headless config $PRESENTATION_COMMAND 2>&1)"; then
+    echo "macOS startup presentation configuration was accepted on Linux: $PRESENTATION_COMMAND" >&2
+    exit 1
+  fi
+  echo "$PRESENTATION_CONFIG" | grep -q 'UNSUPPORTED_CAPABILITY'
+done
 if PRESENTATION_START="$(headless start --foreground 2>&1)"; then
   echo "macOS startup presentation override was accepted on Linux" >&2
   exit 1

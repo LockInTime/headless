@@ -179,7 +179,18 @@ public let capabilitiesDocument: JSONValue = {
         ]),
         "screenshotSeries": stringArray(["viewport", "section"]),
         "localCommands": stringArray([
+            "config.describe", "config.get", "config.list", "config.reset", "config.set",
             "credentials.add", "credentials.list", "credentials.remove", "credentials.rename",
+        ]),
+        "settings": .object([
+            "definitions": .array(SettingsRegistry.shared.definitions.compactMap { definition in
+                definition.access == .userOnly ? nil : definition.document
+            }),
+            "storage": .object([
+                "macos": .string("user-defaults"),
+                "linux": .string("private-xdg-config-file"),
+            ]),
+            "securityInvariantsConfigurable": .bool(false),
         ]),
         "credentialVault": .object([
             "supported": .bool(true),
