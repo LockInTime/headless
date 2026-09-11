@@ -487,6 +487,135 @@ no TCP listener, fail closed, bounded everything.
 
 ---
 
+## 24. Credential broker on the unsigned local tier
+
+Numbered 24 because 22 and 23 are claimed by in-review PRs
+[#170](https://github.com/LockInTime/headless/pull/170) (origin allowlist) and
+[#169](https://github.com/LockInTime/headless/pull/169) (artifact upload).
+
+**Decision:** Headless will grow a host-owned credential broker and durable
+normal-profile login state without paying for Apple Developer Program
+membership. Implement the local/community macOS tier and the Linux secret
+backend now. Keep the stored record format compatible with a later Developer
+ID build. Do not ship silent credential use on unsigned builds ([#166](https://github.com/LockInTime/headless/issues/166)
+is out of this product).
+
+The broker is the only component allowed to read password values from macOS
+Keychain or Linux Secret Service / KWallet. The agent-facing protocol speaks
+origin-bound aliases and short-lived challenge IDs, never password values.
+Direct `fill` remains available for test passwords, with the existing
+disclosure that Headless cannot erase a secret from a model-provider
+transcript after the user typed it to the agent. Once the vault exists, the
+default is aliases only.
+
+Saved-credential use always requires current user presence: Touch ID or the
+macOS account password on macOS; an unlocked approved Linux secret-service
+prompt on Linux. Peer UID on the control socket is not authorization to
+release a secret. If the OS vault is missing, locked, or a plaintext
+Chromium fallback, fail closed.
+
+**Status:** decided 2026-09-10 (owner). Implementation starts at
+[#155](https://github.com/LockInTime/headless/issues/155), then
+[#156](https://github.com/LockInTime/headless/issues/156) and
+[#157](https://github.com/LockInTime/headless/issues/157).
+
+**Rationale:** agents today put passwords through `fill`, so secrets show up
+in tool transcripts. A vault is useful. It does not require notarization.
+Keychain Services and Local Authentication work on ad-hoc local builds.
+Developer ID buys Gatekeeper-friendly distribution and a stable signer
+across updates ([#45](https://github.com/LockInTime/headless/issues/45)), not
+the ability to store a password. Skipping the $99 is fine for this feature.
+Skipping per-use confirmation on an unsigned binary is not: after that
+toggle, Headless cannot prove a human chose the alias, and there is no
+Apple-verified identity to hang a weaker policy on.
+
+Durable cookies are the higher-value login gap. WKWebView already persists;
+Linux Chromium currently keeps the profile under the runtime directory and
+drops it across reboot. Fixing that is most of "stay logged into staging"
+without a password manager.
+
+**Guarantees**
+
+- Password values never appear in snapshots, command output, MCP, logs,
+  flows, recordings, diagnostics, errors, environment variables, or process
+  arguments.
+- Page JavaScript cannot enumerate aliases or query the vault.
+- Records bind to a canonical exact HTTPS origin (localhost http is the
+  documented development exception) plus an account identity and a
+  user-chosen alias.
+- Normal-profile aliases, cookies, and storage are invisible to private
+  contexts ([#35](https://github.com/LockInTime/headless/issues/35)). Private
+  contexts may hold only in-memory credentials enrolled in that context, and
+  those die with the last session using it.
+- Cookie import (backlog G9) stays rejected.
+- Passkeys stay as decision 20: omitted unless Apple grants the restricted
+  entitlement. The vault does not unblock WebAuthn.
+
+**Residual risks we will state, not paper over**
+
+- Same-user malware, root, and a replaced unsigned binary can still reach
+  Keychain items the way any local process of that user can, subject to
+  macOS prompts.
+- Rebuilds and signing-identity changes may re-prompt or look like a
+  different app. Document that. Do not invent a self-signed cert as public
+  trust.
+- Prompt injection can still *name* an alias. Per-use user presence is what
+  makes that fail closed on this tier.
+- Login cookies are as stealable as in any persistent browser. Treat them as
+  session secrets in the threat model, separate from vault passwords.
+
+**macOS unsigned tier**
+
+- Ad-hoc or source builds. Gatekeeper may require a manual open.
+- Broker owns its Keychain items. No Keychain access groups.
+- Every saved-credential use requires Touch ID or the macOS password.
+- Capabilities report a local/unnotarized credential tier. Do not describe
+  this as notarized or enterprise-ready.
+- A later Developer ID build may add session-level or trusted-origin
+  approvals only after a new decision. Notarization alone does not widen
+  permissions.
+
+**Linux**
+
+- Secret Service or KWallet only. No Apple dependency. No Chromium basic
+  plaintext store. Locked or missing backends return a specific error.
+
+**Durable normal profile ([#155](https://github.com/LockInTime/headless/issues/155))**
+
+- One per-user profile. Sessions keep sharing it (architecture §11).
+- Cookies and site storage survive host and machine restart until the user
+  logs out, clears, or uses a private context.
+- Linux: private XDG data directory, mode `0700`, atomic setup, single-owner
+  lock, migration from the current runtime profile only when that move is
+  safe, explicit corruption recovery. Not the ephemeral runtime dir.
+- macOS: keep the persistent WKWebView data store, but document and test the
+  contract instead of leaving it implicit.
+- No unrestricted `--profile-path`. No cookie-import command.
+
+**Out of this decision**
+
+- [#166](https://github.com/LockInTime/headless/issues/166) unsigned silent
+  fill.
+- [#158](https://github.com/LockInTime/headless/issues/158) Settings window.
+  Interactive CLI plus a native save sheet are enough for the first cut.
+- [#153](https://github.com/LockInTime/headless/issues/153) full settings
+  registry. Needed later if "aliases only vs allow direct fill" becomes a
+  persisted user-only setting. It does not block #155.
+- Paying for Developer ID in order to start this work.
+
+**Consequences:** #154 is the decision. Implementation PRs must keep
+passwords off the socket, fail closed without a vault, and advertise the
+unsigned tier honestly. Protocol additions (`credentials *`, `auth login`,
+`AUTH_REQUIRED`) are compatible additions; do not bump 0.5 unless a breaking
+change appears. Tagged macOS releases still fail closed without Developer ID
+secrets; that remains #45 and is not a vault prerequisite.
+
+**Revisit trigger:** a Developer ID identity is actually used for public
+macOS distribution, and we want weaker-than-per-use confirmation. Write a
+new decision. Do not turn #166 on just because notarization started working.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -505,5 +634,6 @@ no TCP listener, fail closed, bounded everything.
 | 19  | Keep macOS agent startup behind the current app             | Implemented                                               | 2026-08-12 |
 | 20  | Omit passkeys unless Apple provisions Developer ID release  | Implemented                                               | 2026-08-12 |
 | 21  | Rust port of shared core, protocol layer first              | In progress                                               | 2026-08-22 |
+| 24  | Credential broker on the unsigned local tier                | Decided                                                   | 2026-09-10 |
 
-New decisions append here with the same format.
+New decisions append here with the same format. 22 and 23 are claimed by open PRs #170 and #169.
