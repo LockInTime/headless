@@ -485,6 +485,90 @@ passes an equivalent conformance suite; only then can it start replacing
 hosts. Nothing in this decision changes the hard rules: no arbitrary-JS verb,
 no TCP listener, fail closed, bounded everything.
 
+## 22. Credentials ship as a local vault with per-use user presence
+
+**Status:** decided 2026-09-10 (owner decision in #154).
+
+**Decision:** ship the credential manager without waiting for Apple Developer
+Program membership. The first macOS implementation is the local/community
+tier: secrets live in Keychain and every saved-credential use requires Touch
+ID or the macOS account password. Linux uses an available Secret Service or
+KWallet-compatible secure backend. If an approved OS vault is missing, locked,
+or unavailable, credential operations fail closed. There is no plaintext
+fallback.
+
+Do not ship silent credential use in unsigned builds. The setting proposed in
+#166 is deferred until Headless has a stable Developer ID identity and receives
+a new security review. Notarization alone must not enable it. Direct `fill`
+remains available for users who intentionally give an agent a password, but
+Headless continues to exclude fill values from flows and redact them from its
+own logs, snapshots, diagnostics, errors, and command output.
+
+**User and agent surfaces:** credential management is a trusted local-user
+operation. `credentials add` reads the password from `/dev/tty` with echo
+disabled or from a native secure field; add, rename, remove, and full listing
+are not MCP operations. An agent sees only aliases matching the exact current
+authentication origin through a bounded `AUTH_REQUIRED` challenge. It submits
+an alias plus a short-lived, single-use, session-bound challenge ID. It never
+receives a username or password unless the user deliberately supplies those
+through the existing direct-fill path.
+
+Saving and using are separate decisions. A successful interactive login asks
+whether to save, with No as the default. Agent-controlled login may return a
+short-lived save offer, but storage still requires trusted local confirmation.
+Login never implies consent to save, and saved credentials are never selected
+or submitted automatically.
+
+**Process boundary:** introduce a small `CredentialVault` abstraction in the
+shared core and inject it into the host. The host is the credential service for
+the first implementation; do not add another unsigned daemon. Only this service
+may retrieve secret values. User-facing CLI management may send a dedicated
+sensitive request over the existing private Unix socket, but it must never put
+the password in argv, environment variables, temporary files, normal protocol
+responses, or MCP parameters. A future signed build may move the same interface
+behind an XPC or equivalent broker without changing stored records or the
+agent-facing challenge contract.
+
+Same-user socket ownership is not sufficient authorization to use a saved
+credential. macOS requires operating-system user presence for every retrieval.
+Linux uses the authorization behavior of its approved desktop vault and reports
+unsupported capability when equivalent protected retrieval is unavailable.
+The implementation may use a system library or documented system service, but
+must not add a plaintext compatibility mode or an unvalidated executable lookup.
+
+**Record and origin contract:** records are versioned and keyed by canonical
+HTTPS authentication origin plus a user-chosen alias and account identity.
+Localhost development is the only possible insecure-origin exception and must
+be explicit. Credentials do not cross top-level origins or enter cross-origin
+frames. OAuth redirects, MFA, passkeys, CAPTCHA, navigation during approval,
+challenge replay, and expired challenges fail or return an explicit
+continuation state rather than guessing. Private contexts cannot see normal
+aliases, approvals, cookies, storage, or vault records; any credential enrolled
+inside a private context is memory-only and dies with that context.
+
+**Threat boundary:** this design prevents routine exposure through the agent
+contract and protects secrets at rest with the operating system. It does not
+claim protection from a compromised browser or host process, malicious code
+running with sufficient same-user privileges, binary replacement, root, or
+kernel compromise. Authenticated session cookies can grant access without a
+password, so durable profile permissions, locking, logout, and clear behavior
+in #155 are part of the credential boundary.
+
+**Distribution consequence:** Developer ID and notarization remain #45. They
+are not prerequisites for #155, #156, or #157. Unsigned builds must identify
+themselves as local/unnotarized and may re-prompt after rebuilds. Credential
+records and commands must remain compatible with a later signed release, but
+signed-only convenience policies require a separate decision. Certificates,
+team identifiers, and notarization credentials remain release secrets and
+never enter the repository.
+
+**Delivery order:** implement durable normal profiles first (#155), then vault
+storage and local management (#156), then authentication challenges, per-use
+authorization, login, and save consent (#157). Neither the native Settings
+window (#158) nor Apple signing (#45) blocks this sequence. Each behavioral PR
+adds its protocol, security, and phase documentation; the website documentation
+overhaul may follow after the contracts stabilize.
+
 ---
 
 ## Decision log
@@ -505,5 +589,6 @@ no TCP listener, fail closed, bounded everything.
 | 19  | Keep macOS agent startup behind the current app             | Implemented                                               | 2026-08-12 |
 | 20  | Omit passkeys unless Apple provisions Developer ID release  | Implemented                                               | 2026-08-12 |
 | 21  | Rust port of shared core, protocol layer first              | In progress                                               | 2026-08-22 |
+| 22  | Local credential vault requires user presence per use       | Decided                                                   | 2026-09-10 |
 
 New decisions append here with the same format.
