@@ -56,6 +56,7 @@ public enum JSONValue: Codable, Equatable, Sendable {
 public enum CommandName: String, Codable, CaseIterable, Sendable {
     case ping
     case shutdown
+    case profileClear = "profile.clear"
     case sessionCreate = "session.create"
     case sessionList = "session.list"
     case sessionClose = "session.close"
@@ -212,7 +213,7 @@ public struct CommandRequest: Codable, Equatable, Sendable {
         }
 
         switch command {
-        case .ping, .shutdown, .sessionList, .sessionClose, .back, .reload,
+        case .ping, .shutdown, .profileClear, .sessionList, .sessionClose, .back, .reload,
              .captureInfo, .artifactList, .recordStatus, .qaReport, .qaClear:
             try allow([])
         case .sessionCreate:

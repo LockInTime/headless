@@ -122,6 +122,9 @@ public struct CLIParser {
         case "stop":
             try requireEmpty(arguments)
             return remote(.shutdown, session: session, jsonOutput: jsonOutput)
+        case "profile":
+            guard arguments == ["clear"] else { throw CLIParseError.missingArgument("profile clear") }
+            return remote(.profileClear, session: session, jsonOutput: jsonOutput)
         case "session":
             return try parseSession(arguments, jsonOutput: jsonOutput)
         case "visit":
@@ -673,6 +676,7 @@ Core workflow:
 Commands:
   version | --version
   start [--background|--foreground] | status | stop | runtime
+  profile clear
   config get startup-presentation
   config set startup-presentation background|foreground
   session create [NAME] | session list | session close NAME

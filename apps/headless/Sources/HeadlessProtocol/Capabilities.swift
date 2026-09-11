@@ -24,6 +24,7 @@ public struct BrowserEngineCapabilities: Sendable {
     public let qaDiagnosticSynchronization: String
     public let screenshotClipboard: Bool
     public let inputDispatch: String
+    public let normalProfileStorage: String
 
     public var supportedCommands: [CommandName] {
         CommandName.allCases.filter { !unsupportedCommands.contains($0) }
@@ -66,6 +67,12 @@ public struct BrowserEngineCapabilities: Sendable {
                 "screenshotClipboard": .bool(screenshotClipboard),
                 "tourTimeoutMs": .number(65_000),
                 "inputDispatch": .string(inputDispatch),
+                "normalProfile": .object([
+                    "persistent": .bool(true),
+                    "sharedAcrossSessions": .bool(true),
+                    "storage": .string(normalProfileStorage),
+                    "clearCommand": .string(CommandName.profileClear.rawValue),
+                ]),
             ]),
         ])
     }
@@ -85,7 +92,8 @@ public struct BrowserEngineCapabilities: Sendable {
         qaDiagnosticSource: "webkit-page-bridge",
         qaDiagnosticSynchronization: "best-effort-page-world-observer",
         screenshotClipboard: true,
-        inputDispatch: "synthetic-dom"
+        inputDispatch: "synthetic-dom",
+        normalProfileStorage: "persistent-wkwebsite-data-store"
     )
 
     public static let chromium = BrowserEngineCapabilities(
@@ -106,7 +114,8 @@ public struct BrowserEngineCapabilities: Sendable {
         qaDiagnosticSource: "chromium-cdp",
         qaDiagnosticSynchronization: "runtime-round-trip-flush",
         screenshotClipboard: false,
-        inputDispatch: "trusted-cdp"
+        inputDispatch: "trusted-cdp",
+        normalProfileStorage: "private-xdg-data-directory"
     )
 
     public static func profile(for engine: BrowserEngineName) -> BrowserEngineCapabilities {

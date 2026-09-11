@@ -196,6 +196,7 @@ private final class TestBrowserEngine: BrowserEngine {
     private(set) var createdSessions: [TestBrowserSession] = []
     private(set) var closedSessions: [TestBrowserSession] = []
     private(set) var stopped = false
+    private(set) var profileClearCount = 0
 
     func createSession() throws -> TestBrowserSession {
         let session = TestBrowserSession()
@@ -205,6 +206,7 @@ private final class TestBrowserEngine: BrowserEngine {
 
     func closeSession(_ session: TestBrowserSession) { closedSessions.append(session) }
     func stop() { stopped = true }
+    func clearProfile() throws { profileClearCount += 1 }
     func pingDetails() -> [String: JSONValue] { ["adapter": .string("test-adapter")] }
 }
 
@@ -315,7 +317,71 @@ struct ProtocolTests {
         }
     }
 
+    static func durableBrowserProfileLifecycle() throws {
+        let base = URL(fileURLWithPath: "/tmp/headless-profile-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+
+        let migratedRoot = base.appendingPathComponent("migrated", isDirectory: true)
+        let legacy = base.appendingPathComponent("legacy", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: false)
+        try expect(chmod(legacy.path, 0o700) == 0, "legacy profile permissions should be configurable")
+        try Data("persisted".utf8).write(to: legacy.appendingPathComponent("state"))
+        let migrated = try DurableBrowserProfile(rootURL: migratedRoot, legacyProfileURL: legacy)
+        try expect(migrated.migration == .migrated, "a safe legacy profile should migrate")
+        try expect(
+            FileManager.default.fileExists(atPath: migrated.directoryURL.appendingPathComponent("state").path),
+            "migration should retain browser state"
+        )
+        try expect(!FileManager.default.fileExists(atPath: legacy.path), "migration should remove the legacy profile")
+        try expectThrows("a second owner should not acquire the same profile") {
+            _ = try DurableBrowserProfile(rootURL: migratedRoot)
+        }
+        try Data("discard".utf8).write(to: migrated.directoryURL.appendingPathComponent("temporary"))
+        try migrated.clear()
+        try expect(
+            !FileManager.default.fileExists(atPath: migrated.directoryURL.appendingPathComponent("temporary").path),
+            "profile clear should remove existing state"
+        )
+
+        let unsafeRoot = base.appendingPathComponent("unsafe", isDirectory: true)
+        let unsafeLegacy = base.appendingPathComponent("unsafe-legacy", isDirectory: true)
+        try FileManager.default.createDirectory(at: unsafeLegacy, withIntermediateDirectories: false)
+        try expect(chmod(unsafeLegacy.path, 0o700) == 0, "unsafe legacy permissions should be configurable")
+        try FileManager.default.createSymbolicLink(
+            at: unsafeLegacy.appendingPathComponent("external"),
+            withDestinationURL: URL(fileURLWithPath: "/tmp")
+        )
+        let skipped = try DurableBrowserProfile(rootURL: unsafeRoot, legacyProfileURL: unsafeLegacy)
+        try expect(skipped.migration == .skippedUnsafe, "a legacy profile with symlinks should not migrate")
+        try expect(FileManager.default.fileExists(atPath: unsafeLegacy.path), "unsafe legacy state should remain untouched")
+
+        let recoveredRoot = base.appendingPathComponent("recovered", isDirectory: true)
+        try FileManager.default.createDirectory(at: recoveredRoot, withIntermediateDirectories: false)
+        try expect(chmod(recoveredRoot.path, 0o700) == 0, "recovery root permissions should be configurable")
+        let corruptProfile = recoveredRoot.appendingPathComponent("chromium-profile", isDirectory: true)
+        let staleMigration = recoveredRoot.appendingPathComponent(
+            ".chromium-profile-migration-stale", isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: staleMigration, withIntermediateDirectories: false)
+        try FileManager.default.createDirectory(at: corruptProfile, withIntermediateDirectories: false)
+        try expect(chmod(corruptProfile.path, 0o755) == 0, "corrupt profile permissions should be configurable")
+        let recovered = try DurableBrowserProfile(rootURL: recoveredRoot)
+        try expect(recovered.migration == .recoveredCorruption, "owned invalid state should report recovery")
+        var recoveredInfo = stat()
+        try expect(lstat(recovered.directoryURL.path, &recoveredInfo) == 0, "recovered profile should exist")
+        try expect((recoveredInfo.st_mode & 0o077) == 0, "recovered profile should be private")
+        let quarantines = try FileManager.default.contentsOfDirectory(atPath: recoveredRoot.path)
+            .filter { $0.hasPrefix("chromium-profile.corrupt-") }
+        try expect(quarantines.count == 1, "owned invalid profile state should be quarantined")
+        try expect(!FileManager.default.fileExists(atPath: staleMigration.path), "stale migration state should be removed")
+    }
+
     static func commandParameterValidation() throws {
+        try CommandRequest(id: "clear-profile", command: .profileClear).validate()
+        try expectThrows("profile clear should reject parameters") {
+            try CommandRequest(command: .profileClear, parameters: ["path": .string("/tmp/profile")]).validate()
+        }
         try CommandRequest(
             id: "valid-scroll", command: .scroll,
             parameters: ["direction": .string("down"), "amount": .number(500)]
@@ -700,6 +766,7 @@ struct ProtocolTests {
         let remoteCommands: [([String], CommandName)] = [
             (["status"], .ping),
             (["stop"], .shutdown),
+            (["profile", "clear"], .profileClear),
             (["session", "create", "qa"], .sessionCreate),
             (["session", "list"], .sessionList),
             (["session", "close", "qa"], .sessionClose),
@@ -1237,6 +1304,15 @@ struct ProtocolTests {
             try expect(
                 features["tourTimeoutMs"] == .number(65_000),
                 "both engine profiles should declare the shared tour timeout"
+            )
+            guard case .object(let features)? = engine["features"],
+                  case .object(let normalProfile)? = features["normalProfile"] else {
+                throw TestFailure(description: "engine should declare normal-profile behavior")
+            }
+            try expect(normalProfile["persistent"] == .bool(true), "normal profile should be durable")
+            try expect(
+                normalProfile["clearCommand"] == .string(CommandName.profileClear.rawValue),
+                "normal profile should declare its explicit clear command"
             )
             try expect(
                 features["backWithoutHistory"] == .string("operation-failed"),
@@ -1886,11 +1962,17 @@ struct ProtocolTests {
         try expect(pingResult["adapter"] == .string("test-adapter"), "engine ping details should be merged")
         try expect(pingResult["capabilities"] != nil, "ping should publish the active engine profile")
 
+        let cleared = core.handle(CommandRequest(command: .profileClear))
+        try expect(cleared.ok, "shared profile clear should succeed")
+        try expect(engine.profileClearCount == 1, "profile clear should delegate to the engine")
+        try expect(engine.closedSessions.count == 1, "profile clear should close the existing default session")
+        try expect(engine.createdSessions.count == 1, "profile clear should create a clean default session")
+
         let created = core.handle(CommandRequest(
             command: .sessionCreate, parameters: ["name": .string("secondary")]
         ))
         try expect(created.ok, "shared session creation should succeed")
-        try expect(engine.createdSessions.count == 1, "session creation should delegate to the engine")
+        try expect(engine.createdSessions.count == 2, "session creation should delegate to the engine")
 
         let inspected = core.handle(CommandRequest(
             command: .inspect, session: "secondary", parameters: ["interactive": .bool(true)]
@@ -1900,7 +1982,7 @@ struct ProtocolTests {
         }
         try expect(inspectResult["engineResult"] == .bool(true), "inspect should delegate to the session")
         try expect(
-            engine.createdSessions[0].agentControlEnableCount == 2,
+            engine.createdSessions[1].agentControlEnableCount == 2,
             "agent control should be enabled at creation and before command execution"
         )
 
@@ -1920,7 +2002,7 @@ struct ProtocolTests {
 
         let closed = core.handle(CommandRequest(command: .sessionClose, session: "secondary"))
         try expect(closed.ok, "shared session close should succeed")
-        try expect(engine.closedSessions.count == 1, "session close should delegate to the engine")
+        try expect(engine.closedSessions.count == 2, "session close should delegate to the engine")
         let missing = core.handle(CommandRequest(command: .inspect, session: "secondary"))
         try expect(missing.error?.code == "SESSION_NOT_FOUND", "closed sessions should be removed from shared state")
     }
@@ -1951,6 +2033,7 @@ struct ProtocolTests {
             ("page navigation boundary", pageNavigationBoundary),
             ("message size limit", messageSizeLimit),
             ("identifier validation", identifierValidation),
+            ("durable browser profile lifecycle", durableBrowserProfileLifecycle),
             ("command parameter validation", commandParameterValidation),
             ("strict request fields", rejectsUnexpectedRequestFields),
             ("CLI visit", cliVisit),

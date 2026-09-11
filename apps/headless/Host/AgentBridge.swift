@@ -13,9 +13,24 @@ struct ScreenshotArtifactData {
 
 extension BrowserWindowController {
     func agentVisit(_ url: URL, timeout: TimeInterval = 20) throws -> JSONValue {
-        onMain { self.navigate(to: url) }
-        Thread.sleep(forTimeInterval: 0.05)
-        return try agentWait(parameters: ["settled": .bool(true), "timeoutMs": .number(timeout * 1_000)])
+        let deadline = Date().addingTimeInterval(timeout)
+        guard onMain({ self.beginAgentNavigation(to: url) }) else {
+            throw HostError(code: .operationFailed, message: "Browser refused to start navigation")
+        }
+        while Date() < deadline {
+            let status = onMain { self.agentNavigationStatus() }
+            if status.failed {
+                throw HostError(code: .operationFailed, message: "Browser navigation failed")
+            }
+            if !status.pending {
+                let remainingMs = max(100, deadline.timeIntervalSinceNow * 1_000)
+                return try agentWait(parameters: [
+                    "settled": .bool(true), "timeoutMs": .number(remainingMs),
+                ])
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        throw HostError(code: .timedOut, message: "Timed out while waiting for navigation")
     }
 
     func agentInspect(parameters: [String: JSONValue]) throws -> JSONValue {
@@ -430,6 +445,23 @@ final class WebKitBrowserEngine: BrowserEngine {
     func createSession() throws -> BrowserWindowController { try create() }
     func closeSession(_ session: BrowserWindowController) { close(session) }
     func stop() { stopEngine() }
+
+    func clearProfile() throws {
+        let semaphore = DispatchSemaphore(value: 0)
+        DispatchQueue.main.async {
+            normalWebsiteDataStore.removeData(
+                ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+                modifiedSince: .distantPast
+            ) { semaphore.signal() }
+        }
+        guard semaphore.wait(timeout: .now() + 30) == .success else {
+            throw HostError(code: .timedOut, message: "Timed out while clearing browser profile")
+        }
+    }
+
+    func pingDetails() -> [String: JSONValue] {
+        ["profilePersistence": .string("durable")]
+    }
 }
 
 extension BrowserWindowController: BrowserEngineSession {

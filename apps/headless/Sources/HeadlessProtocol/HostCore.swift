@@ -78,12 +78,16 @@ public protocol BrowserEngine: AnyObject {
     var capabilities: BrowserEngineCapabilities { get }
     func createSession() throws -> Session
     func closeSession(_ session: Session)
+    func clearProfile() throws
     func stop()
     func pingDetails() -> [String: JSONValue]
     func hostError(for error: Error) -> HostError?
 }
 
 public extension BrowserEngine {
+    func clearProfile() throws {
+        throw HostError(code: .unsupportedCapability, message: "Profile clearing is not supported by this engine.")
+    }
     func pingDetails() -> [String: JSONValue] { [:] }
     func hostError(for error: Error) -> HostError? { nil }
 }
@@ -162,6 +166,9 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         }
 
         do {
+            if request.command == .profileClear {
+                return try clearProfile(request)
+            }
             if request.command == .artifactList {
                 return .success(id: request.id, result: try artifacts.list())
             }
@@ -225,6 +232,40 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
                 return hostFailure(request, translated)
             }
             return failure(request, "INTERNAL_ERROR", String(describing: error))
+        }
+    }
+
+    private func clearProfile(_ request: CommandRequest) throws -> CommandResponse {
+        let captured = withState { () -> ([BrowserRecording], [Engine.Session]) in
+            let activeRecordings = Array(recordings.values)
+            let openSessions = Array(sessions.values)
+            recordings.removeAll()
+            sessions.removeAll()
+            trace.removeAll()
+            activeFlows.removeAll()
+            return (activeRecordings, openSessions)
+        }
+        for recording in captured.0 { _ = try? recording.stop(timeout: 5) }
+        for session in captured.1 { engine.closeSession(session) }
+        do {
+            try engine.clearProfile()
+            let replacement = try engine.createSession()
+            withState {
+                sessions["default"] = replacement
+                trace["default"] = []
+            }
+            return .success(id: request.id, result: .object([
+                "cleared": .bool(true), "session": .string("default"),
+            ]))
+        } catch {
+            // Preserve a usable host when clearing fails after sessions close.
+            if let replacement = try? engine.createSession() {
+                withState {
+                    sessions["default"] = replacement
+                    trace["default"] = []
+                }
+            }
+            throw error
         }
     }
 
@@ -400,7 +441,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             )
         case .flowRun:
             return try runFlow(request, sessionName: name)
-        case .ping, .shutdown, .sessionCreate, .sessionList, .sessionClose, .artifactList:
+        case .ping, .shutdown, .profileClear, .sessionCreate, .sessionList, .sessionClose, .artifactList:
             throw HostError(code: .invalidCommand, message: "Command is not valid in this context.")
         }
     }

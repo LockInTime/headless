@@ -28,6 +28,12 @@ private final class ChromiumChildProcess {
         return errno != ECHILD && kill(processIdentifier, 0) == 0
     }
 
+    func waitForExit(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
+        return !isRunning
+    }
+
     func stop() {
         guard isRunning else { return }
         _ = kill(processIdentifier, SIGTERM)
@@ -157,21 +163,15 @@ final class ChromiumProcess {
     let headless: Bool
     let runtime: ChromiumRuntimeSelection
     var processIdentifier: Int32 { child.processIdentifier }
-    private let profileURL: URL
     private let sessionsLock = NSLock()
+    private let stopLock = NSLock()
     private var sessionsByProtocolID: [String: LinuxBrowserSession] = [:]
+    private var stopped = false
 
-    init() throws {
+    init(profileURL: URL) throws {
         #if os(Linux)
         guard getuid() != 0 else { throw CDPError.rootNotSupported }
         #endif
-        try LocalRuntime.preparePrivateDirectory()
-        profileURL = LocalRuntime.directoryURL.appendingPathComponent("chromium-profile", isDirectory: true)
-        try FileManager.default.createDirectory(at: profileURL, withIntermediateDirectories: true)
-        #if os(Linux)
-        _ = chmod(profileURL.path, 0o700)
-        #endif
-
         runtime = try ChromiumRuntimeResolver().resolve()
         let executable = runtime.executableURL
         headless = ProcessInfo.processInfo.environment["HEADLESS_HEADLESS"] != "0"
@@ -226,8 +226,16 @@ final class ChromiumProcess {
     }
 
     func stop() {
+        stopLock.lock()
+        guard !stopped else { stopLock.unlock(); return }
+        stopped = true
+        stopLock.unlock()
+
+        // Chromium flushes persistent cookies and local storage during its
+        // normal browser shutdown. Keep SIGTERM as a bounded fallback only.
+        try? browserConnection.sendWithoutWaiting("Browser.close")
+        if !child.waitForExit(timeout: 3) { child.stop() }
         browserConnection.close()
-        child.stop()
     }
 
     private func routeEvent(_ event: [String: Any]) {
