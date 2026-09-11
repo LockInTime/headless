@@ -18,6 +18,7 @@ export HEADLESS_SOCKET="$RUNTIME/macos-e2e-$$.sock"
 export HEADLESS_ARTIFACT_DIR="$RUNTIME/artifacts-macos-e2e-$$"
 export HEADLESS_HOST_EXECUTABLE="$HOST"
 export HEADLESS_FIXTURE_PORT="$PORT"
+export HEADLESS_E2E_DATA_STORE_ID="$(uuidgen)"
 LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-e2e.XXXXXX")"
 HOST_LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-host.XXXXXX")"
 RESTORE_LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-restore.XXXXXX")"
@@ -75,6 +76,9 @@ node Tests/fixture-server.mjs >"$LOG" 2>&1 &
 FIXTURE_PID=$!
 
 cleanup() {
+  if "$CLI" status >/dev/null 2>&1; then
+    "$CLI" profile clear >/dev/null 2>&1 || true
+  fi
   "$CLI" stop >/dev/null 2>&1 || true
   if [[ -n "$RESTORE_PID" ]]; then
     kill "$RESTORE_PID" >/dev/null 2>&1 || true
@@ -414,6 +418,51 @@ if [[ "$(frontmost_pid)" == "$BACKGROUND_PID" ]]; then
   echo "background launch override did not override the configured foreground default" >&2
   fail
 fi
+"$CLI" stop >/dev/null
+
+STEP="durable-authentication-profile"
+"$CLI" start --background | grep -q '"ready":true'
+"$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=login" | grep -q 'Authentication State'
+"$CLI" inspect --text | grep -q 'Cookie state: signed-in'
+"$CLI" inspect --text | grep -q 'Storage state: signed-in'
+PROFILE_RESTART_PID="$("$CLI" status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+test -n "$PROFILE_RESTART_PID"
+"$CLI" stop >/dev/null
+for _ in {1..100}; do
+  ! kill -0 "$PROFILE_RESTART_PID" >/dev/null 2>&1 && break
+  sleep 0.05
+done
+if kill -0 "$PROFILE_RESTART_PID" >/dev/null 2>&1; then
+  echo "host did not exit during durable profile restart" >&2
+  fail
+fi
+"$CLI" start --background | grep -q '"ready":true'
+"$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" | grep -q 'Authentication State'
+"$CLI" inspect --text | grep -q 'Cookie state: signed-in'
+"$CLI" inspect --text | grep -q 'Storage state: signed-in'
+"$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=logout" >/dev/null
+"$CLI" inspect --text | grep -q 'Cookie state: missing'
+"$CLI" inspect --text | grep -q 'Storage state: missing'
+LOGOUT_RESTART_PID="$("$CLI" status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+test -n "$LOGOUT_RESTART_PID"
+"$CLI" stop >/dev/null
+for _ in {1..100}; do
+  ! kill -0 "$LOGOUT_RESTART_PID" >/dev/null 2>&1 && break
+  sleep 0.05
+done
+if kill -0 "$LOGOUT_RESTART_PID" >/dev/null 2>&1; then
+  echo "host did not exit while verifying durable logout" >&2
+  fail
+fi
+"$CLI" start --background >/dev/null
+"$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" >/dev/null
+"$CLI" inspect --text | grep -q 'Cookie state: missing'
+"$CLI" inspect --text | grep -q 'Storage state: missing'
+"$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=login" >/dev/null
+"$CLI" profile clear | grep -q '"cleared":true'
+"$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" | grep -q 'Authentication State'
+"$CLI" inspect --text | grep -q 'Cookie state: missing'
+"$CLI" inspect --text | grep -q 'Storage state: missing'
 "$CLI" stop >/dev/null
 
 echo "macOS P2 end-to-end flow passed"

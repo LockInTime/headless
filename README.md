@@ -135,6 +135,13 @@ unless the host was deliberately started with `HEADLESS_ALLOW_SENSITIVE_DIAGNOST
 Run `headless help` for every command or `headless capabilities` for the
 JSON capability contract.
 
+Normal sessions share one durable browser profile, so cookies and local
+storage survive host restarts. Use the website's logout flow to remove one
+account, or `headless profile clear` to close every session and erase the full
+normal profile. Linux stores it in a private XDG data directory; macOS uses the
+persistent WebKit data store. Headless does not accept imported cookies or a
+caller-selected profile path.
+
 ## Agent skill
 
 This repository ships a portable browser-computer-use skill at

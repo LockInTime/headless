@@ -430,6 +430,23 @@ final class WebKitBrowserEngine: BrowserEngine {
     func createSession() throws -> BrowserWindowController { try create() }
     func closeSession(_ session: BrowserWindowController) { close(session) }
     func stop() { stopEngine() }
+
+    func clearProfile() throws {
+        let semaphore = DispatchSemaphore(value: 0)
+        DispatchQueue.main.async {
+            normalWebsiteDataStore.removeData(
+                ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+                modifiedSince: .distantPast
+            ) { semaphore.signal() }
+        }
+        guard semaphore.wait(timeout: .now() + 30) == .success else {
+            throw HostError(code: .timedOut, message: "Timed out while clearing browser profile")
+        }
+    }
+
+    func pingDetails() -> [String: JSONValue] {
+        ["profilePersistence": .string("durable")]
+    }
 }
 
 extension BrowserWindowController: BrowserEngineSession {

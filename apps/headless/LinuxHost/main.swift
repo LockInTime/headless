@@ -10,10 +10,12 @@ final class ChromiumBrowserEngine: BrowserEngine {
     let name = "chromium"
     let platform = "linux"
     let capabilities = BrowserEngineCapabilities.chromium
-    let browser: ChromiumProcess
+    private let profile: DurableBrowserProfile
+    private(set) var browser: ChromiumProcess
 
     init() throws {
-        browser = try ChromiumProcess()
+        profile = try DurableBrowserProfile()
+        browser = try ChromiumProcess(profileURL: profile.directoryURL)
     }
 
     func createSession() throws -> ChromiumBrowserEngineSession {
@@ -26,11 +28,26 @@ final class ChromiumBrowserEngine: BrowserEngine {
 
     func stop() { browser.stop() }
 
+    func clearProfile() throws {
+        browser.stop()
+        do {
+            try profile.clear()
+            browser = try ChromiumProcess(profileURL: profile.directoryURL)
+        } catch {
+            if let replacement = try? ChromiumProcess(profileURL: profile.directoryURL) {
+                browser = replacement
+            }
+            throw error
+        }
+    }
+
     func pingDetails() -> [String: JSONValue] {
         [
             "browserExecutable": .string(browser.runtime.executableURL.path),
             "browserRuntimeSource": .string(browser.runtime.source.rawValue),
             "browserTransport": .string("inherited-devtools-pipe"),
+            "profilePersistence": .string("durable"),
+            "profileMigration": .string(profile.migration.rawValue),
         ]
     }
 

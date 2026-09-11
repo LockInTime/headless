@@ -2,15 +2,17 @@
 set -eu
 
 export HEADLESS_ARTIFACT_DIR="/tmp/headless-artifacts-e2e-$$"
+export XDG_DATA_HOME="/tmp/headless-data-e2e-$$"
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
-mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/api"
+mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/api"
 cp /opt/headless/fixtures/dashboard.html "$FIXTURE_ROOT/designers/dashboard/index.html"
 cp /opt/headless/fixtures/next.html "$FIXTURE_ROOT/next/index.html"
 cp /opt/headless/fixtures/hostile.html "$FIXTURE_ROOT/hostile/index.html"
 cp /opt/headless/fixtures/large-document.html "$FIXTURE_ROOT/large-document/index.html"
 cp /opt/headless/fixtures/trusted-input.html "$FIXTURE_ROOT/trusted-input/index.html"
+cp /opt/headless/fixtures/auth-state.html "$FIXTURE_ROOT/auth-state/index.html"
 cp /opt/headless/fixtures/api-diagnostic.json "$FIXTURE_ROOT/api/diagnostic"
 busybox httpd -f -p 127.0.0.1:41739 -h "$FIXTURE_ROOT" &
 FIXTURE_PID=$!
@@ -21,6 +23,7 @@ cleanup() {
   rm -rf "$FIXTURE_ROOT"
   rm -rf "$INSTALL_ROOT"
   rm -rf "$HEADLESS_ARTIFACT_DIR"
+  rm -rf "$XDG_DATA_HOME"
 }
 trap cleanup EXIT INT TERM
 
@@ -66,11 +69,55 @@ fi
 echo "$PRESENTATION_START" | grep -q 'UNSUPPORTED_CAPABILITY'
 
 headless start | grep -q '"ready":true'
+test "$(stat -c %a "$XDG_DATA_HOME/headless")" = "700"
+test "$(stat -c %a "$XDG_DATA_HOME/headless/chromium-profile")" = "700"
 if RUNNING_PRESENTATION_START="$(headless start --foreground 2>&1)"; then
   echo "macOS startup presentation override was accepted by a running Linux host" >&2
   exit 1
 fi
 echo "$RUNNING_PRESENTATION_START" | grep -q 'UNSUPPORTED_CAPABILITY'
+
+headless visit 'http://127.0.0.1:41739/auth-state/?action=login' | grep -q 'Authentication State'
+headless inspect --text | grep -q 'Cookie state: signed-in'
+headless inspect --text | grep -q 'Storage state: signed-in'
+PROFILE_RESTART_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+test -n "$PROFILE_RESTART_PID"
+headless stop | grep -q '"stopping":true'
+for _ in $(seq 1 100); do
+  ! kill -0 "$PROFILE_RESTART_PID" >/dev/null 2>&1 && break
+  sleep 0.05
+done
+if kill -0 "$PROFILE_RESTART_PID" >/dev/null 2>&1; then
+  echo "host did not release the durable profile during restart" >&2
+  exit 1
+fi
+headless start | grep -q '"ready":true'
+headless visit 'http://127.0.0.1:41739/auth-state/?action=check' | grep -q 'Authentication State'
+headless inspect --text | grep -q 'Cookie state: signed-in'
+headless inspect --text | grep -q 'Storage state: signed-in'
+headless visit 'http://127.0.0.1:41739/auth-state/?action=logout' | grep -q 'Authentication State'
+headless inspect --text | grep -q 'Cookie state: missing'
+headless inspect --text | grep -q 'Storage state: missing'
+LOGOUT_RESTART_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+test -n "$LOGOUT_RESTART_PID"
+headless stop >/dev/null
+for _ in $(seq 1 100); do
+  ! kill -0 "$LOGOUT_RESTART_PID" >/dev/null 2>&1 && break
+  sleep 0.05
+done
+if kill -0 "$LOGOUT_RESTART_PID" >/dev/null 2>&1; then
+  echo "host did not exit while verifying durable logout" >&2
+  exit 1
+fi
+headless start >/dev/null
+headless visit 'http://127.0.0.1:41739/auth-state/?action=check' >/dev/null
+headless inspect --text | grep -q 'Cookie state: missing'
+headless inspect --text | grep -q 'Storage state: missing'
+headless visit 'http://127.0.0.1:41739/auth-state/?action=login' >/dev/null
+headless profile clear | grep -q '"cleared":true'
+headless visit 'http://127.0.0.1:41739/auth-state/?action=check' | grep -q 'Authentication State'
+headless inspect --text | grep -q 'Cookie state: missing'
+headless inspect --text | grep -q 'Storage state: missing'
 
 # The fixture server is the only TCP listener. Chromium control must stay on
 # its inherited DevTools pipe rather than exposing a loopback debugging port.

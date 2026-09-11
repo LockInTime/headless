@@ -22,6 +22,7 @@ headless <command> -- --value       # stop option parsing; literal values
 ```sh
 version | --version
 start [--background|--foreground] | status | stop | runtime
+profile clear
 config get startup-presentation
 config set startup-presentation background|foreground
 session create [NAME] | session list | session close NAME
@@ -33,8 +34,9 @@ capabilities
   came from.
 - `config startup-presentation` is macOS only; other engines reject it.
 - Sessions are windows (macOS) or tabs (Linux) sharing **one browser profile**.
-  Cookies and storage are shared across sessions — see P1.md for why this is
-  not an isolation boundary.
+  Cookies and local storage are shared across sessions and survive host and
+  machine restarts. `profile clear` closes every session and permanently
+  removes normal-profile cookies, storage, caches, and permissions.
 
 ## Navigation and interaction
 

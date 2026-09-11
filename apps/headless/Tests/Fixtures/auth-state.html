@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Authentication State</title>
+</head>
+<body>
+  <main>
+    <h1>Authentication State</h1>
+    <p id="cookie-state"></p>
+    <p id="storage-state"></p>
+  </main>
+  <script>
+    const key = 'headless_auth_state';
+    const action = new URLSearchParams(location.search).get('action');
+    if (action === 'login') {
+      document.cookie = `${key}=signed-in; Max-Age=3600; Path=/; SameSite=Lax`;
+      localStorage.setItem(key, 'signed-in');
+    } else if (action === 'logout') {
+      document.cookie = `${key}=; Max-Age=0; Path=/; SameSite=Lax`;
+      localStorage.removeItem(key);
+    }
+    document.querySelector('#cookie-state').textContent =
+      `Cookie state: ${document.cookie.includes(`${key}=signed-in`) ? 'signed-in' : 'missing'}`;
+    document.querySelector('#storage-state').textContent =
+      `Storage state: ${localStorage.getItem(key) ?? 'missing'}`;
+  </script>
+</body>
+</html>
