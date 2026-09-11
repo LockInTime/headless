@@ -38,7 +38,7 @@ let package = Package(
         ),
         .target(
             name: "HeadlessProtocol",
-            dependencies: ["CHeadlessVersion"],
+            dependencies: ["CHeadlessSecurePrompt", "CHeadlessVersion"],
             resources: [.process("Resources")]
         ),
         .target(
@@ -51,6 +51,7 @@ let package = Package(
             dependencies: ["HeadlessProtocol", "CHeadlessSecurePrompt"],
             path: "CredentialBrokerCore",
             linkerSettings: [
+                .linkedFramework("LocalAuthentication", .when(platforms: [.macOS])),
                 .linkedFramework("Security", .when(platforms: [.macOS])),
             ]
         ),

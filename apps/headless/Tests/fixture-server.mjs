@@ -10,6 +10,7 @@ const routes = new Map([
   ['/hostile', 'hostile.html'],
   ['/large-document', 'large-document.html'],
   ['/auth-state', 'auth-state.html'],
+  ['/auth-login', 'auth-login.html'],
 ]);
 
 const server = createServer(async (request, response) => {

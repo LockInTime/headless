@@ -154,6 +154,7 @@ final class ChromiumBrowserEngineSession: BrowserEngineSession {
         try browserSession.setNetworkMock(parameters: parameters)
     }
     func hostClearNetworkMocks() throws -> JSONValue { try browserSession.clearNetworkMocks() }
+    func hostAuthenticationState() throws -> JSONValue { try browserSession.authenticationState() }
 }
 
 do {
@@ -163,10 +164,17 @@ do {
     let engine = try ChromiumBrowserEngine()
     let artifacts = try ArtifactStore()
     let stopped = DispatchSemaphore(value: 0)
+    let authenticationBroker: any AuthenticationBroker
+    if let broker = try? CredentialBrokerProcessClient() {
+        authenticationBroker = broker
+    } else {
+        authenticationBroker = UnavailableAuthenticationBroker()
+    }
     let core = HostCore(
         engine: engine,
         artifacts: artifacts,
         defaultSession: try engine.createSession(),
+        authenticationBroker: authenticationBroker,
         shutdownHandler: { stopped.signal() }
     )
     let server = LocalSocketServer()

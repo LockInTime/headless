@@ -131,6 +131,8 @@ public struct CLIParser {
         case "credentials":
             guard session == nil else { throw CLIParseError.invalidOption("--session") }
             return try parseCredentials(arguments)
+        case "auth":
+            return try parseAuth(arguments, session: session, jsonOutput: jsonOutput)
         case "status":
             try requireEmpty(arguments)
             return remote(.ping, session: session, jsonOutput: jsonOutput)
@@ -291,6 +293,27 @@ public struct CLIParser {
 
     private func requireNoCredentialArguments(_ arguments: [String]) throws {
         guard arguments.isEmpty else { throw CredentialCommandError.invalidArguments }
+    }
+
+    private func parseAuth(
+        _ arguments: [String], session: String?, jsonOutput: Bool
+    ) throws -> CLIInvocation {
+        guard arguments.first == "login" else {
+            throw CLIParseError.missingArgument("auth login")
+        }
+        var args = Array(arguments.dropFirst())
+        let challenge = try removeOption("--challenge", from: &args)
+        let account = try removeOption("--account", from: &args)
+        try requireEmpty(args)
+        guard let challenge, let account else {
+            throw CLIParseError.missingArgument("--challenge ID --account ALIAS")
+        }
+        _ = try CredentialAlias(rawValue: account)
+        return remote(
+            .authLogin, session: session,
+            parameters: ["challenge": .string(challenge), "account": .string(account)],
+            jsonOutput: jsonOutput
+        )
     }
 
     private func parseInspect(_ arguments: [String], session: String?, jsonOutput: Bool) throws -> CLIInvocation {
@@ -750,6 +773,7 @@ Commands:
   credentials add --origin URL --alias NAME --interactive
   credentials rename --origin URL --alias OLD --to NEW
   credentials remove --origin URL --alias NAME
+  auth login --challenge ID --account ALIAS
   session create [NAME] | session list | session close NAME
   visit URL
   inspect [--context summary|outline|text|actions|full] [--task TEXT]

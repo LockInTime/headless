@@ -2,6 +2,8 @@ if (!globalThis.__headlessAgent) {
   globalThis.__headlessAgent = (() => {
     let nextRef = 1;
     let nextRegionRef = 1;
+    const authenticationDocument = Array.from(crypto.getRandomValues(new Uint8Array(16)), value =>
+      value.toString(16).padStart(2, '0')).join('');
     const refs = new WeakMap();
     const regionRefs = new WeakMap();
     let current = new Map();
@@ -619,6 +621,60 @@ if (!globalThis.__headlessAgent) {
       element.dispatchEvent(new Event('change', {bubbles: true}));
       return {filled: refFor(element), valueLength: String(args.value).length};
     };
+    const credentialFill = args => {
+      const initialOrigin = String(location.origin || '');
+      if (initialOrigin !== args.origin) throw new Error('AUTH_ORIGIN_CHANGED');
+      const password = target({target: args.passwordTarget});
+      if (!(password instanceof HTMLInputElement) || password.type.toLowerCase() !== 'password' ||
+          password.disabled || password.readOnly) throw new Error('AUTH_FORM_CHANGED');
+      const form = password.form || password.closest('form');
+      const submit = args.submitTarget ? target({target: args.submitTarget}) : null;
+      const safeSubmission = () => {
+        try {
+          const method = String(submit?.getAttribute('formmethod') || form?.getAttribute('method') || 'get').toLowerCase();
+          const action = new URL(submit?.getAttribute('formaction') || form?.getAttribute('action') || location.href, location.href);
+          return method === 'post' && action.origin === initialOrigin;
+        } catch (_) { return false; }
+      };
+      if (!safeSubmission()) throw new Error('UNSAFE_CREDENTIAL_FORM');
+      const setValue = (element, value) => {
+        element.focus({preventScroll: false});
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(element, value);
+        // Do not place credentials in InputEvent.data, where diagnostics may
+        // serialize them. The destination page necessarily receives its value.
+        element.dispatchEvent(new Event('input', {bubbles: true}));
+        element.dispatchEvent(new Event('change', {bubbles: true}));
+      };
+      if (args.accountTarget) {
+        const account = target({target: args.accountTarget});
+        if (!(account instanceof HTMLInputElement) || account.disabled || account.readOnly) {
+          throw new Error('AUTH_FORM_CHANGED');
+        }
+        setValue(account, args.account);
+      }
+      if (String(location.origin || '') !== initialOrigin || !password.isConnected || !visible(password)) {
+        throw new Error('AUTH_FORM_CHANGED');
+      }
+      setValue(password, args.password);
+      if (String(location.origin || '') !== initialOrigin) throw new Error('AUTH_ORIGIN_CHANGED');
+      if (!safeSubmission()) throw new Error('UNSAFE_CREDENTIAL_FORM');
+      if (submit) {
+        requireSafeClickTarget(submit);
+        submit.click();
+      } else if (form?.requestSubmit) {
+        form.requestSubmit();
+      } else {
+        password.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', bubbles: true}));
+      }
+      return {submitted: true, passwordExposed: false};
+    };
+    const finishCredentialFill = args => {
+      const element = current.get(args.passwordTarget);
+      if (element instanceof HTMLInputElement && element.type.toLowerCase() === 'password') {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(element, '');
+      }
+      return {cleared: true};
+    };
     const press = key => {
       const element = document.activeElement || document.body;
       const options = {key, code: key, bubbles: true, cancelable: true};
@@ -632,6 +688,82 @@ if (!globalThis.__headlessAgent) {
       }
       element.dispatchEvent(new KeyboardEvent('keyup', options));
       return {pressed: key};
+    };
+    const authentication = () => {
+      const origin = String(location.origin || '').slice(0, 2048);
+      const state = (detection, fields = {}) => ({
+        origin, document: authenticationDocument, detection, ...fields
+      });
+      if (!/^https?:\/\//i.test(origin)) return state('none');
+      const inputs = Array.from(document.querySelectorAll('input')).filter(visible);
+      const passwords = inputs.filter(element =>
+        (element.getAttribute('type') || '').toLowerCase() === 'password' &&
+        !element.disabled && !element.readOnly
+      );
+      const pageSignals = normalize([
+        document.title,
+        document.querySelector('h1,h2,[role="heading"]')?.textContent,
+        passwords[0]?.form?.getAttribute('aria-label'),
+        passwords[0]?.form?.querySelector('button,[type="submit"]')?.textContent
+      ].join(' ')).toLowerCase();
+      const loginSignal = /\b(log[ -]?in|sign[ -]?in|authenticate|account)\b/.test(pageSignals);
+      const currentPassword = passwords.find(element =>
+        (element.getAttribute('autocomplete') || '').toLowerCase() === 'current-password'
+      );
+      const otp = inputs.some(element => {
+        const autocomplete = (element.getAttribute('autocomplete') || '').toLowerCase();
+        const signal = rankingText(element);
+        return autocomplete === 'one-time-code' || /\b(otp|verification code|security code|two.factor)\b/.test(signal);
+      });
+      const captcha = Boolean(document.querySelector(
+        'iframe[src*="captcha" i],iframe[title*="captcha" i],[class*="captcha" i],[id*="captcha" i]'
+      ));
+      const passkey = Boolean(document.querySelector('[autocomplete="webauthn"],button[data-webauthn]')) ||
+        /\b(passkey|security key)\b/.test(pageSignals);
+      if (otp || captcha) return state('additional-verification');
+      if (passkey) return state('passkey');
+      const crossOriginAuthentication = Array.from(document.querySelectorAll('iframe')).some(frame => {
+        try {
+          const destination = new URL(frame.getAttribute('src') || '', location.href);
+          const signal = `${frame.getAttribute('title') || ''} ${destination.pathname}`.toLowerCase();
+          return destination.origin !== origin && /\b(log[ -]?in|sign[ -]?in|auth|account)\b/.test(signal);
+        } catch (_) { return false; }
+      });
+      if (crossOriginAuthentication) return state('cross-origin');
+      if (passwords.length === 0) {
+        const signInControl = candidates().some(element =>
+          ['button', 'link'].includes(role(element)) &&
+          /\b(log[ -]?in|sign[ -]?in)\b/.test(rankingText(element))
+        );
+        return state(signInControl ? 'hint' : 'none');
+      }
+      // Multiple password controls usually mean account creation or password
+      // rotation. Do not turn those pages into an autofill challenge.
+      const password = currentPassword || (passwords.length === 1 && loginSignal ? passwords[0] : null);
+      if (!password || passwords.length > 1) return state('hint');
+      const form = password.form || password.closest('form');
+      const scope = form || document;
+      const accounts = Array.from(scope.querySelectorAll('input')).filter(element => {
+        if (!visible(element) || element === password || element.disabled || element.readOnly) return false;
+        const type = (element.getAttribute('type') || 'text').toLowerCase();
+        const autocomplete = (element.getAttribute('autocomplete') || '').toLowerCase();
+        return ['email', 'text', 'tel'].includes(type) &&
+          (['username', 'email'].includes(autocomplete) || /\b(user|email|account|login)\b/.test(rankingText(element)));
+      });
+      const submits = Array.from(scope.querySelectorAll('button,input[type="submit"],[role="button"]'))
+        .filter(element => visible(element) && !element.disabled);
+      const submit = submits.find(element => /\b(log[ -]?in|sign[ -]?in|continue|submit)\b/.test(rankingText(element)))
+        || (submits.length === 1 ? submits[0] : null);
+      try {
+        const method = String(submit?.getAttribute('formmethod') || form?.getAttribute('method') || 'get').toLowerCase();
+        const action = new URL(submit?.getAttribute('formaction') || form?.getAttribute('action') || location.href, location.href);
+        if (method !== 'post' || action.origin !== origin) return state('hint');
+      } catch (_) { return state('hint'); }
+      return state('confirmed', {
+        accountTarget: accounts.length === 1 ? refFor(accounts[0]) : null,
+        passwordTarget: refFor(password),
+        submitTarget: submit ? refFor(submit) : null
+      });
     };
     const scroll = args => {
       const amount = Number(args.amount || Math.max(240, innerHeight * 0.8));
@@ -782,7 +914,7 @@ if (!globalThis.__headlessAgent) {
       return {count: document.getAnimations().length, animations: all, truncated: document.getAnimations().length > all.length};
     };
     return {
-      snapshot, click, fill, press, inputTarget, scroll, state, tour, screenshotPlan,
+      snapshot, click, fill, credentialFill, finishCredentialFill, press, inputTarget, authentication, scroll, state, tour, screenshotPlan,
       scrollToCapturePoint, rectangle, styles, storage,
       performance: performanceSummary, animations
     };

@@ -247,6 +247,90 @@ assert.equal(pageState.runningAnimations, 0);
 assert(pageState.text.includes('Run'));
 assert(pageState.text.length <= 30000, 'state text must stay bounded');
 
+const authenticationFixture = window.document.createElement('section');
+authenticationFixture.innerHTML = `
+  <form method="post" aria-label="Sign in">
+    <input type="email" autocomplete="username" aria-label="Email">
+    <input type="password" autocomplete="current-password" aria-label="Password">
+    <button type="submit">Sign in</button>
+  </form>
+`;
+window.document.body.append(authenticationFixture);
+const confirmedAuthentication = agent.authentication();
+assert.equal(confirmedAuthentication.origin, 'http://127.0.0.1:41739');
+assert.equal(confirmedAuthentication.detection, 'confirmed');
+assert.match(confirmedAuthentication.accountTarget, /^@e\d+$/);
+assert.match(confirmedAuthentication.passwordTarget, /^@e\d+$/);
+assert.match(confirmedAuthentication.submitTarget, /^@e\d+$/);
+assert.equal(JSON.stringify(confirmedAuthentication).includes('value'), false);
+
+let credentialInputData = 'not-fired';
+authenticationFixture.querySelector('input[type="password"]').addEventListener('input', event => {
+  credentialInputData = event.data;
+});
+authenticationFixture.querySelector('form').addEventListener('submit', event => event.preventDefault());
+const credentialFillResult = agent.credentialFill({
+  origin: confirmedAuthentication.origin,
+  accountTarget: confirmedAuthentication.accountTarget,
+  passwordTarget: confirmedAuthentication.passwordTarget,
+  submitTarget: confirmedAuthentication.submitTarget,
+  account: 'person@example.test',
+  password: 'runtime-only-secret',
+});
+assert.equal(credentialFillResult.submitted, true);
+assert.equal(credentialInputData, undefined, 'saved credentials must not enter InputEvent.data');
+agent.finishCredentialFill({passwordTarget: confirmedAuthentication.passwordTarget});
+assert.equal(authenticationFixture.querySelector('input[type="password"]').value, '');
+
+authenticationFixture.querySelector('form').setAttribute('method', 'get');
+assert.equal(agent.authentication().detection, 'hint', 'GET password forms must not trigger autofill');
+authenticationFixture.querySelector('form').setAttribute('method', 'post');
+authenticationFixture.querySelector('button').setAttribute('formaction', 'https://other.example.test/login');
+assert.equal(agent.authentication().detection, 'hint', 'cross-origin submitters must not trigger autofill');
+
+authenticationFixture.innerHTML = `
+  <form aria-label="Change security code">
+    <input type="password" aria-label="Old code">
+    <input type="password" aria-label="New code">
+    <button type="submit">Update</button>
+  </form>
+`;
+assert.equal(agent.authentication().detection, 'hint', 'password rotation must not trigger autofill');
+
+authenticationFixture.innerHTML = '<input autocomplete="one-time-code" aria-label="Verification code">';
+assert.equal(agent.authentication().detection, 'additional-verification');
+
+authenticationFixture.innerHTML = `
+  <form method="post" aria-label="Sign in">
+    <input autocomplete="username" aria-label="Email">
+    <input type="password" autocomplete="current-password" aria-label="Password">
+    <input autocomplete="one-time-code" aria-label="Verification code">
+    <button type="submit">Sign in</button>
+  </form>
+`;
+assert.equal(
+  agent.authentication().detection,
+  'additional-verification',
+  'combined password and MFA forms must not trigger saved credential fill',
+);
+
+authenticationFixture.innerHTML = '<button data-webauthn="true">Use a passkey</button>';
+assert.equal(agent.authentication().detection, 'passkey');
+
+authenticationFixture.innerHTML = '<button type="button">Sign in</button>';
+assert.equal(agent.authentication().detection, 'hint', 'username-first login should remain a hint');
+
+authenticationFixture.innerHTML = `
+  <iframe src="https://accounts.example.test/login"></iframe>
+  <h1>Welcome</h1>
+`;
+assert.equal(
+  agent.authentication().detection,
+  'cross-origin',
+  'cross-origin authentication frames should return an explicit continuation state',
+);
+authenticationFixture.remove();
+
 const stationaryTour = await agent.tour({fullPage: false});
 assert.equal(stationaryTour.start, stationaryTour.end);
 assert.equal(stationaryTour.durationMs, 0);

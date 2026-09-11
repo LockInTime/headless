@@ -700,6 +700,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        qaBridge.didCommitDocument()
         let u = webView.url?.absoluteString
         if u != nil && u != "about:blank" {
             pendingRestoredStartupURL = nil
@@ -905,10 +906,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             close: { controller in onAgentMain { controller.close() } }
         )
+        let authenticationBroker: any AuthenticationBroker
+        if let broker = try? CredentialBrokerProcessClient() {
+            authenticationBroker = broker
+        } else {
+            authenticationBroker = UnavailableAuthenticationBroker()
+        }
         let core = HostCore(
             engine: engine,
             artifacts: artifacts,
             defaultSession: primaryController,
+            authenticationBroker: authenticationBroker,
             shutdownHandler: { DispatchQueue.main.async { NSApp.terminate(nil) } }
         )
         hostCore = core

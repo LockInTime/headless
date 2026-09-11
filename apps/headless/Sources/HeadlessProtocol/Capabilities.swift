@@ -73,6 +73,15 @@ public struct BrowserEngineCapabilities: Sendable {
                     "storage": .string(normalProfileStorage),
                     "clearCommand": .string(CommandName.profileClear.rawValue),
                 ]),
+                "authentication": .object([
+                    "challengeCommand": .string(CommandName.authLogin.rawValue),
+                    "exactOriginAliases": .bool(true),
+                    "challengeLifetimeSeconds": .number(AuthenticationChallengeStore.lifetime),
+                    "singleUse": .bool(true),
+                    "savedCredentialUse": .bool(engine == .webkit),
+                    "userPresencePerSavedUse": .bool(engine == .webkit),
+                    "automaticActionReplay": .bool(false),
+                ]),
             ]),
         ])
     }
@@ -198,7 +207,10 @@ public let capabilitiesDocument: JSONValue = {
             "securityTier": .string(credentialSecurityTier),
             "availability": .string("checked-at-command-time"),
             "passwordTransport": .string("dedicated-local-broker"),
-            "userPresence": .string("required-on-every-use-by-broker"),
+            "userPresence": .string(
+                currentBrowserEngineCapabilities.engine == .webkit
+                    ? "required-on-every-use-by-broker" : "unavailable-for-saved-use"
+            ),
             "silentUse": .bool(false),
             "agentReceivesPasswords": .bool(false),
             "privateContextAccess": .bool(false),

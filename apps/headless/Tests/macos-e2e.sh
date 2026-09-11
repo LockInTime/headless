@@ -177,6 +177,20 @@ echo "$START_RESULT" | grep -q '"ready":true' || {
   fail
 }
 echo "▸ host ready"
+
+if AUTH_REQUIRED="$("$CLI" visit "http://127.0.0.1:$PORT/auth-login" 2>&1)"; then
+  print -r -u2 -- "confirmed login form did not require authentication"
+  exit 1
+fi
+echo "$AUTH_REQUIRED" | grep -q '"code":"AUTH_REQUIRED"'
+echo "$AUTH_REQUIRED" | grep -q "\"origin\":\"http://127.0.0.1:$PORT\""
+echo "$AUTH_REQUIRED" | grep -q '"accounts":\[\]'
+echo "$AUTH_REQUIRED" | grep -q '"userPresenceRequired":true'
+echo "$AUTH_REQUIRED" | grep -q '"credentialUseAvailable":true'
+"$CLI" fill @e1 -- 'fixture@example.test' | grep -q '"valueLength":20'
+"$CLI" fill @e2 -- 'synthetic-direct-password' | grep -q '"valueLength":25'
+"$CLI" click @e3 | grep -q '"clicked"'
+"$CLI" wait --text 'Signed in' | grep -q 'Signed in'
 STEP="tcp-check"
 HOST_PID="$(echo "$START_RESULT" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$HOST_PID"

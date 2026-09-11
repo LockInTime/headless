@@ -7,13 +7,14 @@ export XDG_CONFIG_HOME="/tmp/headless-config-e2e-$$"
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
-mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/api"
+mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/api"
 cp /opt/headless/fixtures/dashboard.html "$FIXTURE_ROOT/designers/dashboard/index.html"
 cp /opt/headless/fixtures/next.html "$FIXTURE_ROOT/next/index.html"
 cp /opt/headless/fixtures/hostile.html "$FIXTURE_ROOT/hostile/index.html"
 cp /opt/headless/fixtures/large-document.html "$FIXTURE_ROOT/large-document/index.html"
 cp /opt/headless/fixtures/trusted-input.html "$FIXTURE_ROOT/trusted-input/index.html"
 cp /opt/headless/fixtures/auth-state.html "$FIXTURE_ROOT/auth-state/index.html"
+cp /opt/headless/fixtures/auth-login.html "$FIXTURE_ROOT/auth-login/index.html"
 cp /opt/headless/fixtures/api-diagnostic.json "$FIXTURE_ROOT/api/diagnostic"
 busybox httpd -f -p 127.0.0.1:41739 -h "$FIXTURE_ROOT" &
 FIXTURE_PID=$!
@@ -103,6 +104,21 @@ fi
 echo "$RUNNING_PRESENTATION_START" | grep -q 'UNSUPPORTED_CAPABILITY'
 
 headless visit 'http://127.0.0.1:41739/auth-state/?action=login' | grep -q 'Authentication State'
+
+if AUTH_REQUIRED="$(headless visit 'http://127.0.0.1:41739/auth-login/' 2>&1)"; then
+  echo "confirmed login form did not require authentication" >&2
+  exit 1
+fi
+echo "$AUTH_REQUIRED" | grep -q '"code":"AUTH_REQUIRED"'
+echo "$AUTH_REQUIRED" | grep -q '"origin":"http://127.0.0.1:41739"'
+echo "$AUTH_REQUIRED" | grep -q '"accounts":\[\]'
+echo "$AUTH_REQUIRED" | grep -q '"userPresenceRequired":true'
+echo "$AUTH_REQUIRED" | grep -q '"credentialUseAvailable":false'
+headless fill @e1 -- 'fixture@example.test' | grep -q '"valueLength":20'
+headless fill @e2 -- 'synthetic-direct-password' | grep -q '"valueLength":25'
+headless click @e3 | grep -q '"clicked"'
+headless wait --text 'Signed in' | grep -q 'Signed in'
+test ! -e "$HOME/.local/share/headless/credential-vault/credentials-index.json"
 headless inspect --text | grep -q 'Cookie state: signed-in'
 headless inspect --text | grep -q 'Storage state: signed-in'
 PROFILE_RESTART_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
