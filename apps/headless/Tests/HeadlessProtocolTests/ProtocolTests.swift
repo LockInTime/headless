@@ -2808,6 +2808,35 @@ struct ProtocolTests {
         try expect(checked >= 30, "expected to check every command line, checked \(checked)")
     }
 
+    static func menuShortcutsHaveUniqueChords() throws {
+        var seen: [String: String] = [:]
+        for spec in headlessMenuShortcuts {
+            try expect(!spec.selector.isEmpty, "\(spec.title) is missing a selector")
+            try expect(!spec.key.isEmpty, "\(spec.title) should not be in the keyed catalog without a chord")
+            if let previous = seen[spec.chordIdentity] {
+                throw TestFailure(
+                    description: "\(spec.title) collides with \(previous) on \(spec.chordIdentity)"
+                )
+            }
+            seen[spec.chordIdentity] = spec.title
+        }
+        let pin = headlessMenuShortcuts.first { $0.title == "Pin on Top" }
+        try expect(pin?.key == "p" && pin?.command == true && pin?.option == true && pin?.shift == false,
+                   "Pin on Top should be Cmd-Option-P, not Cmd-P")
+        try expect(
+            !headlessMenuShortcuts.contains { $0.key == "," },
+            "Cmd-, is reserved for a future Settings window"
+        )
+        let snapshot = headlessMenuShortcuts.first { $0.title == "Save Snapshot to Desktop" }
+        try expect(snapshot?.key == "s" && snapshot?.shift == true,
+                   "snapshot capture should stay Cmd-Shift-S")
+        let p0 = try String(contentsOfFile: "docs/P0.md", encoding: .utf8)
+        try expect(
+            p0.contains("Cmd-Option-P") && p0.contains("Cmd-Shift-S"),
+            "P0 should document the Pin and snapshot chords"
+        )
+    }
+
     static func authenticationProtocolAndChallengeLifecycle() throws {
         let login = try CLIParser().parse([
             "--session", "work", "auth", "login", "--challenge",
@@ -3343,6 +3372,7 @@ struct ProtocolTests {
             ("ephemeral authentication broker lifecycle", ephemeralAuthenticationBrokerLifecycle),
             ("host authentication orchestration", hostAuthenticationOrchestration),
             ("docs command reference matches help", docsCommandReferenceMatchesHelp),
+            ("menu shortcuts have unique chords", menuShortcutsHaveUniqueChords),
         ]
 
         var failures = 0

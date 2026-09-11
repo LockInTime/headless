@@ -1048,6 +1048,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Menu
 
+    private func menuItem(
+        _ title: String, action: Selector?, target: AnyObject? = nil
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = target
+        if let spec = headlessMenuShortcuts.first(where: { $0.title == title }) {
+            item.keyEquivalent = spec.key
+            var mask: NSEvent.ModifierFlags = []
+            if spec.command { mask.insert(.command) }
+            if spec.shift { mask.insert(.shift) }
+            if spec.option { mask.insert(.option) }
+            if spec.control { mask.insert(.control) }
+            item.keyEquivalentModifierMask = mask
+        }
+        return item
+    }
+
     private func buildMenu() {
         let main = NSMenu()
 
@@ -1055,80 +1072,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(withTitle: "About Headless",
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide Headless", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        let hideOthers = appMenu.addItem(withTitle: "Hide Others",
-                                         action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
-        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(menuItem("Hide Headless", action: #selector(NSApplication.hide(_:))))
+        appMenu.addItem(menuItem("Hide Others", action: #selector(NSApplication.hideOtherApplications(_:))))
         appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit Headless", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(menuItem("Quit Headless", action: #selector(NSApplication.terminate(_:))))
         main.addItem(withTitle: "Headless", action: nil, keyEquivalent: "").submenu = appMenu
 
         let fileMenu = NSMenu(title: "File")
-        let newWin = fileMenu.addItem(withTitle: "New Window", action: #selector(newWindow(_:)), keyEquivalent: "n")
-        newWin.target = self
-        fileMenu.addItem(withTitle: "Open Location…",
-                         action: #selector(BrowserWindowController.openLocation(_:)), keyEquivalent: "l")
+        fileMenu.addItem(menuItem("New Window", action: #selector(newWindow(_:)), target: self))
+        fileMenu.addItem(menuItem("Open Location…", action: #selector(BrowserWindowController.openLocation(_:))))
         fileMenu.addItem(.separator())
-        let snap = fileMenu.addItem(withTitle: "Save Snapshot to Desktop",
-                                    action: #selector(BrowserWindowController.saveSnapshot(_:)), keyEquivalent: "s")
-        snap.keyEquivalentModifierMask = [.command, .shift]
+        fileMenu.addItem(menuItem(
+            "Save Snapshot to Desktop",
+            action: #selector(BrowserWindowController.saveSnapshot(_:))
+        ))
         fileMenu.addItem(.separator())
-        fileMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        fileMenu.addItem(menuItem("Close Window", action: #selector(NSWindow.performClose(_:))))
         main.addItem(withTitle: "File", action: nil, keyEquivalent: "").submenu = fileMenu
 
         let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(withTitle: "Undo", action: NSSelectorFromString("undo:"), keyEquivalent: "z")
-        editMenu.addItem(withTitle: "Redo", action: NSSelectorFromString("redo:"), keyEquivalent: "Z")
+        editMenu.addItem(menuItem("Undo", action: NSSelectorFromString("undo:")))
+        editMenu.addItem(menuItem("Redo", action: NSSelectorFromString("redo:")))
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(menuItem("Cut", action: #selector(NSText.cut(_:))))
+        editMenu.addItem(menuItem("Copy", action: #selector(NSText.copy(_:))))
+        editMenu.addItem(menuItem("Paste", action: #selector(NSText.paste(_:))))
+        editMenu.addItem(menuItem("Select All", action: #selector(NSText.selectAll(_:))))
         editMenu.addItem(.separator())
-        let copyURL = editMenu.addItem(withTitle: "Copy Current URL",
-                                       action: #selector(BrowserWindowController.copyPageURL(_:)), keyEquivalent: "c")
-        copyURL.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(menuItem(
+            "Copy Current URL",
+            action: #selector(BrowserWindowController.copyPageURL(_:))
+        ))
         main.addItem(withTitle: "Edit", action: nil, keyEquivalent: "").submenu = editMenu
 
         let viewMenu = NSMenu(title: "View")
-        viewMenu.addItem(withTitle: "Reload Page",
-                         action: #selector(BrowserWindowController.reloadPage(_:)), keyEquivalent: "r")
-        let hardReload = viewMenu.addItem(withTitle: "Reload Ignoring Cache",
-                                          action: #selector(BrowserWindowController.hardReloadPage(_:)), keyEquivalent: "r")
-        hardReload.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(menuItem("Reload Page", action: #selector(BrowserWindowController.reloadPage(_:))))
+        viewMenu.addItem(menuItem(
+            "Reload Ignoring Cache",
+            action: #selector(BrowserWindowController.hardReloadPage(_:))
+        ))
         viewMenu.addItem(.separator())
-        viewMenu.addItem(withTitle: "Zoom In",
-                         action: #selector(BrowserWindowController.zoomInPage(_:)), keyEquivalent: "=")
-        viewMenu.addItem(withTitle: "Zoom Out",
-                         action: #selector(BrowserWindowController.zoomOutPage(_:)), keyEquivalent: "-")
-        viewMenu.addItem(withTitle: "Actual Size",
-                         action: #selector(BrowserWindowController.resetZoom(_:)), keyEquivalent: "0")
+        viewMenu.addItem(menuItem("Zoom In", action: #selector(BrowserWindowController.zoomInPage(_:))))
+        viewMenu.addItem(menuItem("Zoom Out", action: #selector(BrowserWindowController.zoomOutPage(_:))))
+        viewMenu.addItem(menuItem("Actual Size", action: #selector(BrowserWindowController.resetZoom(_:))))
         viewMenu.addItem(.separator())
-        let fullScreen = viewMenu.addItem(withTitle: "Enter Full Screen",
-                                          action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
-        fullScreen.keyEquivalentModifierMask = [.command, .control]
+        viewMenu.addItem(menuItem("Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:))))
         main.addItem(withTitle: "View", action: nil, keyEquivalent: "").submenu = viewMenu
 
         let historyMenu = NSMenu(title: "History")
-        historyMenu.addItem(withTitle: "Back",
-                            action: #selector(BrowserWindowController.goBackAction(_:)), keyEquivalent: "[")
-        historyMenu.addItem(withTitle: "Forward",
-                            action: #selector(BrowserWindowController.goForwardAction(_:)), keyEquivalent: "]")
+        historyMenu.addItem(menuItem("Back", action: #selector(BrowserWindowController.goBackAction(_:))))
+        historyMenu.addItem(menuItem("Forward", action: #selector(BrowserWindowController.goForwardAction(_:))))
         main.addItem(withTitle: "History", action: nil, keyEquivalent: "").submenu = historyMenu
 
         let windowMenu = NSMenu(title: "Window")
-        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(menuItem("Minimize", action: #selector(NSWindow.performMiniaturize(_:))))
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         windowMenu.addItem(.separator())
-        windowMenu.addItem(withTitle: "Pin on Top",
-                           action: #selector(BrowserWindowController.togglePin(_:)), keyEquivalent: "p")
+        windowMenu.addItem(menuItem("Pin on Top", action: #selector(BrowserWindowController.togglePin(_:))))
         main.addItem(withTitle: "Window", action: nil, keyEquivalent: "").submenu = windowMenu
         NSApp.windowsMenu = windowMenu
 
         let helpMenu = NSMenu(title: "Help")
-        helpMenu.addItem(withTitle: "Headless Help",
-                         action: #selector(BrowserWindowController.showHelpPage(_:)), keyEquivalent: "?")
+        helpMenu.addItem(menuItem("Headless Help", action: #selector(BrowserWindowController.showHelpPage(_:))))
         main.addItem(withTitle: "Help", action: nil, keyEquivalent: "").submenu = helpMenu
         NSApp.helpMenu = helpMenu
 
