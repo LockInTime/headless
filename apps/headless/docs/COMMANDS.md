@@ -46,8 +46,11 @@ capabilities
   creates a fresh engine-native ephemeral context that shares no cookies,
   storage, cache, permissions, or authentication state with the normal profile
   or another isolated session. Closing it destroys that context. Isolated
-  sessions cannot list or use normal-vault credentials. `profile clear` closes
-  every session, including isolated sessions, and permanently
+  sessions cannot list or use normal-vault credentials. They can enroll aliases
+  through `auth login --interactive`; those credentials
+  stay only in that isolated session's memory and are erased on close or host
+  termination. `profile clear` closes every session, including isolated
+  sessions, and permanently
   removes normal-profile cookies, storage, caches, and permissions.
 
 ## Settings

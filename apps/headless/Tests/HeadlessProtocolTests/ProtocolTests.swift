@@ -2920,6 +2920,47 @@ struct ProtocolTests {
         }
     }
 
+    static func ephemeralAuthenticationBrokerLifecycle() throws {
+        let broker = EphemeralAuthenticationBroker()
+        let origin = try CredentialOrigin(rawValue: "https://accounts.example.test")
+        let otherOrigin = try CredentialOrigin(rawValue: "https://other.example.test")
+        let alias = try CredentialAlias(rawValue: "private")
+        let credential = try AuthenticationCredential(
+            account: "private@example.test",
+            password: AuthenticationSecret(Array("ephemeral-secret".utf8))
+        )
+        try broker.store(credential, for: origin, alias: alias)
+        credential.password.clear()
+
+        let aliases = try broker.aliases(for: origin)
+        try expect(aliases.count == 1, "ephemeral broker should list its exact-origin alias")
+        try expect(try broker.aliases(for: otherOrigin).isEmpty, "aliases must not cross origins")
+        let resolved = try broker.credential(for: origin, alias: alias)
+        defer { resolved.password.clear() }
+        try expect(
+            resolved.password.withUnsafeBytes { Array($0) } == Array("ephemeral-secret".utf8),
+            "ephemeral broker should return a copied secret"
+        )
+        let duplicate = try AuthenticationCredential(
+            account: "other@example.test",
+            password: AuthenticationSecret(Array("other-secret".utf8))
+        )
+        defer { duplicate.password.clear() }
+        try expectSettingsErrorForAuthentication(
+            .credentialAliasExists, "ephemeral aliases must be case-insensitively unique"
+        ) {
+            try broker.store(
+                duplicate, for: origin, alias: CredentialAlias(rawValue: "PRIVATE")
+            )
+        }
+        broker.removeAll()
+        try expectSettingsErrorForAuthentication(
+            .accountNotFound, "clearing an ephemeral broker must destroy its records"
+        ) {
+            _ = try broker.credential(for: origin, alias: alias)
+        }
+    }
+
     static func hostAuthenticationOrchestration() throws {
         let root = "/tmp/headless-auth-core-test-\(UUID().uuidString)"
         defer { try? FileManager.default.removeItem(atPath: root) }
@@ -3074,8 +3115,8 @@ struct ProtocolTests {
         }
         try expect(privateAccounts.isEmpty, "isolated challenges must not list normal-vault aliases")
         try expect(
-            privateDetails["vaultStatus"] == .string("PRIVATE_CREDENTIAL_UNAVAILABLE"),
-            "isolated challenges should disclose the private-vault boundary"
+            privateDetails["vaultStatus"] == .string("private-ephemeral"),
+            "isolated challenges should disclose the ephemeral vault"
         )
         try expect(privateBroker.aliasLookupCount == 0, "isolated challenges must not query the normal broker")
         let privateLogin = privateCore.handle(CommandRequest(
@@ -3085,11 +3126,51 @@ struct ProtocolTests {
             ]
         ))
         try expect(
-            privateLogin.error?.code == "PRIVATE_CREDENTIAL_UNAVAILABLE",
-            "isolated saved login should fail closed"
+            privateLogin.error?.code == "AUTH_ACCOUNT_NOT_FOUND",
+            "unknown private aliases should fail closed"
         )
         try expect(privateBroker.credentialLookupCount == 0, "isolated login must not retrieve a normal secret")
         try expect(privateSession.filledCredentialAccount == nil, "isolated login must not fill a credential")
+
+        privateSession.authenticationState = .object([
+            "origin": .string(origin.rawValue), "detection": .string("confirmed"),
+            "document": .string("abcdef0123456789abcdef0123456789"),
+            "accountTarget": .string("@e1"), "passwordTarget": .string("@e2"),
+            "submitTarget": .string("@e3"),
+        ])
+        privateSession.authenticationStateAfterCredentialFill = .object([
+            "origin": .string(origin.rawValue), "detection": .string("none"),
+        ])
+        privateSession.saveAlias = try CredentialAlias(rawValue: "private")
+        let privateEnrollment = privateCore.handle(CommandRequest(
+            command: .authLogin, parameters: ["interactive": .bool(true)]
+        ))
+        try expect(privateEnrollment.ok, "private interactive enrollment should succeed")
+        try expect(privateBroker.storedAlias == nil, "private save must not reach the normal broker")
+
+        privateSession.authenticationState = .object([
+            "origin": .string(origin.rawValue), "detection": .string("confirmed"),
+            "document": .string("11111111111111111111111111111111"),
+            "accountTarget": .string("@e1"), "passwordTarget": .string("@e2"),
+            "submitTarget": .string("@e3"),
+        ])
+        let privateListed = privateCore.handle(CommandRequest(
+            command: .inspect, parameters: ["interactive": .bool(true)]
+        ))
+        guard case .object(let listedDetails)? = privateListed.error?.details,
+              let listedChallenge = listedDetails["challenge"]?.stringValue,
+              case .array(let listedAccounts)? = listedDetails["accounts"] else {
+            throw TestFailure(description: "private aliases should be listed in a new challenge")
+        }
+        try expect(listedAccounts.count == 1, "private challenge should list only its ephemeral alias")
+        let privateAliasLogin = privateCore.handle(CommandRequest(
+            command: .authLogin,
+            parameters: [
+                "challenge": .string(listedChallenge), "account": .string("private"),
+            ]
+        ))
+        try expect(privateAliasLogin.ok, "private alias should remain usable in its context")
+        try expect(privateBroker.credentialLookupCount == 0, "private alias use must not reach the normal broker")
     }
 
     static func sharedHostCoreDispatch() throws {
@@ -3259,6 +3340,7 @@ struct ProtocolTests {
             ("single-source contract constants", singleSourceContractConstants),
             ("shared host core dispatch", sharedHostCoreDispatch),
             ("authentication protocol and challenge lifecycle", authenticationProtocolAndChallengeLifecycle),
+            ("ephemeral authentication broker lifecycle", ephemeralAuthenticationBrokerLifecycle),
             ("host authentication orchestration", hostAuthenticationOrchestration),
             ("docs command reference matches help", docsCommandReferenceMatchesHelp),
         ]

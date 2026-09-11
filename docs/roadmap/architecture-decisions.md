@@ -667,11 +667,11 @@ including isolated sessions, then clears only the durable normal profile and
 recreates the normal `default` session.
 
 Private sessions cannot enumerate or retrieve normal-vault aliases,
-credentials, or approvals. Until interactive private enrollment lands, saved
-credential use in a private session fails explicitly rather than consulting
-the normal broker. A future in-memory private credential store must be owned by
-the isolated context and erased when its final session closes; it must not use
-Keychain, Secret Service, or the normal nonsecret index.
+credentials, or approvals. Interactive enrollment writes only to an in-memory
+credential store owned by the isolated session. The store is exact-origin
+bound and bounded, and erases every secret when the session closes, the host
+stops, the profile is cleared, or crash recovery replaces the process. It does
+not use Keychain, Secret Service, or the normal nonsecret index.
 
 **Status:** implemented 2026-09-12 as the isolation slice of
 [#35](https://github.com/LockInTime/headless/issues/35).
@@ -683,8 +683,8 @@ host. One session per context keeps ownership and cleanup deterministic.
 
 **Consequences:** session creation gains one optional compatible parameter.
 Capabilities report the isolation contract. Normal sessions continue sharing
-the durable profile. Hover, drag, select, scoped evaluation, response-body
-inspection, and private credential enrollment are not part of this decision.
+the durable profile. Hover, drag, select, scoped evaluation, and response-body
+inspection are not part of this decision.
 
 ---
 

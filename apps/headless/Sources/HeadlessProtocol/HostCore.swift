@@ -145,6 +145,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
     private var trace: [String: [JSONValue]] = ["default": []]
     private var activeFlows: [String: [RecordedFlowStep]] = [:]
     private var recordings: [String: BrowserRecording] = [:]
+    private var privateAuthenticationBrokers: [String: EphemeralAuthenticationBroker]
     private var stopping = false
     private let traceStartedAt = ProcessInfo.processInfo.systemUptime
 
@@ -161,6 +162,8 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         self.authenticationBroker = authenticationBroker
         self.authenticationChallenges = authenticationChallenges
         self.sessions = ["default": defaultSession]
+        self.privateAuthenticationBrokers = defaultSession.hostIsolated
+            ? ["default": EphemeralAuthenticationBroker()] : [:]
         self.shutdownHandler = shutdownHandler
     }
 
@@ -179,6 +182,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
                 trace.removeValue(forKey: name)
                 activeFlows.removeValue(forKey: name)
                 if let recording = recordings.removeValue(forKey: name) { stopped.append(recording) }
+                privateAuthenticationBrokers.removeValue(forKey: name)?.removeAll()
                 authenticationChallenges.invalidate(session: name)
             }
             return stopped
@@ -198,6 +202,8 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             sessions.removeAll()
             trace.removeAll()
             activeFlows.removeAll()
+            privateAuthenticationBrokers.values.forEach { $0.removeAll() }
+            privateAuthenticationBrokers.removeAll()
             authenticationChallenges.removeAll()
             return (activeRecordings, openSessions)
         }
@@ -311,6 +317,8 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             sessions.removeAll()
             trace.removeAll()
             activeFlows.removeAll()
+            privateAuthenticationBrokers.values.forEach { $0.removeAll() }
+            privateAuthenticationBrokers.removeAll()
             authenticationChallenges.removeAll()
             return (activeRecordings, openSessions)
         }
@@ -379,6 +387,9 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             if sessions[name] != nil { return "SESSION_EXISTS" }
             sessions[name] = created
             trace[name] = []
+            if created.hostIsolated {
+                privateAuthenticationBrokers[name] = EphemeralAuthenticationBroker()
+            }
             return nil
         }
         if let rejection {
@@ -403,6 +414,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             let recording = recordings.removeValue(forKey: name)
             trace.removeValue(forKey: name)
             activeFlows.removeValue(forKey: name)
+            privateAuthenticationBrokers.removeValue(forKey: name)?.removeAll()
             authenticationChallenges.invalidate(session: name)
             return (session, recording)
         }
@@ -554,30 +566,27 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         let aliases: [AuthenticationAlias]
         let vaultAvailable: Bool
         let vaultStatus: String
-        if session.hostIsolated {
+        let broker = broker(for: sessionName, session: session)
+        do {
+            aliases = try broker.aliases(for: credentialOrigin)
+            vaultAvailable = true
+            vaultStatus = session.hostIsolated ? "private-ephemeral" : "available"
+        } catch let error as AuthenticationError {
             aliases = []
             vaultAvailable = false
-            vaultStatus = AuthenticationError.privateContextCredentialUnavailable.code
-        } else {
-            do {
-                aliases = try authenticationBroker.aliases(for: credentialOrigin)
-                vaultAvailable = true
-                vaultStatus = "available"
-            } catch let error as AuthenticationError {
-                aliases = []
-                vaultAvailable = false
-                vaultStatus = error.code
-            } catch {
-                aliases = []
-                vaultAvailable = false
-                vaultStatus = "VAULT_OPERATION_FAILED"
-            }
+            vaultStatus = error.code
+        } catch {
+            aliases = []
+            vaultAvailable = false
+            vaultStatus = "VAULT_OPERATION_FAILED"
         }
         let credentialUseAvailable: Bool
         let suggestion: String
         if session.hostIsolated {
-            credentialUseAvailable = false
-            suggestion = "Log in interactively without the normal credential vault; private credential enrollment is not available yet."
+            credentialUseAvailable = true
+            suggestion = aliases.isEmpty
+                ? "Run `headless auth login --interactive --session \(sessionName)` to enroll an ephemeral account."
+                : "Choose a private account alias or log in interactively."
         } else {
             #if os(macOS)
             credentialUseAvailable = true
@@ -593,7 +602,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             "detection": .string("confirmed"),
             "accounts": .array(aliases.map(\.publicValue)),
             "expiresInSeconds": .number(AuthenticationChallengeStore.lifetime),
-            "userPresenceRequired": .bool(true),
+            "userPresenceRequired": .bool(!session.hostIsolated),
             "credentialUseAvailable": .bool(credentialUseAvailable),
             "vaultAvailable": .bool(vaultAvailable),
             "vaultStatus": .string(vaultStatus),
@@ -640,7 +649,9 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             if interactive {
                 credential = try session.hostPromptCredential(origin: credentialOrigin)
             } else if let alias {
-                credential = try authenticationBroker.credential(for: credentialOrigin, alias: alias)
+                credential = try broker(for: sessionName, session: session).credential(
+                    for: credentialOrigin, alias: alias
+                )
             } else {
                 throw AuthenticationError.accountNotFound
             }
@@ -708,11 +719,23 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
            let saveAlias = try session.hostPromptCredentialSave(
                origin: credentialOrigin, account: saveCandidate.account
            ) {
-            try authenticationBroker.store(saveCandidate, for: credentialOrigin, alias: saveAlias)
+            try broker(for: sessionName, session: session).store(
+                saveCandidate, for: credentialOrigin, alias: saveAlias
+            )
             response["account"] = .string(saveAlias.rawValue)
             response["saved"] = .bool(true)
         }
         return .object(response)
+    }
+
+    private func broker(
+        for sessionName: String, session: Engine.Session
+    ) -> any AuthenticationBroker {
+        if session.hostIsolated {
+            return withState({ privateAuthenticationBrokers[sessionName] })
+                ?? UnavailableAuthenticationBroker()
+        }
+        return authenticationBroker
     }
 
     private func captureInfo(_ session: Engine.Session, name: String) throws -> JSONValue {

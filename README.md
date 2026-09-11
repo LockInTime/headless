@@ -185,6 +185,11 @@ No, and requires a user-entered alias. Linux vault management is available,
 but saved alias use fails closed until a trusted per-use confirmation surface
 exists.
 
+With `--session NAME` for an isolated session, interactive saves go only to an
+in-memory vault owned by that session. Private challenges list only those
+ephemeral aliases. Closing the session or terminating the host erases them;
+the durable normal vault is never queried.
+
 ## Agent skill
 
 This repository ships a portable browser-computer-use skill at
