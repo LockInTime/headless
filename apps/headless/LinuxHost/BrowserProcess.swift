@@ -203,19 +203,78 @@ final class ChromiumProcess {
 
     deinit { stop() }
 
-    func createSession() throws -> LinuxBrowserSession {
-        let response = try browserConnection.command("Target.createTarget", parameters: ["url": "about:blank"])
+    func createSession(isolated: Bool = false) throws -> LinuxBrowserSession {
+        let browserContextID: String?
+        if isolated {
+            let context = try browserConnection.command("Target.createBrowserContext")
+            guard let identifier = context["browserContextId"] as? String,
+                  !identifier.isEmpty, identifier.utf8.count <= 256 else {
+                throw CDPError.invalidResponse("Target.createBrowserContext did not return browserContextId")
+            }
+            browserContextID = identifier
+        } else {
+            browserContextID = nil
+        }
+        var targetParameters: [String: Any] = ["url": "about:blank"]
+        if let browserContextID { targetParameters["browserContextId"] = browserContextID }
+        let response: [String: Any]
+        do {
+            response = try browserConnection.command("Target.createTarget", parameters: targetParameters)
+        } catch {
+            if let browserContextID {
+                _ = try? browserConnection.command(
+                    "Target.disposeBrowserContext", parameters: ["browserContextId": browserContextID]
+                )
+            }
+            throw error
+        }
         guard let targetID = response["targetId"] as? String else {
+            if let browserContextID {
+                _ = try? browserConnection.command(
+                    "Target.disposeBrowserContext", parameters: ["browserContextId": browserContextID]
+                )
+            }
             throw CDPError.invalidResponse("Target.createTarget did not return targetId")
         }
-        let attached = try browserConnection.command("Target.attachToTarget", parameters: [
-            "targetId": targetID,
-            "flatten": true,
-        ])
+        let attached: [String: Any]
+        do {
+            attached = try browserConnection.command("Target.attachToTarget", parameters: [
+                "targetId": targetID,
+                "flatten": true,
+            ])
+        } catch {
+            _ = try? browserConnection.command("Target.closeTarget", parameters: ["targetId": targetID])
+            if let browserContextID {
+                _ = try? browserConnection.command(
+                    "Target.disposeBrowserContext", parameters: ["browserContextId": browserContextID]
+                )
+            }
+            throw error
+        }
         guard let sessionID = attached["sessionId"] as? String else {
+            _ = try? browserConnection.command("Target.closeTarget", parameters: ["targetId": targetID])
+            if let browserContextID {
+                _ = try? browserConnection.command(
+                    "Target.disposeBrowserContext", parameters: ["browserContextId": browserContextID]
+                )
+            }
             throw CDPError.invalidResponse("Target.attachToTarget did not return sessionId")
         }
-        let session = try LinuxBrowserSession(targetID: targetID, sessionID: sessionID, connection: browserConnection)
+        let session: LinuxBrowserSession
+        do {
+            session = try LinuxBrowserSession(
+                targetID: targetID, sessionID: sessionID, browserContextID: browserContextID,
+                connection: browserConnection
+            )
+        } catch {
+            _ = try? browserConnection.command("Target.closeTarget", parameters: ["targetId": targetID])
+            if let browserContextID {
+                _ = try? browserConnection.command(
+                    "Target.disposeBrowserContext", parameters: ["browserContextId": browserContextID]
+                )
+            }
+            throw error
+        }
         sessionsLock.lock(); sessionsByProtocolID[sessionID] = session; sessionsLock.unlock()
         return session
     }
@@ -223,6 +282,11 @@ final class ChromiumProcess {
     func closeSession(_ session: LinuxBrowserSession) {
         sessionsLock.lock(); sessionsByProtocolID.removeValue(forKey: session.protocolSessionID); sessionsLock.unlock()
         _ = try? browserConnection.command("Target.closeTarget", parameters: ["targetId": session.targetID])
+        if let browserContextID = session.browserContextID {
+            _ = try? browserConnection.command(
+                "Target.disposeBrowserContext", parameters: ["browserContextId": browserContextID]
+            )
+        }
     }
 
     func stop() {
@@ -347,6 +411,8 @@ final class LinuxBrowserSession: @unchecked Sendable {
         let contentType: String
     }
     let targetID: String
+    let browserContextID: String?
+    var isIsolated: Bool { browserContextID != nil }
     private let sessionID: String
     var protocolSessionID: String { sessionID }
     private let connection: CDPConnection
@@ -363,9 +429,13 @@ final class LinuxBrowserSession: @unchecked Sendable {
     private let mockLock = NSLock()
     private var networkMocks: [NetworkMock] = []
 
-    init(targetID: String, sessionID: String, connection: CDPConnection) throws {
+    init(
+        targetID: String, sessionID: String, browserContextID: String? = nil,
+        connection: CDPConnection
+    ) throws {
         self.targetID = targetID
         self.sessionID = sessionID
+        self.browserContextID = browserContextID
         self.connection = connection
         _ = try command("Page.enable")
         _ = try command("Runtime.enable")

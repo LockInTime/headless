@@ -72,6 +72,7 @@ Puppeteer **499**. Full method and limits:
 ```sh
 headless start
 headless session create qa
+headless session create private-audit --isolated
 headless --session qa visit localhost:3000/designers/dashboard
 headless --session qa inspect --context summary --task "finish onboarding"
 headless --session qa inspect --context outline --limit 20
@@ -183,6 +184,11 @@ arguments. It asks whether to save only after verified success, defaults to
 No, and requires a user-entered alias. Linux vault management is available,
 but saved alias use fails closed until a trusted per-use confirmation surface
 exists.
+
+With `--session NAME` for an isolated session, interactive saves go only to an
+in-memory vault owned by that session. Private challenges list only those
+ephemeral aliases. Closing the session or terminating the host erases them;
+the durable normal vault is never queried.
 
 ## Agent skill
 

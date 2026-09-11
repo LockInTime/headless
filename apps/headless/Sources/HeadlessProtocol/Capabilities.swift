@@ -73,6 +73,14 @@ public struct BrowserEngineCapabilities: Sendable {
                     "storage": .string(normalProfileStorage),
                     "clearCommand": .string(CommandName.profileClear.rawValue),
                 ]),
+                "isolatedSessions": .object([
+                    "supported": .bool(true),
+                    "storage": .string("engine-native-ephemeral-context"),
+                    "sharedAcrossSessions": .bool(false),
+                    "normalVaultAvailable": .bool(false),
+                    "ephemeralCredentials": .bool(true),
+                    "destroyedOnClose": .bool(true),
+                ]),
                 "authentication": .object([
                     "challengeCommand": .string(CommandName.authLogin.rawValue),
                     "exactOriginAliases": .bool(true),
@@ -81,6 +89,7 @@ public struct BrowserEngineCapabilities: Sendable {
                     "savedCredentialUse": .bool(engine == .webkit),
                     "userPresencePerSavedUse": .bool(engine == .webkit),
                     "automaticActionReplay": .bool(false),
+                    "interactiveLogin": .bool(true),
                 ]),
             ]),
         ])
@@ -214,6 +223,7 @@ public let capabilitiesDocument: JSONValue = {
             "silentUse": .bool(false),
             "agentReceivesPasswords": .bool(false),
             "privateContextAccess": .bool(false),
+            "privateEphemeralCredentials": .bool(true),
         ]),
         "security": .object([
             "tcpListener": .bool(false),

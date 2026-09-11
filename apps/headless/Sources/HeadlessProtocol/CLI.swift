@@ -227,10 +227,16 @@ public struct CLIParser {
         let rest = Array(arguments.dropFirst())
         switch subcommand {
         case "create":
-            let name = rest.first ?? "default"
-            guard rest.count <= 1 else { throw CLIParseError.invalidOption(rest[1]) }
+            var args = rest
+            let isolated = removeFlag("--isolated", from: &args)
+            let name = args.first ?? "default"
+            guard args.count <= 1 else { throw CLIParseError.invalidOption(args[1]) }
             try validateIdentifier(name, field: "session")
-            return remote(.sessionCreate, parameters: ["name": .string(name)], jsonOutput: jsonOutput)
+            var parameters: [String: JSONValue] = ["name": .string(name)]
+            if isolated { parameters["isolated"] = .bool(true) }
+            return remote(
+                .sessionCreate, parameters: parameters, jsonOutput: jsonOutput
+            )
         case "list":
             try requireEmpty(rest)
             return remote(.sessionList, jsonOutput: jsonOutput)
@@ -779,7 +785,7 @@ Commands:
   credentials rename --origin URL --alias OLD --to NEW
   credentials remove --origin URL --alias NAME
   auth login --challenge ID --account ALIAS | auth login --interactive
-  session create [NAME] | session list | session close NAME
+  session create [NAME] [--isolated] | session list | session close NAME
   visit URL
   inspect [--context summary|outline|text|actions|full] [--task TEXT]
           [--within @rN] [--limit N] [--budget TOKENS] [--depth N] [--text]

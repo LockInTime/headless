@@ -476,12 +476,12 @@ final class WebKitBrowserEngine: BrowserEngine {
     let name = "webkit"
     let platform = "macos"
     let capabilities = BrowserEngineCapabilities.webkit
-    private let create: () throws -> BrowserWindowController
+    private let create: (Bool) throws -> BrowserWindowController
     private let close: (BrowserWindowController) -> Void
     private let stopEngine: () -> Void
 
     init(
-        create: @escaping () throws -> BrowserWindowController,
+        create: @escaping (Bool) throws -> BrowserWindowController,
         close: @escaping (BrowserWindowController) -> Void,
         stop: @escaping () -> Void = {}
     ) {
@@ -490,7 +490,8 @@ final class WebKitBrowserEngine: BrowserEngine {
         self.stopEngine = stop
     }
 
-    func createSession() throws -> BrowserWindowController { try create() }
+    func createSession() throws -> BrowserWindowController { try create(false) }
+    func createIsolatedSession() throws -> BrowserWindowController { try create(true) }
     func closeSession(_ session: BrowserWindowController) { close(session) }
     func stop() { stopEngine() }
 
@@ -513,6 +514,8 @@ final class WebKitBrowserEngine: BrowserEngine {
 }
 
 extension BrowserWindowController: BrowserEngineSession {
+    var hostIsolated: Bool { isIsolatedSession }
+
     func hostEnableAgentControl() { onMain { self.enableAgentControl() } }
     func hostVisit(_ url: URL) throws -> JSONValue { try agentVisit(url) }
     func hostInspect(parameters: [String: JSONValue]) throws -> JSONValue {

@@ -178,6 +178,71 @@ public struct UnavailableAuthenticationBroker: AuthenticationBroker {
     }
 }
 
+public final class EphemeralAuthenticationBroker: @unchecked Sendable, AuthenticationBroker {
+    public static let maximumRecords = 100
+
+    private struct Record {
+        let origin: CredentialOrigin
+        let alias: CredentialAlias
+        let account: String
+        let password: AuthenticationSecret
+    }
+
+    private let lock = NSLock()
+    private var records: [Record] = []
+
+    public init() {}
+    deinit { removeAll() }
+
+    public func aliases(for origin: CredentialOrigin) throws -> [AuthenticationAlias] {
+        try lock.withLock {
+            try records.filter { $0.origin == origin }
+                .sorted { $0.alias.rawValue < $1.alias.rawValue }
+                .map { try AuthenticationAlias(alias: $0.alias, account: $0.account) }
+        }
+    }
+
+    public func credential(
+        for origin: CredentialOrigin, alias: CredentialAlias
+    ) throws -> AuthenticationCredential {
+        try lock.withLock {
+            guard let record = records.first(where: {
+                $0.origin == origin
+                    && $0.alias.rawValue.caseInsensitiveCompare(alias.rawValue) == .orderedSame
+            }) else { throw AuthenticationError.accountNotFound }
+            return try AuthenticationCredential(
+                account: record.account,
+                password: AuthenticationSecret(record.password.withUnsafeBytes { Array($0) })
+            )
+        }
+    }
+
+    public func store(
+        _ credential: AuthenticationCredential, for origin: CredentialOrigin, alias: CredentialAlias
+    ) throws {
+        try lock.withLock {
+            guard records.count < Self.maximumRecords else {
+                throw AuthenticationError.brokerFailed("private credential limit")
+            }
+            guard !records.contains(where: {
+                $0.origin == origin
+                    && $0.alias.rawValue.caseInsensitiveCompare(alias.rawValue) == .orderedSame
+            }) else { throw AuthenticationError.credentialAliasExists }
+            records.append(Record(
+                origin: origin, alias: alias, account: credential.account,
+                password: AuthenticationSecret(credential.password.withUnsafeBytes { Array($0) })
+            ))
+        }
+    }
+
+    public func removeAll() {
+        lock.withLock {
+            records.forEach { $0.password.clear() }
+            records.removeAll(keepingCapacity: false)
+        }
+    }
+}
+
 public struct SecureTerminalAuthenticationPrompt {
     public init() {}
 
@@ -227,6 +292,7 @@ public enum AuthenticationError: Error, Equatable, CustomStringConvertible {
     case originChanged
     case formChanged
     case accountNotFound
+    case credentialAliasExists
     case vaultUnavailable
     case vaultLocked
     case userPresenceUnavailable
@@ -242,6 +308,7 @@ public enum AuthenticationError: Error, Equatable, CustomStringConvertible {
         case .originChanged: return "AUTH_ORIGIN_CHANGED"
         case .formChanged: return "AUTH_FORM_CHANGED"
         case .accountNotFound: return "AUTH_ACCOUNT_NOT_FOUND"
+        case .credentialAliasExists: return "CREDENTIAL_ALIAS_EXISTS"
         case .vaultUnavailable: return "VAULT_UNAVAILABLE"
         case .vaultLocked: return "VAULT_LOCKED"
         case .userPresenceUnavailable: return "USER_PRESENCE_UNAVAILABLE"
@@ -259,6 +326,7 @@ public enum AuthenticationError: Error, Equatable, CustomStringConvertible {
         case .originChanged: return "The top-level authentication origin changed. Inspect the page again."
         case .formChanged: return "The authentication form changed. Inspect the page again."
         case .accountNotFound: return "No saved account matches that alias for this origin."
+        case .credentialAliasExists: return "That credential alias already exists for this origin."
         case .vaultUnavailable: return "An approved operating-system credential vault is unavailable."
         case .vaultLocked: return "The operating-system credential vault is locked."
         case .userPresenceUnavailable:

@@ -230,6 +230,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
 
     let webView: BrowserWebView
     let qaBridge: WebKitQABridge
+    let isIsolatedSession: Bool
     private let progressBar = NSView()
     private let hud = NSVisualEffectView()
     private let hudField = NSTextField()
@@ -248,12 +249,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     var onClose: (() -> Void)?
 
     init(
-        url: URL?, restoredStartupURL: URL? = nil, size: NSSize?, snap: SnapJob?, isPrimary: Bool
+        url: URL?, restoredStartupURL: URL? = nil, size: NSSize?, snap: SnapJob?, isPrimary: Bool,
+        isIsolated: Bool = false
     ) {
+        isIsolatedSession = isIsolated
         let diagnosticsBridge = WebKitQABridge()
         qaBridge = diagnosticsBridge
         let conf = WKWebViewConfiguration()
-        conf.websiteDataStore = normalWebsiteDataStore
+        conf.websiteDataStore = isIsolated ? .nonPersistent() : normalWebsiteDataStore
         conf.preferences.isElementFullscreenEnabled = true
         conf.mediaTypesRequiringUserActionForPlayback = []
         conf.allowsAirPlayForMediaPlayback = true
@@ -949,12 +952,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             presentation: agentWindowPresentation
         )
         let engine = WebKitBrowserEngine(
-            create: { [weak self] in
+            create: { [weak self] isolated in
                 guard let self else {
                     throw HostError(code: .operationFailed, message: "Headless host is stopping.")
                 }
                 return onAgentMain {
-                    self.openWindow(url: nil, presentation: agentWindowPresentation)
+                    self.openWindow(
+                        url: nil, presentation: agentWindowPresentation, isIsolated: isolated
+                    )
                 }
             },
             close: { controller in onAgentMain { controller.close() } }
@@ -997,14 +1002,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         size: NSSize? = nil,
         snap: SnapJob? = nil,
         isPrimary: Bool = false,
-        presentation: WindowPresentation = .foreground
+        presentation: WindowPresentation = .foreground,
+        isIsolated: Bool = false
     ) -> BrowserWindowController {
         let controller = BrowserWindowController(
             url: url,
             restoredStartupURL: restoredStartupURL,
             size: size,
             snap: snap,
-            isPrimary: isPrimary
+            isPrimary: isPrimary,
+            isIsolated: isIsolated
         )
         controller.onClose = { [weak self, weak controller] in
             guard let self, let controller else { return }

@@ -190,6 +190,49 @@ headless visit 'http://127.0.0.1:41739/auth-state/?action=check' | grep -q 'Auth
 headless inspect --text | grep -q 'Cookie state: missing'
 headless inspect --text | grep -q 'Storage state: missing'
 
+# Isolated sessions neither inherit nor leak browser state, and closing the
+# owning session destroys its context.
+headless visit 'http://127.0.0.1:41739/auth-state/?action=login' >/dev/null
+headless session create private-a --isolated | grep -q '"isolated":true'
+headless --session private-a visit 'http://127.0.0.1:41739/auth-state/?action=check' >/dev/null
+headless --session private-a inspect --text | grep -q 'Cookie state: missing'
+headless --session private-a inspect --text | grep -q 'Storage state: missing'
+headless --session private-a visit 'http://127.0.0.1:41739/auth-state/?action=login' >/dev/null
+headless session create private-b --isolated | grep -q '"isolated":true'
+headless --session private-b visit 'http://127.0.0.1:41739/auth-state/?action=check' >/dev/null
+headless --session private-b inspect --text | grep -q 'Cookie state: missing'
+headless --session private-b inspect --text | grep -q 'Storage state: missing'
+headless session close private-a | grep -q '"closed":"private-a"'
+headless session create private-a --isolated | grep -q '"isolated":true'
+headless --session private-a visit 'http://127.0.0.1:41739/auth-state/?action=check' >/dev/null
+headless --session private-a inspect --text | grep -q 'Cookie state: missing'
+headless --session private-a inspect --text | grep -q 'Storage state: missing'
+headless visit 'http://127.0.0.1:41739/auth-state/?action=check' >/dev/null
+headless inspect --text | grep -q 'Cookie state: signed-in'
+headless inspect --text | grep -q 'Storage state: signed-in'
+headless session close private-a >/dev/null
+headless session close private-b >/dev/null
+headless visit 'http://127.0.0.1:41739/auth-state/?action=logout' >/dev/null
+headless session create private-crash --isolated >/dev/null
+headless --session private-crash visit 'http://127.0.0.1:41739/auth-state/?action=login' >/dev/null
+CRASHED_HOST_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+test -n "$CRASHED_HOST_PID"
+kill -9 "$CRASHED_HOST_PID"
+for _ in $(seq 1 100); do
+  ! kill -0 "$CRASHED_HOST_PID" >/dev/null 2>&1 && break
+  sleep 0.05
+done
+if kill -0 "$CRASHED_HOST_PID" >/dev/null 2>&1; then
+  echo "host did not terminate during isolated crash recovery" >&2
+  exit 1
+fi
+headless start >/dev/null
+headless session create private-crash --isolated >/dev/null
+headless --session private-crash visit 'http://127.0.0.1:41739/auth-state/?action=check' >/dev/null
+headless --session private-crash inspect --text | grep -q 'Cookie state: missing'
+headless --session private-crash inspect --text | grep -q 'Storage state: missing'
+headless session close private-crash >/dev/null
+
 # The fixture server is the only TCP listener. Chromium control must stay on
 # its inherited DevTools pipe rather than exposing a loopback debugging port.
 UNEXPECTED_TCP="$(awk 'NR > 1 && $4 == "0A" && $2 !~ /:A30B$/ { print $2 }' /proc/net/tcp /proc/net/tcp6)"
