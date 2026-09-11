@@ -150,6 +150,13 @@ public let capabilitiesDocument: JSONValue = {
     })
     let screenshotExtensions = ScreenshotFormat.artifactExtensions.sorted()
     let recordingExtensions = RecordingFormat.artifactExtensions.sorted()
+    #if os(macOS)
+    let credentialBackend = "macos-login-keychain"
+    let credentialSecurityTier = "local-unnotarized"
+    #else
+    let credentialBackend = "linux-secret-service"
+    let credentialSecurityTier = "os-secure-store"
+    #endif
     return .object([
         "protocolVersion": .string(headlessProtocolVersion),
         "transport": stringArray(["local-unix-socket"]),
@@ -171,6 +178,20 @@ public let capabilitiesDocument: JSONValue = {
             "maximumOutlineDepth": .number(8),
         ]),
         "screenshotSeries": stringArray(["viewport", "section"]),
+        "localCommands": stringArray([
+            "credentials.add", "credentials.list", "credentials.remove", "credentials.rename",
+        ]),
+        "credentialVault": .object([
+            "supported": .bool(true),
+            "backend": .string(credentialBackend),
+            "securityTier": .string(credentialSecurityTier),
+            "availability": .string("checked-at-command-time"),
+            "passwordTransport": .string("dedicated-local-broker"),
+            "userPresence": .string("required-on-every-use-by-broker"),
+            "silentUse": .bool(false),
+            "agentReceivesPasswords": .bool(false),
+            "privateContextAccess": .bool(false),
+        ]),
         "security": .object([
             "tcpListener": .bool(false),
             "arbitraryJavaScript": .bool(false),

@@ -65,6 +65,7 @@ export function platformRelease(version, platform = process.platform, architectu
       executable: "headless",
       hostExecutable: "headless-host",
       mcpExecutable: "headless-mcp",
+      brokerExecutable: "headless-credential-broker",
       key: "linux-amd64",
     };
   }
@@ -75,6 +76,7 @@ export function platformRelease(version, platform = process.platform, architectu
       executable: "headless",
       hostExecutable: "headless-host",
       mcpExecutable: "headless-mcp",
+      brokerExecutable: "headless-credential-broker",
       key: "linux-arm64",
     };
   }
@@ -86,6 +88,7 @@ export function platformRelease(version, platform = process.platform, architectu
       executable: `${prefix}/headless`,
       hostExecutable: "Headless.app/Contents/MacOS/Headless",
       mcpExecutable: `${prefix}/headless-mcp`,
+      brokerExecutable: `${prefix}/headless-credential-broker`,
       key: `macos-${architecture}`,
     };
   }
@@ -245,6 +248,7 @@ export function validateArchiveEntries(text, kind) {
       "headless",
       "headless-host",
       "headless-mcp",
+      "headless-credential-broker",
       "Headless_HeadlessProtocol.resources/AgentRuntime.js",
     ]) {
       if (!seen.has(required)) throw new InstallError(`release archive is missing ${required}`, 65);
@@ -254,6 +258,7 @@ export function validateArchiveEntries(text, kind) {
       "Headless.app/Contents/MacOS/Headless",
       "Headless.app/Contents/Resources/bin/headless",
       "Headless.app/Contents/Resources/bin/headless-mcp",
+      "Headless.app/Contents/Resources/bin/headless-credential-broker",
     ]) {
       if (!seen.has(required)) throw new InstallError(`release archive is missing ${required}`, 65);
     }
@@ -293,7 +298,9 @@ async function extractArchive(archive, staging, release) {
 
 async function isUsableInstall(directory, release, version) {
   try {
-    for (const relative of [release.executable, release.hostExecutable, release.mcpExecutable]) {
+    for (const relative of [
+      release.executable, release.hostExecutable, release.mcpExecutable, release.brokerExecutable,
+    ]) {
       const metadata = await lstat(join(directory, relative));
       if (!metadata.isFile() || metadata.isSymbolicLink()) return false;
     }
@@ -379,6 +386,7 @@ export async function ensureInstalled(options = {}) {
     await chmod(join(staging, release.executable), 0o755);
     await chmod(join(staging, release.hostExecutable), 0o755);
     await chmod(join(staging, release.mcpExecutable), 0o755);
+    await chmod(join(staging, release.brokerExecutable), 0o755);
     if (!(await isUsableInstall(staging, release, version))) {
       throw new InstallError("downloaded Headless package failed its version check", 65);
     }

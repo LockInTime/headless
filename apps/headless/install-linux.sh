@@ -25,9 +25,9 @@ if [ "$(uname -s)" != "Linux" ]; then
   exit 69
 fi
 
-if [ -x "$SCRIPT_DIR/headless" ] && [ -x "$SCRIPT_DIR/headless-host" ] && [ -x "$SCRIPT_DIR/headless-mcp" ] && [ -f "$SCRIPT_DIR/Headless_HeadlessProtocol.resources/AgentRuntime.js" ]; then
+if [ -x "$SCRIPT_DIR/headless" ] && [ -x "$SCRIPT_DIR/headless-host" ] && [ -x "$SCRIPT_DIR/headless-mcp" ] && [ -x "$SCRIPT_DIR/headless-credential-broker" ] && [ -f "$SCRIPT_DIR/Headless_HeadlessProtocol.resources/AgentRuntime.js" ]; then
   SOURCE_DIR="$SCRIPT_DIR"
-elif [ -x "$SCRIPT_DIR/build/linux/headless" ] && [ -x "$SCRIPT_DIR/build/linux/headless-host" ] && [ -x "$SCRIPT_DIR/build/linux/headless-mcp" ] && [ -f "$SCRIPT_DIR/build/linux/Headless_HeadlessProtocol.resources/AgentRuntime.js" ]; then
+elif [ -x "$SCRIPT_DIR/build/linux/headless" ] && [ -x "$SCRIPT_DIR/build/linux/headless-host" ] && [ -x "$SCRIPT_DIR/build/linux/headless-mcp" ] && [ -x "$SCRIPT_DIR/build/linux/headless-credential-broker" ] && [ -f "$SCRIPT_DIR/build/linux/Headless_HeadlessProtocol.resources/AgentRuntime.js" ]; then
   SOURCE_DIR="$SCRIPT_DIR/build/linux"
 else
   echo "headless install: Linux binaries were not found; run ./build-linux.sh first" >&2
@@ -62,12 +62,14 @@ fi
 
 BIN_DIR="$PREFIX/bin"
 install -d -m 0755 "$BIN_DIR"
-install -m 0755 "$SOURCE_DIR/headless" "$BIN_DIR/headless"
 install -m 0755 "$SOURCE_DIR/headless-host" "$BIN_DIR/headless-host"
 install -m 0755 "$SOURCE_DIR/headless-mcp" "$BIN_DIR/headless-mcp"
+install -m 0755 "$SOURCE_DIR/headless-credential-broker" "$BIN_DIR/headless-credential-broker"
 install -d -m 0755 "$BIN_DIR/Headless_HeadlessProtocol.resources"
 install -m 0644 "$SOURCE_DIR/Headless_HeadlessProtocol.resources/AgentRuntime.js" \
   "$BIN_DIR/Headless_HeadlessProtocol.resources/AgentRuntime.js"
+# Activate the CLI only after its companion binaries and resources are present.
+install -m 0755 "$SOURCE_DIR/headless" "$BIN_DIR/headless"
 
 echo "Headless installed in $BIN_DIR"
 echo "Browser runtime verified: $RUNTIME"

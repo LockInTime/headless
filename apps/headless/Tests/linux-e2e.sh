@@ -30,6 +30,7 @@ trap cleanup EXIT INT TERM
 /opt/headless/package/install-linux.sh --prefix "$INSTALL_ROOT" | grep -q 'Headless installed'
 test -x "$INSTALL_ROOT/bin/headless"
 test -x "$INSTALL_ROOT/bin/headless-host"
+test -x "$INSTALL_ROOT/bin/headless-credential-broker"
 test -r "$INSTALL_ROOT/bin/Headless_HeadlessProtocol.resources/AgentRuntime.js"
 if /opt/headless/package/install-linux.sh --prefix relative/path >/dev/null 2>&1; then
   echo "relative install prefix was not rejected" >&2
@@ -42,6 +43,14 @@ if SNAP_INSTALL="$(HEADLESS_CHROMIUM_EXECUTABLE=/snap/bin/chromium \
 fi
 echo "$SNAP_INSTALL" | grep -q 'UNSUPPORTED_BROWSER_RUNTIME'
 echo "$SNAP_INSTALL" | grep -q 'Snap Chromium is not reliable'
+
+if CREDENTIAL_LIST="$(headless credentials list 2>&1)"; then
+  echo "credential vault did not fail closed without a Secret Service session" >&2
+  exit 1
+fi
+echo "$CREDENTIAL_LIST" | grep -q 'VAULT_UNAVAILABLE'
+test ! -e "$HOME/.local/share/headless/credential-vault/credentials-index.json"
+/opt/headless/linux-credential-vault.sh
 
 headless runtime | grep -q '"executable":"/usr/lib/chromium/chromium"'
 headless runtime | grep -q '"transport":"inherited-devtools-pipe"'

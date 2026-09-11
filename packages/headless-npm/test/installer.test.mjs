@@ -27,7 +27,9 @@ let servedManifest;
 
 before(async () => {
   mkdirSync(join(fixture, "Headless_HeadlessProtocol.resources"), { recursive: true });
-  for (const executable of ["headless", "headless-host", "headless-mcp", "install-linux.sh"]) {
+  for (const executable of [
+    "headless", "headless-host", "headless-mcp", "headless-credential-broker", "install-linux.sh",
+  ]) {
     const body = executable === "headless"
       ? `#!/bin/sh\nif [ "$1" = --version ]; then echo 'headless ${version}'; else echo wrapper-ok; fi\n`
       : "#!/bin/sh\nexit 0\n";
@@ -43,6 +45,7 @@ before(async () => {
     "headless",
     "headless-host",
     "headless-mcp",
+    "headless-credential-broker",
     "install-linux.sh",
     "Headless_HeadlessProtocol.resources",
   ], { encoding: "utf8" });

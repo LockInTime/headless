@@ -22,6 +22,7 @@ let package = Package(
         .executable(name: "headless", targets: ["HeadlessCLI"]),
         .executable(name: "headless-host", targets: ["HeadlessHost"]),
         .executable(name: "headless-linux-host", targets: ["HeadlessLinuxHost"]),
+        .executable(name: "headless-credential-broker", targets: ["HeadlessCredentialBroker"]),
         .executable(name: "headless-mcp", targets: ["HeadlessMCP"]),
         .executable(name: "headless-mcp-tests", targets: ["HeadlessMCPTests"]),
         .executable(name: "headless-protocol-tests", targets: ["HeadlessProtocolTests"]),
@@ -40,9 +41,27 @@ let package = Package(
             dependencies: ["CHeadlessVersion"],
             resources: [.process("Resources")]
         ),
+        .target(
+            name: "CHeadlessSecurePrompt",
+            path: "SecurePrompt",
+            publicHeadersPath: "include"
+        ),
+        .target(
+            name: "CredentialBrokerCore",
+            dependencies: ["HeadlessProtocol", "CHeadlessSecurePrompt"],
+            path: "CredentialBrokerCore",
+            linkerSettings: [
+                .linkedFramework("Security", .when(platforms: [.macOS])),
+            ]
+        ),
         .executableTarget(
             name: "HeadlessCLI",
             dependencies: ["HeadlessProtocol"]
+        ),
+        .executableTarget(
+            name: "HeadlessCredentialBroker",
+            dependencies: ["CredentialBrokerCore", "HeadlessProtocol"],
+            path: "CredentialBroker"
         ),
         .executableTarget(
             name: "HeadlessLinuxHost",
@@ -62,7 +81,7 @@ let package = Package(
                 "Package.swift", "Sources", "Tests", "tools", "VersionSupport", "VERSION", "build.sh",
                 "package.json", "headless.entitlements", "build", "docs", "test.sh",
                 "LinuxHost", "Dockerfile.linux", "Headless.app", "build-linux.sh", "install.sh", "install-linux.sh", "benchmark.sh", ".dockerignore",
-                "MCP", "node_modules",
+                "MCP", "CredentialBroker", "CredentialBrokerCore", "SecurePrompt", "node_modules",
             ],
             sources: ["main.swift", "Host/AgentBridge.swift", "Host/QADiagnosticsBridge.swift"],
             linkerSettings: [
@@ -73,7 +92,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "HeadlessProtocolTests",
-            dependencies: ["HeadlessProtocol"],
+            dependencies: ["HeadlessProtocol", "CredentialBrokerCore"],
             path: "Tests/HeadlessProtocolTests"
         ),
         .executableTarget(

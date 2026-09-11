@@ -71,6 +71,7 @@ P2.md
 headless
 headless-host
 headless-mcp
+headless-credential-broker
 install-linux.sh
 EOF
 LC_ALL=C sort -u "$CONTENTS" > "$CONTENTS.sorted"

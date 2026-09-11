@@ -45,17 +45,19 @@ exit 64
 EOF
 printf '#!/bin/sh\nexit 0\n' > "$BUNDLE/headless-host"
 printf '#!/bin/sh\nexit 0\n' > "$BUNDLE/headless-mcp"
+printf '#!/bin/sh\nexit 0\n' > "$BUNDLE/headless-credential-broker"
 printf '#!/bin/sh\nexit 0\n' > "$ROOT/ffmpeg"
 printf 'fixture runtime\n' > "$BUNDLE/Headless_HeadlessProtocol.resources/AgentRuntime.js"
 printf 'P1\n' > "$BUNDLE/P1.md"
 printf 'P2\n' > "$BUNDLE/P2.md"
 cp install-linux.sh "$BUNDLE/install-linux.sh"
 chmod 0755 "$BUNDLE/headless" "$BUNDLE/headless-host" "$BUNDLE/headless-mcp" \
+  "$BUNDLE/headless-credential-broker" \
   "$BUNDLE/install-linux.sh" "$ROOT/ffmpeg"
 
 ASSET="headless-9.8.7-linux-amd64.tar.gz"
 tar -czf "$RELEASE/$ASSET" -C "$BUNDLE" \
-  headless headless-host headless-mcp Headless_HeadlessProtocol.resources install-linux.sh P1.md P2.md
+  headless headless-host headless-mcp headless-credential-broker Headless_HeadlessProtocol.resources install-linux.sh P1.md P2.md
 if command -v sha256sum >/dev/null 2>&1; then
   (cd "$RELEASE" && sha256sum "$ASSET") > "$RELEASE/SHA256SUMS"
 else
@@ -73,6 +75,7 @@ grep -q "Headless installed" <<< "$EXPLICIT_OUTPUT"
 test -x "$PREFIX_EXPLICIT/bin/headless"
 test -x "$PREFIX_EXPLICIT/bin/headless-host"
 test -x "$PREFIX_EXPLICIT/bin/headless-mcp"
+test -x "$PREFIX_EXPLICIT/bin/headless-credential-broker"
 test -r "$PREFIX_EXPLICIT/bin/Headless_HeadlessProtocol.resources/AgentRuntime.js"
 
 PREFIX_LATEST="$ROOT/latest"
@@ -91,7 +94,7 @@ mv "$RELEASE/original.tar.gz" "$RELEASE/$ASSET"
 cp "$RELEASE/$ASSET" "$RELEASE/safe.tar.gz"
 printf 'unexpected\n' > "$BUNDLE/unexpected"
 tar -czf "$RELEASE/$ASSET" -C "$BUNDLE" \
-  headless headless-host headless-mcp Headless_HeadlessProtocol.resources install-linux.sh P1.md P2.md unexpected
+  headless headless-host headless-mcp headless-credential-broker Headless_HeadlessProtocol.resources install-linux.sh P1.md P2.md unexpected
 if command -v sha256sum >/dev/null 2>&1; then
   (cd "$RELEASE" && sha256sum "$ASSET") > "$RELEASE/SHA256SUMS"
 else

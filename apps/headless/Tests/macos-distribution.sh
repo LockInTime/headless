@@ -30,6 +30,7 @@ EXECUTABLES="
 $APP/Contents/MacOS/Headless
 $APP/Contents/Resources/bin/headless
 $APP/Contents/Resources/bin/headless-mcp
+$APP/Contents/Resources/bin/headless-credential-broker
 "
 printf '%s\n' "$EXECUTABLES" | while IFS= read -r executable; do
   [ -n "$executable" ] || continue

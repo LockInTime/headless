@@ -1,5 +1,10 @@
 import HeadlessProtocol
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 private func printJSON(_ value: JSONValue) {
     do {
@@ -156,6 +161,75 @@ private enum HostLaunchError: Error, CustomStringConvertible {
     }
 }
 
+private struct CredentialBrokerLauncher {
+    func run(_ command: CredentialCLICommand) throws {
+        let executable = try resolveExecutable()
+        let arguments = [executable.path, "credentials"] + command.brokerArguments + ["--json"]
+        let environment = sanitizedEnvironment(ProcessInfo.processInfo.environment)
+            .map { "\($0.key)=\($0.value)" }.sorted()
+        var argumentPointers = arguments.map { value in value.withCString(strdup) } + [nil]
+        var environmentPointers = environment.map { value in value.withCString(strdup) } + [nil]
+        defer {
+            for case let pointer? in argumentPointers { free(UnsafeMutableRawPointer(pointer)) }
+            for case let pointer? in environmentPointers { free(UnsafeMutableRawPointer(pointer)) }
+        }
+        #if canImport(Darwin)
+        Darwin.execve(executable.path, &argumentPointers, &environmentPointers)
+        #else
+        Glibc.execve(executable.path, &argumentPointers, &environmentPointers)
+        #endif
+        throw CredentialBrokerLaunchError.unavailable
+    }
+
+    private func resolveExecutable() throws -> URL {
+        let cli = try runningExecutableURL()
+        let candidate = cli.deletingLastPathComponent().appendingPathComponent("headless-credential-broker")
+        var info = stat()
+        guard lstat(candidate.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              (info.st_uid == getuid() || info.st_uid == 0), (info.st_mode & 0o022) == 0,
+              FileManager.default.isExecutableFile(atPath: candidate.path) else {
+            throw CredentialBrokerLaunchError.unavailable
+        }
+        return candidate
+    }
+
+    private func runningExecutableURL() throws -> URL {
+        #if os(macOS)
+        var size: UInt32 = 0
+        _ = _NSGetExecutablePath(nil, &size)
+        var buffer = [CChar](repeating: 0, count: Int(size))
+        let status = buffer.withUnsafeMutableBufferPointer {
+            _NSGetExecutablePath($0.baseAddress, &size)
+        }
+        guard status == 0 else { throw CredentialBrokerLaunchError.unavailable }
+        return URL(fileURLWithPath: String(cString: buffer)).resolvingSymlinksInPath()
+        #else
+        guard let path = try? FileManager.default.destinationOfSymbolicLink(atPath: "/proc/self/exe") else {
+            throw CredentialBrokerLaunchError.unavailable
+        }
+        return URL(fileURLWithPath: path).standardizedFileURL
+        #endif
+    }
+
+    private func sanitizedEnvironment(_ source: [String: String]) -> [String: String] {
+        let allowed = [
+            "HOME", "USER", "LOGNAME", "DISPLAY", "WAYLAND_DISPLAY", "LANG", "TERM", "COLORTERM",
+            "__CF_USER_TEXT_ENCODING",
+        ]
+        var result = source.filter { allowed.contains($0.key) || $0.key.hasPrefix("LC_") }
+        result["PATH"] = "/usr/bin:/bin"
+        return result
+    }
+}
+
+private enum CredentialBrokerLaunchError: Error, CustomStringConvertible {
+    case unavailable
+
+    var description: String {
+        "The trusted headless-credential-broker executable is missing or insecure. Reinstall Headless."
+    }
+}
+
 do {
     let invocation = try CLIParser().parse(Array(CommandLine.arguments.dropFirst()))
     if let local = invocation.local {
@@ -192,6 +266,8 @@ do {
                 "startupPresentation": .string(presentation.rawValue),
                 "takesEffect": .string("next-host-start"),
             ]))
+        case .credentials(let command):
+            try CredentialBrokerLauncher().run(command)
         }
     } else if let request = invocation.request {
         let launcher = HostLauncher()
@@ -206,6 +282,9 @@ do {
         if !response.ok { exit(1) }
     }
 } catch let error as CLIParseError {
+    fputs("headless: \(error.description)\n", stderr)
+    exit(64)
+} catch let error as CredentialCommandError {
     fputs("headless: \(error.description)\n", stderr)
     exit(64)
 } catch let error as ProtocolValidationError {
@@ -239,6 +318,12 @@ do {
         id: "unknown",
         code: error == .unsupported ? "UNSUPPORTED_CAPABILITY" : "CONFIGURATION_FAILED",
         message: error.description
+    )
+    try? printResponse(response)
+    exit(69)
+} catch let error as CredentialBrokerLaunchError {
+    let response = CommandResponse.failure(
+        id: "unknown", code: "VAULT_UNAVAILABLE", message: error.description
     )
     try? printResponse(response)
     exit(69)

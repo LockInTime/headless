@@ -62,7 +62,10 @@ func run() throws {
         #"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["session","close","disposable"]}}}"#,
         "not-json",
         String(repeating: "x", count: headlessMaximumMessageBytes + 1),
-        #"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["start"]}}}"#,
+        #"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["fill","@e1","credentials"]}}}"#,
+        #"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["credentials","add","synthetic-password"]}}}"#,
+        #"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["credentials","list"]}}}"#,
+        #"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["start"]}}}"#,
     ]
 
     try process.run()
@@ -78,7 +81,7 @@ func run() throws {
         let value = try JSONSerialization.jsonObject(with: Data(line.utf8))
         return try object(value, "MCP response was not a JSON object")
     }
-    try expect(responses.count == 8, "expected eight MCP responses, received \(responses.count)")
+    try expect(responses.count == 11, "expected eleven MCP responses, received \(responses.count)")
 
     let initialize = try object(responses[0]["result"], "initialize result was absent")
     try expect(initialize["protocolVersion"] as? String == "2025-06-18", "initialize protocol version changed")
@@ -140,7 +143,33 @@ func run() throws {
         try expect(code == -32700, "invalid input returned the wrong error code")
     }
 
-    let localCall = try object(responses[7]["result"], "local-command result was absent")
+    let fillCall = try object(responses[7]["result"], "fill result was absent")
+    try expect(fillCall["isError"] as? Bool == false, "credential-like fill value was rejected")
+
+    let malformedCredentialCall = try object(
+        responses[8]["result"], "malformed credential rejection result was absent"
+    )
+    guard let malformedCredentialContent = malformedCredentialCall["content"] as? [[String: Any]],
+          let malformedCredentialText = malformedCredentialContent.first?["text"] as? String else {
+        throw TestFailure(description: "malformed credential rejection text was absent")
+    }
+    try expect(
+        !malformedCredentialText.contains("synthetic-password"),
+        "MCP credential parse errors must redact rejected values"
+    )
+
+    let credentialCall = try object(responses[9]["result"], "credential rejection result was absent")
+    try expect(credentialCall["isError"] as? Bool == true, "credential command was accepted over MCP")
+    guard let credentialContent = credentialCall["content"] as? [[String: Any]],
+          let credentialText = credentialContent.first?["text"] as? String else {
+        throw TestFailure(description: "credential rejection text was absent")
+    }
+    try expect(
+        credentialText.contains("direct local user interaction"),
+        "credential rejection should direct the caller to a local terminal"
+    )
+
+    let localCall = try object(responses[10]["result"], "local-command result was absent")
     try expect(localCall["isError"] as? Bool == true, "local CLI command was accepted over MCP")
     guard let localContent = localCall["content"] as? [[String: Any]],
           let localText = localContent.first?["text"] as? String else {

@@ -36,6 +36,7 @@ package_app() {
   unzip -Z1 "$ARCHIVE" | grep -qx 'Headless.app/Contents/MacOS/Headless'
   unzip -Z1 "$ARCHIVE" | grep -qx 'Headless.app/Contents/Resources/bin/headless'
   unzip -Z1 "$ARCHIVE" | grep -qx 'Headless.app/Contents/Resources/bin/headless-mcp'
+  unzip -Z1 "$ARCHIVE" | grep -qx 'Headless.app/Contents/Resources/bin/headless-credential-broker'
 }
 
 if [ "$MODE" = "--notarize" ]; then

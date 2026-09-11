@@ -142,6 +142,24 @@ normal profile. Linux stores it in a private XDG data directory; macOS uses the
 persistent WebKit data store. Headless does not accept imported cookies or a
 caller-selected profile path.
 
+Saved credentials use a dedicated local broker instead of the browser socket:
+
+```sh
+headless credentials add --origin https://example.com --alias work --interactive
+headless credentials list --origin https://example.com
+headless credentials rename --origin https://example.com --alias work --to client
+headless credentials remove --origin https://example.com --alias client
+```
+
+The interactive broker reads and confirms passwords only through the attached
+terminal with echo disabled. Agents can see approved usernames and aliases,
+but password values never enter arguments, MCP, browser commands, logs, flows,
+or output. macOS uses the encrypted default user Keychain with a decrypt-only
+ACL and reports the unsigned local security tier honestly. Linux requires an
+available system Secret Service and never falls back to plaintext. This
+increment manages vault records. Broker-owned user-presence checks,
+origin-bound login challenges, and browser autofill follow in #157.
+
 ## Agent skill
 
 This repository ships a portable browser-computer-use skill at

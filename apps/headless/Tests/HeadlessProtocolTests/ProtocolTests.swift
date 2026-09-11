@@ -1,4 +1,5 @@
 import HeadlessProtocol
+import CredentialBrokerCore
 import Foundation
 #if canImport(Darwin)
 import Darwin
@@ -185,6 +186,48 @@ private final class TestBrowserSession: BrowserEngineSession {
     func hostStorage(scope: String, includeValues: Bool) throws -> JSONValue { .object(["scope": .string(scope)]) }
     func hostPerformance() throws -> JSONValue { .object(["metrics": .array([])]) }
     func hostAnimations() throws -> JSONValue { .object(["animations": .array([])]) }
+}
+
+private final class TestCredentialPrompt: CredentialPrompting {
+    let account: String
+    private var passwords: [[UInt8]]
+
+    init(account: String, passwords: [String]) {
+        self.account = account
+        self.passwords = passwords.map { Array($0.utf8) }
+    }
+
+    func readAccount() throws -> String { account }
+
+    func readPassword() throws -> SensitiveBytes {
+        guard !passwords.isEmpty else { throw CredentialVaultError.promptFailed }
+        return SensitiveBytes(passwords.removeFirst())
+    }
+
+    func readPasswordConfirmation() throws -> SensitiveBytes {
+        try readPassword()
+    }
+}
+
+private final class TestCredentialSecretStore: CredentialSecretStore {
+    let backendName = "fake-secure-vault"
+    var records: [String: CredentialRecord] = [:]
+    var storedSecretBytes: [UInt8] = []
+    var storeError: CredentialVaultError?
+    var removeError: CredentialVaultError?
+    var afterStore: ((CredentialRecord) -> Void)?
+
+    func store(_ secret: SensitiveBytes, for record: CredentialRecord) throws {
+        if let storeError { throw storeError }
+        storedSecretBytes = secret.withUnsafeBytes { Array($0) }
+        records[record.id] = record
+        afterStore?(record)
+    }
+
+    func remove(recordID: String) throws {
+        if let removeError { throw removeError }
+        records.removeValue(forKey: recordID)
+    }
 }
 
 private final class TestBrowserEngine: BrowserEngine {
@@ -800,6 +843,10 @@ struct ProtocolTests {
             (["config", "get", "startup-presentation"], .getStartupPresentation),
             (["config", "set", "startup-presentation", "background"], .setStartupPresentation(.background)),
             (["config", "set", "startup-presentation", "foreground"], .setStartupPresentation(.foreground)),
+            (["credentials", "list"], .credentials(.list(origin: nil))),
+            (["credentials", "list", "--origin", "https://example.com"], .credentials(.list(
+                origin: try CredentialOrigin(rawValue: "https://example.com")
+            ))),
             (["help"], .help),
             (["--help"], .help),
             (["version"], .version),
@@ -822,6 +869,9 @@ struct ProtocolTests {
         try expectThrows("startup presentation should reject unknown values") {
             _ = try CLIParser().parse(["config", "set", "startup-presentation", "automatic"])
         }
+        try expectThrows("credential commands must reject browser sessions") {
+            _ = try CLIParser().parse(["--session", "qa", "credentials", "list"])
+        }
 
         let sessionCreate = try CLIParser().parse(["session", "create", "qa"])
         try expect(sessionCreate.request?.parameters["name"] == .string("qa"), "session create name should parse")
@@ -837,6 +887,189 @@ struct ProtocolTests {
         try expect(emulation.request?.parameters["latencyMs"] == .number(100), "emulation latency should parse")
         try expectThrows("unknown trailing arguments should not be ignored") {
             _ = try CLIParser().parse(["performance", "get", "extra"])
+        }
+    }
+
+    static func credentialCommandSecurity() throws {
+        try expect(
+            try CredentialOrigin(rawValue: "HTTPS://EXAMPLE.COM:443/").rawValue == "https://example.com",
+            "credential origins should be canonical"
+        )
+        try expect(
+            try CredentialOrigin(rawValue: "localhost:4173").rawValue == "http://localhost:4173",
+            "localhost credentials should use the documented development exception"
+        )
+        for unsafe in [
+            "http://example.com", "http://0.0.0.0:4173", "https://user:pass@example.com",
+            "https://example.com/login", "https://example.com?next=login", "https://example.com/#login",
+            "https://éxample.com",
+        ] {
+            try expectThrows("unsafe credential origin should fail without echoing input") {
+                _ = try CredentialOrigin(rawValue: unsafe)
+            }
+        }
+        for unsafe in [".hidden", "work account", "wørk", "alias/../../secret", String(repeating: "a", count: 65)] {
+            try expectThrows("unsafe credential alias should fail") {
+                _ = try CredentialAlias(rawValue: unsafe)
+            }
+        }
+
+        let invocation = try CLIParser().parse([
+            "credentials", "add", "--origin", "https://example.com", "--alias", "work", "--interactive",
+        ])
+        guard case .credentials(let command)? = invocation.local else {
+            throw TestFailure(description: "credential add should remain a local command")
+        }
+        let brokerArguments = command.brokerArguments.joined(separator: " ")
+        try expect(!brokerArguments.lowercased().contains("password"), "broker argv must not carry passwords")
+        try expectThrows("credential add must require interactive input") {
+            _ = try CLIParser().parse([
+                "credentials", "add", "--origin", "https://example.com", "--alias", "work",
+            ])
+        }
+        do {
+            _ = try CLIParser().parse([
+                "credentials", "add", "--origin", "https://example.com", "--alias", "work",
+                "--interactive", "synthetic-secret-that-must-not-echo",
+            ])
+            throw TestFailure(description: "credential positional secret should be rejected")
+        } catch let error as CredentialCommandError {
+            try expect(
+                !error.description.contains("synthetic-secret-that-must-not-echo"),
+                "credential parse errors must redact rejected values"
+            )
+        }
+    }
+
+    static func credentialVaultLifecycle() throws {
+        let root = URL(fileURLWithPath: "/tmp/headless-credential-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let origin = try CredentialOrigin(rawValue: "https://example.com")
+        let work = try CredentialAlias(rawValue: "work")
+        let store = TestCredentialSecretStore()
+        let metadata = CredentialMetadataStore(rootURL: root)
+        let controller = CredentialVaultController(
+            metadata: metadata, secrets: store,
+            prompt: TestCredentialPrompt(account: "person@example.com", passwords: ["synthetic-secret", "synthetic-secret"])
+        )
+
+        let added = try controller.add(origin: origin, alias: work)
+        let encoded = String(decoding: try ProtocolCodec.encoder.encode(added), as: UTF8.self)
+        try expect(!encoded.contains("synthetic-secret"), "vault output must not contain password bytes")
+        try expect(store.storedSecretBytes == Array("synthetic-secret".utf8), "fake vault should receive exact secret bytes")
+        let listing = String(decoding: try ProtocolCodec.encoder.encode(controller.list(origin: origin)), as: UTF8.self)
+        try expect(listing.contains("person@example.com"), "listing should expose approved username metadata")
+        try expect(!listing.contains("synthetic-secret"), "listing must never contain passwords")
+
+        let duplicate = CredentialVaultController(
+            metadata: metadata, secrets: store,
+            prompt: TestCredentialPrompt(account: "other@example.com", passwords: ["different", "different"])
+        )
+        do {
+            _ = try duplicate.add(origin: origin, alias: try CredentialAlias(rawValue: "WORK"))
+            throw TestFailure(description: "case-insensitive duplicate alias should fail")
+        } catch CredentialVaultError.duplicateAlias {}
+
+        let personal = try CredentialAlias(rawValue: "personal")
+        _ = try controller.rename(origin: origin, alias: work, to: personal)
+        let renamedListing = String(
+            decoding: try ProtocolCodec.encoder.encode(controller.list(origin: origin)), as: UTF8.self
+        )
+        try expect(renamedListing.contains("personal"), "rename should update private index metadata")
+        store.removeError = .vaultLocked
+        do {
+            _ = try controller.remove(origin: origin, alias: personal)
+            throw TestFailure(description: "locked secure-store removal should fail")
+        } catch CredentialVaultError.vaultLocked {}
+        let afterRollback = String(decoding: try ProtocolCodec.encoder.encode(controller.list(origin: origin)), as: UTF8.self)
+        try expect(afterRollback.contains("personal"), "failed removal should restore index metadata")
+        store.removeError = nil
+        _ = try controller.remove(origin: origin, alias: personal)
+        let empty = String(decoding: try ProtocolCodec.encoder.encode(controller.list(origin: origin)), as: UTF8.self)
+        try expect(empty.contains("\"total\":0"), "removed credential should leave no active metadata")
+
+        let index = root.appendingPathComponent("credentials-index.json")
+        try Data("not-json".utf8).write(to: index)
+        _ = chmod(index.path, 0o600)
+        try expectThrows("corrupt credential metadata should fail closed") {
+            _ = try controller.list(origin: nil)
+        }
+    }
+
+    static func credentialVaultRejectsMismatchedConfirmation() throws {
+        let root = URL(fileURLWithPath: "/tmp/headless-credential-mismatch-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = TestCredentialSecretStore()
+        let controller = CredentialVaultController(
+            metadata: CredentialMetadataStore(rootURL: root), secrets: store,
+            prompt: TestCredentialPrompt(account: "person@example.com", passwords: ["first", "second"])
+        )
+        try expectThrows("mismatched password confirmation should fail") {
+            _ = try controller.add(
+                origin: try CredentialOrigin(rawValue: "https://example.com"),
+                alias: try CredentialAlias(rawValue: "work")
+            )
+        }
+        try expect(store.records.isEmpty, "mismatched confirmation must not reach the secure store")
+    }
+
+    static func credentialVaultRollsBackFailedMetadataCommit() throws {
+        let root = URL(fileURLWithPath: "/tmp/headless-credential-rollback-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = TestCredentialSecretStore()
+        store.afterStore = { _ in
+            try? FileManager.default.removeItem(
+                at: root.appendingPathComponent("credentials-index.json")
+            )
+            try? FileManager.default.createDirectory(
+                at: root.appendingPathComponent("credentials-index.json"),
+                withIntermediateDirectories: false
+            )
+        }
+        let controller = CredentialVaultController(
+            metadata: CredentialMetadataStore(rootURL: root), secrets: store,
+            prompt: TestCredentialPrompt(account: "person@example.com", passwords: ["first", "first"])
+        )
+        try expectThrows("failed metadata commit should reject credential enrollment") {
+            _ = try controller.add(
+                origin: try CredentialOrigin(rawValue: "https://example.com"),
+                alias: try CredentialAlias(rawValue: "work")
+            )
+        }
+        try expect(store.records.isEmpty, "failed metadata commit must remove the new secure-store item")
+    }
+
+    static func credentialVaultRecoversInterruptedTransactions() throws {
+        for kind in [CredentialTransactionKind.add, .remove] {
+            let root = URL(
+                fileURLWithPath: "/tmp/headless-credential-recovery-\(kind.rawValue)-\(UUID().uuidString)"
+            )
+            defer { try? FileManager.default.removeItem(at: root) }
+            let record = try CredentialRecord(
+                origin: CredentialOrigin(rawValue: "https://example.com"),
+                alias: CredentialAlias(rawValue: "work"),
+                account: "person@example.com"
+            )
+            let metadata = CredentialMetadataStore(rootURL: root)
+            try metadata.withLockedState { transaction in
+                transaction.state.pending = [CredentialPendingTransaction(kind: kind, record: record)]
+                try transaction.save()
+            }
+            let store = TestCredentialSecretStore()
+            store.records[record.id] = record
+            let controller = CredentialVaultController(
+                metadata: metadata, secrets: store,
+                prompt: TestCredentialPrompt(account: "unused", passwords: [])
+            )
+
+            _ = try controller.list(origin: nil)
+            try expect(store.records.isEmpty, "interrupted \(kind.rawValue) should remove the vault item")
+            try metadata.withLockedState { transaction in
+                try expect(
+                    transaction.state.pending.isEmpty,
+                    "interrupted \(kind.rawValue) journal should be cleared"
+                )
+            }
         }
     }
 
@@ -2047,6 +2280,11 @@ struct ProtocolTests {
             ("CLI P1 artifacts", cliP1Artifacts),
             ("CLI P2 commands and boundaries", cliP2CommandsAndBoundaries),
             ("CLI command matrix", cliCommandMatrix),
+            ("credential command security", credentialCommandSecurity),
+            ("credential vault lifecycle", credentialVaultLifecycle),
+            ("credential confirmation", credentialVaultRejectsMismatchedConfirmation),
+            ("credential metadata rollback", credentialVaultRollsBackFailedMetadataCommit),
+            ("credential transaction recovery", credentialVaultRecoversInterruptedTransactions),
             ("Chromium runtime selection", chromiumRuntimeSelection),
             ("artifact store round-trip", artifactStoreRoundTrip),
             ("artifact read boundaries", artifactReadsStayInsideBounds),
