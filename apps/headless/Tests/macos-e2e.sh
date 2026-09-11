@@ -507,6 +507,48 @@ fi
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" | grep -q 'Authentication State'
 "$CLI" inspect --text | grep -q 'Cookie state: missing'
 "$CLI" inspect --text | grep -q 'Storage state: missing'
+
+STEP="isolated-session-lifecycle"
+"$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=login" >/dev/null
+"$CLI" session create private-a --isolated | grep -q '"isolated":true'
+"$CLI" --session private-a visit "http://127.0.0.1:$PORT/auth-state?action=check" >/dev/null
+"$CLI" --session private-a inspect --text | grep -q 'Cookie state: missing'
+"$CLI" --session private-a inspect --text | grep -q 'Storage state: missing'
+"$CLI" --session private-a visit "http://127.0.0.1:$PORT/auth-state?action=login" >/dev/null
+"$CLI" session create private-b --isolated | grep -q '"isolated":true'
+"$CLI" --session private-b visit "http://127.0.0.1:$PORT/auth-state?action=check" >/dev/null
+"$CLI" --session private-b inspect --text | grep -q 'Cookie state: missing'
+"$CLI" --session private-b inspect --text | grep -q 'Storage state: missing'
+"$CLI" session close private-a | grep -q '"closed":"private-a"'
+"$CLI" session create private-a --isolated | grep -q '"isolated":true'
+"$CLI" --session private-a visit "http://127.0.0.1:$PORT/auth-state?action=check" >/dev/null
+"$CLI" --session private-a inspect --text | grep -q 'Cookie state: missing'
+"$CLI" --session private-a inspect --text | grep -q 'Storage state: missing'
+"$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" >/dev/null
+"$CLI" inspect --text | grep -q 'Cookie state: signed-in'
+"$CLI" inspect --text | grep -q 'Storage state: signed-in'
+"$CLI" session close private-a >/dev/null
+"$CLI" session close private-b >/dev/null
+"$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=logout" >/dev/null
+"$CLI" session create private-crash --isolated >/dev/null
+"$CLI" --session private-crash visit "http://127.0.0.1:$PORT/auth-state?action=login" >/dev/null
+CRASHED_HOST_PID="$("$CLI" status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+test -n "$CRASHED_HOST_PID"
+kill -9 "$CRASHED_HOST_PID"
+for _ in {1..100}; do
+  ! kill -0 "$CRASHED_HOST_PID" >/dev/null 2>&1 && break
+  sleep 0.05
+done
+if kill -0 "$CRASHED_HOST_PID" >/dev/null 2>&1; then
+  echo "host did not terminate during isolated crash recovery" >&2
+  fail
+fi
+"$CLI" start --background >/dev/null
+"$CLI" session create private-crash --isolated >/dev/null
+"$CLI" --session private-crash visit "http://127.0.0.1:$PORT/auth-state?action=check" >/dev/null
+"$CLI" --session private-crash inspect --text | grep -q 'Cookie state: missing'
+"$CLI" --session private-crash inspect --text | grep -q 'Storage state: missing'
+"$CLI" session close private-crash >/dev/null
 "$CLI" stop >/dev/null
 
 echo "macOS P2 end-to-end flow passed"

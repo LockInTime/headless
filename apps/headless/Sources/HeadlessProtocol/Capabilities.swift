@@ -73,6 +73,13 @@ public struct BrowserEngineCapabilities: Sendable {
                     "storage": .string(normalProfileStorage),
                     "clearCommand": .string(CommandName.profileClear.rawValue),
                 ]),
+                "isolatedSessions": .object([
+                    "supported": .bool(true),
+                    "storage": .string("engine-native-ephemeral-context"),
+                    "sharedAcrossSessions": .bool(false),
+                    "normalVaultAvailable": .bool(false),
+                    "destroyedOnClose": .bool(true),
+                ]),
                 "authentication": .object([
                     "challengeCommand": .string(CommandName.authLogin.rawValue),
                     "exactOriginAliases": .bool(true),

@@ -72,6 +72,7 @@ Puppeteer **499**. Full method and limits:
 ```sh
 headless start
 headless session create qa
+headless session create private-audit --isolated
 headless --session qa visit localhost:3000/designers/dashboard
 headless --session qa inspect --context summary --task "finish onboarding"
 headless --session qa inspect --context outline --limit 20

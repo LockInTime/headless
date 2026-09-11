@@ -228,10 +228,11 @@ public struct CommandRequest: Codable, Equatable, Sendable {
                 catch { throw ProtocolValidationError.invalidParameter("Invalid account alias") }
             }
         case .sessionCreate:
-            try allow(["name"])
+            try allow(["name", "isolated"])
             if let name = try string("name", required: true, maximumBytes: 64) {
                 try validateIdentifier(name, field: "session")
             }
+            try boolean("isolated")
         case .visit:
             try allow(["url"])
             if let value = try string("url", required: true) { _ = try normalizedWebURL(value) }

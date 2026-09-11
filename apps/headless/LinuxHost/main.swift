@@ -22,6 +22,10 @@ final class ChromiumBrowserEngine: BrowserEngine {
         ChromiumBrowserEngineSession(engine: self, browserSession: try browser.createSession())
     }
 
+    func createIsolatedSession() throws -> ChromiumBrowserEngineSession {
+        ChromiumBrowserEngineSession(engine: self, browserSession: try browser.createSession(isolated: true))
+    }
+
     func closeSession(_ session: ChromiumBrowserEngineSession) {
         browser.closeSession(session.browserSession)
     }
@@ -70,6 +74,8 @@ final class ChromiumBrowserEngineSession: BrowserEngineSession {
         self.engine = engine
         self.browserSession = browserSession
     }
+
+    var hostIsolated: Bool { browserSession.isIsolated }
 
     func hostVisit(_ url: URL) throws -> JSONValue { try browserSession.visit(url) }
     func hostInspect(parameters: [String: JSONValue]) throws -> JSONValue {

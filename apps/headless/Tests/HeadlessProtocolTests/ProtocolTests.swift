@@ -229,12 +229,17 @@ private func readRawSocketLine(descriptor: Int32) throws -> Data {
 }
 
 private final class TestBrowserSession: BrowserEngineSession {
+    let hostIsolated: Bool
     private(set) var agentControlEnableCount = 0
     var authenticationState: JSONValue = .object([
         "origin": .string("http://localhost"), "detection": .string("none"),
     ])
     private(set) var filledCredentialAccount: String?
     var authenticationStateAfterCredentialFill: JSONValue?
+
+    init(isolated: Bool = false) {
+        hostIsolated = isolated
+    }
 
     func hostEnableAgentControl() { agentControlEnableCount += 1 }
     func hostVisit(_ url: URL) throws -> JSONValue { .object(["url": .string(url.absoluteString)]) }
@@ -294,6 +299,8 @@ private final class TestAuthenticationBroker: @unchecked Sendable, Authenticatio
     let account: String
     let password: [UInt8]
     var credentialError: AuthenticationError?
+    private(set) var aliasLookupCount = 0
+    private(set) var credentialLookupCount = 0
 
     init(origin: CredentialOrigin, alias: CredentialAlias, account: String, password: String) {
         self.origin = origin
@@ -303,6 +310,7 @@ private final class TestAuthenticationBroker: @unchecked Sendable, Authenticatio
     }
 
     func aliases(for origin: CredentialOrigin) throws -> [AuthenticationAlias] {
+        aliasLookupCount += 1
         guard origin == self.origin else { return [] }
         return [try AuthenticationAlias(alias: alias, account: account)]
     }
@@ -310,6 +318,7 @@ private final class TestAuthenticationBroker: @unchecked Sendable, Authenticatio
     func credential(
         for origin: CredentialOrigin, alias: CredentialAlias
     ) throws -> AuthenticationCredential {
+        credentialLookupCount += 1
         if let credentialError { throw credentialError }
         guard origin == self.origin, alias == self.alias else {
             throw AuthenticationError.accountNotFound
@@ -382,6 +391,12 @@ private final class TestBrowserEngine: BrowserEngine {
 
     func createSession() throws -> TestBrowserSession {
         let session = TestBrowserSession()
+        createdSessions.append(session)
+        return session
+    }
+
+    func createIsolatedSession() throws -> TestBrowserSession {
+        let session = TestBrowserSession(isolated: true)
         createdSessions.append(session)
         return session
     }
@@ -563,6 +578,16 @@ struct ProtocolTests {
         try CommandRequest(id: "clear-profile", command: .profileClear).validate()
         try expectThrows("profile clear should reject parameters") {
             try CommandRequest(command: .profileClear, parameters: ["path": .string("/tmp/profile")]).validate()
+        }
+        try CommandRequest(
+            id: "isolated-session", command: .sessionCreate,
+            parameters: ["name": .string("private"), "isolated": .bool(true)]
+        ).validate()
+        try expectThrows("isolated session flag must be boolean") {
+            try CommandRequest(
+                id: "invalid-isolated-session", command: .sessionCreate,
+                parameters: ["name": .string("private"), "isolated": .string("true")]
+            ).validate()
         }
         try CommandRequest(
             id: "valid-scroll", command: .scroll,
@@ -1015,6 +1040,18 @@ struct ProtocolTests {
 
         let sessionCreate = try CLIParser().parse(["session", "create", "qa"])
         try expect(sessionCreate.request?.parameters["name"] == .string("qa"), "session create name should parse")
+        try expect(
+            sessionCreate.request?.parameters["isolated"] == nil,
+            "normal session creation should remain compatible with older hosts"
+        )
+        let isolatedSession = try CLIParser().parse(["session", "create", "private", "--isolated"])
+        try expect(
+            isolatedSession.request?.parameters["isolated"] == .bool(true),
+            "isolated session flag should parse"
+        )
+        try expectThrows("duplicate isolated flags should be rejected") {
+            _ = try CLIParser().parse(["session", "create", "private", "--isolated", "--isolated"])
+        }
         let sessionClose = try CLIParser().parse(["session", "close", "qa"])
         try expect(sessionClose.request?.session == "qa", "session close target should parse")
         let tour = try CLIParser().parse(["tour", "--pace", "750"])
@@ -2925,6 +2962,56 @@ struct ProtocolTests {
             parameters: ["challenge": .string(challenge), "account": .string(alias.rawValue)]
         ))
         try expect(replay.error?.code == "AUTH_CHALLENGE_CONSUMED", "challenge replay must fail")
+
+        let privateSession = TestBrowserSession(isolated: true)
+        privateSession.authenticationState = .object([
+            "origin": .string(origin.rawValue), "detection": .string("confirmed"),
+            "document": .string("fedcba9876543210fedcba9876543210"),
+            "accountTarget": .string("@e1"), "passwordTarget": .string("@e2"),
+            "submitTarget": .string("@e3"),
+        ])
+        let privateBroker = TestAuthenticationBroker(
+            origin: origin, alias: alias, account: "private@example.test", password: "never-read"
+        )
+        let privateCore = HostCore(
+            engine: TestBrowserEngine(),
+            artifacts: try ArtifactStore(environment: [
+                "HEADLESS_ARTIFACT_DIR": root + "-private",
+            ]),
+            defaultSession: privateSession,
+            authenticationBroker: privateBroker,
+            shutdownHandler: {}
+        )
+        defer {
+            privateCore.stop()
+            try? FileManager.default.removeItem(atPath: root + "-private")
+        }
+        let privateBlocked = privateCore.handle(CommandRequest(
+            command: .inspect, parameters: ["interactive": .bool(true)]
+        ))
+        guard case .object(let privateDetails)? = privateBlocked.error?.details,
+              let privateChallenge = privateDetails["challenge"]?.stringValue,
+              case .array(let privateAccounts)? = privateDetails["accounts"] else {
+            throw TestFailure(description: "isolated AUTH_REQUIRED should include structured details")
+        }
+        try expect(privateAccounts.isEmpty, "isolated challenges must not list normal-vault aliases")
+        try expect(
+            privateDetails["vaultStatus"] == .string("PRIVATE_CREDENTIAL_UNAVAILABLE"),
+            "isolated challenges should disclose the private-vault boundary"
+        )
+        try expect(privateBroker.aliasLookupCount == 0, "isolated challenges must not query the normal broker")
+        let privateLogin = privateCore.handle(CommandRequest(
+            command: .authLogin,
+            parameters: [
+                "challenge": .string(privateChallenge), "account": .string(alias.rawValue),
+            ]
+        ))
+        try expect(
+            privateLogin.error?.code == "PRIVATE_CREDENTIAL_UNAVAILABLE",
+            "isolated saved login should fail closed"
+        )
+        try expect(privateBroker.credentialLookupCount == 0, "isolated login must not retrieve a normal secret")
+        try expect(privateSession.filledCredentialAccount == nil, "isolated login must not fill a credential")
     }
 
     static func sharedHostCoreDispatch() throws {
@@ -2962,6 +3049,26 @@ struct ProtocolTests {
         try expect(created.ok, "shared session creation should succeed")
         try expect(engine.createdSessions.count == 2, "session creation should delegate to the engine")
 
+        let isolated = core.handle(CommandRequest(
+            command: .sessionCreate,
+            parameters: ["name": .string("private"), "isolated": .bool(true)]
+        ))
+        guard isolated.ok, case .object(let isolatedResult) = isolated.result else {
+            throw TestFailure(description: "isolated session creation should succeed")
+        }
+        try expect(isolatedResult["isolated"] == .bool(true), "session result should report isolation")
+        try expect(engine.createdSessions.count == 3, "isolated creation should delegate to the engine")
+        try expect(engine.createdSessions[2].hostIsolated, "engine should create an isolated session")
+        let listed = core.handle(CommandRequest(command: .sessionList))
+        guard listed.ok, case .object(let listedResult) = listed.result,
+              case .array(let details)? = listedResult["details"] else {
+            throw TestFailure(description: "session list should include typed details")
+        }
+        try expect(
+            details.contains(.object(["name": .string("private"), "isolated": .bool(true)])),
+            "session list should identify isolated sessions"
+        )
+
         let inspected = core.handle(CommandRequest(
             command: .inspect, session: "secondary", parameters: ["interactive": .bool(true)]
         ))
@@ -2991,6 +3098,9 @@ struct ProtocolTests {
         let closed = core.handle(CommandRequest(command: .sessionClose, session: "secondary"))
         try expect(closed.ok, "shared session close should succeed")
         try expect(engine.closedSessions.count == 2, "session close should delegate to the engine")
+        let privateClosed = core.handle(CommandRequest(command: .sessionClose, session: "private"))
+        try expect(privateClosed.ok, "isolated session close should succeed")
+        try expect(engine.closedSessions.count == 3, "isolated close should delegate to the engine")
         let missing = core.handle(CommandRequest(command: .inspect, session: "secondary"))
         try expect(missing.error?.code == "SESSION_NOT_FOUND", "closed sessions should be removed from shared state")
     }

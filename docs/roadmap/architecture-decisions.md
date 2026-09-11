@@ -652,6 +652,42 @@ wire-protocol version bump is unnecessary because config remains local-only.
 
 ---
 
+## 26. Isolated sessions own one ephemeral browser context
+
+**Decision:** `session create NAME --isolated` creates a session whose cookies,
+storage, cache, permissions, and authentication state are separate from the
+durable normal profile and every other isolated session. Each isolated session
+owns exactly one engine context. Closing that session destroys the context;
+there is no caller-selected profile path, context reuse, import, or persistence.
+
+macOS uses a fresh non-persistent `WKWebsiteDataStore`. Linux creates a
+Chromium browser context through the existing private DevTools pipe and
+disposes it after closing its only target. `profile clear` closes all sessions,
+including isolated sessions, then clears only the durable normal profile and
+recreates the normal `default` session.
+
+Private sessions cannot enumerate or retrieve normal-vault aliases,
+credentials, or approvals. Until interactive private enrollment lands, saved
+credential use in a private session fails explicitly rather than consulting
+the normal broker. A future in-memory private credential store must be owned by
+the isolated context and erased when its final session closes; it must not use
+Keychain, Secret Service, or the normal nonsecret index.
+
+**Status:** implemented 2026-09-12 as the isolation slice of
+[#35](https://github.com/LockInTime/headless/issues/35).
+
+**Rationale:** a named session currently means another view into one durable
+profile, not a privacy boundary. Engine-native ephemeral contexts provide a
+clear, testable boundary without adding profile-path escape hatches or a second
+host. One session per context keeps ownership and cleanup deterministic.
+
+**Consequences:** session creation gains one optional compatible parameter.
+Capabilities report the isolation contract. Normal sessions continue sharing
+the durable profile. Hover, drag, select, scoped evaluation, response-body
+inspection, and private credential enrollment are not part of this decision.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -672,5 +708,6 @@ wire-protocol version bump is unnecessary because config remains local-only.
 | 21  | Rust port of shared core, protocol layer first              | In progress                                               | 2026-08-22 |
 | 24  | Credential broker on the unsigned local tier                | Decided                                                   | 2026-09-10 |
 | 25  | Typed local settings registry; security policy stays fixed  | Implemented                                               | 2026-09-12 |
+| 26  | Isolated sessions own one ephemeral browser context         | Implemented                                               | 2026-09-12 |
 
 New decisions append here with the same format. 22 and 23 are claimed by open PRs #170 and #169.

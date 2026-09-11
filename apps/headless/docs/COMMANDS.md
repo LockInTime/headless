@@ -25,7 +25,7 @@ start [--background|--foreground] | status | stop | runtime
 profile clear
 config list | config describe KEY | config get KEY
 config set KEY VALUE | config reset KEY
-session create [NAME] | session list | session close NAME
+session create [NAME] [--isolated] | session list | session close NAME
 capabilities
 ```
 
@@ -40,9 +40,14 @@ capabilities
   and `foreground` values. It takes effect on the next host start. Linux lists
   and describes it as unsupported, then rejects `get`, `set`, and `reset` with
   `UNSUPPORTED_CAPABILITY`.
-- Sessions are windows (macOS) or tabs (Linux) sharing **one browser profile**.
-  Cookies and local storage are shared across sessions and survive host and
-  machine restarts. `profile clear` closes every session and permanently
+- Normal sessions are windows (macOS) or tabs (Linux) sharing **one browser
+  profile**. Cookies and local storage are shared across normal sessions and
+  survive host and machine restarts. `session create NAME --isolated` instead
+  creates a fresh engine-native ephemeral context that shares no cookies,
+  storage, cache, permissions, or authentication state with the normal profile
+  or another isolated session. Closing it destroys that context. Isolated
+  sessions cannot list or use normal-vault credentials. `profile clear` closes
+  every session, including isolated sessions, and permanently
   removes normal-profile cookies, storage, caches, and permissions.
 
 ## Settings

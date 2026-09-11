@@ -292,10 +292,12 @@ uses trusted CDP mouse, key, and text input. Linux E2E proves page handlers see
 `isTrusted`; WebKit keeps its synthetic path and the capability matrix declares
 the difference.
 
-**C7. Considered-and-worth-designing (not committed):** ([#35](https://github.com/LockInTime/headless/issues/35)) hover/drag verbs;
+**C7. Considered-and-worth-designing (partially committed):** ([#35](https://github.com/LockInTime/headless/issues/35)) hover/drag verbs;
 `select` for dropdowns; scoped `evaluate` never (see what-is-excellent §3);
-per-session isolated profiles (`session create --isolated`, architecture §11);
-response-body inspection stays denied (P1.md:134) unless a gated design lands.
+~~per-session isolated profiles (`session create --isolated`, architecture
+§26)~~ **Done:** each session owns one ephemeral native browser context and
+normal-profile credentials fail closed; response-body inspection stays denied
+(P1.md:134) unless a gated design lands.
 
 ## §D — CI & testing (Phase 1)
 

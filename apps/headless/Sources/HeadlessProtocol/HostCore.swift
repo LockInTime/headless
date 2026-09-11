@@ -13,6 +13,7 @@ public struct BrowserScreenshot: Sendable {
 /// The portable browser surface used by `HostCore`. Platform adapters keep
 /// WKWebView and CDP details out of the command dispatcher.
 public protocol BrowserEngineSession: AnyObject {
+    var hostIsolated: Bool { get }
     func hostEnableAgentControl()
     func hostVisit(_ url: URL) throws -> JSONValue
     func hostInspect(parameters: [String: JSONValue]) throws -> JSONValue
@@ -50,6 +51,8 @@ public protocol BrowserEngineSession: AnyObject {
 }
 
 public extension BrowserEngineSession {
+    var hostIsolated: Bool { false }
+
     func hostEnableAgentControl() {}
 
     func hostAuthenticationState() throws -> JSONValue {
@@ -96,6 +99,7 @@ public protocol BrowserEngine: AnyObject {
     var platform: String { get }
     var capabilities: BrowserEngineCapabilities { get }
     func createSession() throws -> Session
+    func createIsolatedSession() throws -> Session
     func closeSession(_ session: Session)
     func clearProfile() throws
     func stop()
@@ -104,6 +108,13 @@ public protocol BrowserEngine: AnyObject {
 }
 
 public extension BrowserEngine {
+    func createIsolatedSession() throws -> Session {
+        throw HostError(
+            code: .unsupportedCapability,
+            message: "Isolated sessions are not supported by this engine."
+        )
+    }
+
     func clearProfile() throws {
         throw HostError(code: .unsupportedCapability, message: "Profile clearing is not supported by this engine.")
     }
@@ -203,10 +214,22 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             case .sessionCreate:
                 return try createSession(request)
             case .sessionList:
-                let names = withState { sessions.keys.sorted() }
+                let listing = withState { () -> ([JSONValue], [JSONValue]) in
+                    let ordered = sessions.sorted(by: { $0.key < $1.key })
+                    return (
+                        ordered.map { .string($0.key) },
+                        ordered.map { name, session in
+                            .object([
+                                "name": .string(name), "isolated": .bool(session.hostIsolated),
+                            ])
+                        }
+                    )
+                }
                 return .success(
                     id: request.id,
-                    result: .object(["sessions": .array(names.map(JSONValue.string))])
+                    result: .object([
+                        "sessions": .array(listing.0), "details": .array(listing.1),
+                    ])
                 )
             case .sessionClose:
                 return closeSession(request)
@@ -325,6 +348,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         guard let name = request.parameters["name"]?.stringValue else {
             return failure(request, "MISSING_PARAMETER", "Session name is required.")
         }
+        let isolated = request.parameters["isolated"]?.boolValue ?? false
         do { try validateIdentifier(name, field: "session") }
         catch { return failure(request, "INVALID_SESSION", String(describing: error)) }
         let preflightRejection = withState { () -> String? in
@@ -339,7 +363,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
                     ? "Host is shutting down." : "Session already exists: \(name)"
             )
         }
-        let created = try engine.createSession()
+        let created = try isolated ? engine.createIsolatedSession() : engine.createSession()
         let rejection = withState { () -> String? in
             if stopping { return "HOST_UNAVAILABLE" }
             if sessions[name] != nil { return "SESSION_EXISTS" }
@@ -356,7 +380,9 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         }
         created.hostEnableAgentControl()
         record(.sessionCreate, session: name)
-        return .success(id: request.id, result: .object(["session": .string(name)]))
+        return .success(id: request.id, result: .object([
+            "session": .string(name), "isolated": .bool(created.hostIsolated),
+        ]))
     }
 
     private func closeSession(_ request: CommandRequest) -> CommandResponse {
@@ -518,26 +544,39 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         let aliases: [AuthenticationAlias]
         let vaultAvailable: Bool
         let vaultStatus: String
-        do {
-            aliases = try authenticationBroker.aliases(for: credentialOrigin)
-            vaultAvailable = true
-            vaultStatus = "available"
-        } catch let error as AuthenticationError {
+        if session.hostIsolated {
             aliases = []
             vaultAvailable = false
-            vaultStatus = error.code
-        } catch {
-            aliases = []
-            vaultAvailable = false
-            vaultStatus = "VAULT_OPERATION_FAILED"
+            vaultStatus = AuthenticationError.privateContextCredentialUnavailable.code
+        } else {
+            do {
+                aliases = try authenticationBroker.aliases(for: credentialOrigin)
+                vaultAvailable = true
+                vaultStatus = "available"
+            } catch let error as AuthenticationError {
+                aliases = []
+                vaultAvailable = false
+                vaultStatus = error.code
+            } catch {
+                aliases = []
+                vaultAvailable = false
+                vaultStatus = "VAULT_OPERATION_FAILED"
+            }
         }
-        #if os(macOS)
-        let credentialUseAvailable = true
-        let suggestion = "Ask the user to choose an account alias, then run `headless auth login --challenge ID --account ALIAS`."
-        #else
-        let credentialUseAvailable = false
-        let suggestion = "Saved credential use needs a trusted per-use confirmation surface on this platform."
-        #endif
+        let credentialUseAvailable: Bool
+        let suggestion: String
+        if session.hostIsolated {
+            credentialUseAvailable = false
+            suggestion = "Log in interactively without the normal credential vault; private credential enrollment is not available yet."
+        } else {
+            #if os(macOS)
+            credentialUseAvailable = true
+            suggestion = "Ask the user to choose an account alias, then run `headless auth login --challenge ID --account ALIAS`."
+            #else
+            credentialUseAvailable = false
+            suggestion = "Saved credential use needs a trusted per-use confirmation surface on this platform."
+            #endif
+        }
         let details: JSONValue = .object([
             "challenge": .string(challenge.id),
             "origin": .string(form.origin),
@@ -561,6 +600,9 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
     private func authenticate(
         _ request: CommandRequest, sessionName: String, session: Engine.Session
     ) throws -> JSONValue {
+        guard !session.hostIsolated else {
+            throw AuthenticationError.privateContextCredentialUnavailable
+        }
         guard let challengeID = request.parameters["challenge"]?.stringValue,
               let aliasValue = request.parameters["account"]?.stringValue else {
             throw HostError(code: .missingParameter, message: "Challenge and account alias are required.")

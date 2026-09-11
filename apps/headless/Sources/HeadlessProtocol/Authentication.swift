@@ -160,6 +160,7 @@ public enum AuthenticationError: Error, Equatable, CustomStringConvertible {
     case originChanged
     case formChanged
     case accountNotFound
+    case privateContextCredentialUnavailable
     case vaultUnavailable
     case vaultLocked
     case userPresenceUnavailable
@@ -175,6 +176,7 @@ public enum AuthenticationError: Error, Equatable, CustomStringConvertible {
         case .originChanged: return "AUTH_ORIGIN_CHANGED"
         case .formChanged: return "AUTH_FORM_CHANGED"
         case .accountNotFound: return "AUTH_ACCOUNT_NOT_FOUND"
+        case .privateContextCredentialUnavailable: return "PRIVATE_CREDENTIAL_UNAVAILABLE"
         case .vaultUnavailable: return "VAULT_UNAVAILABLE"
         case .vaultLocked: return "VAULT_LOCKED"
         case .userPresenceUnavailable: return "USER_PRESENCE_UNAVAILABLE"
@@ -192,6 +194,8 @@ public enum AuthenticationError: Error, Equatable, CustomStringConvertible {
         case .originChanged: return "The top-level authentication origin changed. Inspect the page again."
         case .formChanged: return "The authentication form changed. Inspect the page again."
         case .accountNotFound: return "No saved account matches that alias for this origin."
+        case .privateContextCredentialUnavailable:
+            return "Normal-profile credentials are unavailable in an isolated session."
         case .vaultUnavailable: return "An approved operating-system credential vault is unavailable."
         case .vaultLocked: return "The operating-system credential vault is locked."
         case .userPresenceUnavailable:
