@@ -119,24 +119,37 @@ if RUNNING_PRESENTATION_START="$(headless start --foreground 2>&1)"; then
 fi
 echo "$RUNNING_PRESENTATION_START" | grep -q 'UNSUPPORTED_CAPABILITY'
 
-STEP="authentication"
+STEP="authentication-state-setup"
 headless visit 'http://127.0.0.1:41739/auth-state/?action=login' | grep -q 'Authentication State'
 
+STEP="authentication-challenge"
 if AUTH_REQUIRED="$(headless visit 'http://127.0.0.1:41739/auth-login/' 2>&1)"; then
   echo "confirmed login form did not require authentication" >&2
   exit 1
 fi
+STEP="authentication-challenge-code"
 echo "$AUTH_REQUIRED" | grep -q '"code":"AUTH_REQUIRED"'
+STEP="authentication-challenge-origin"
 echo "$AUTH_REQUIRED" | grep -q '"origin":"http://127.0.0.1:41739"'
+STEP="authentication-challenge-accounts"
 echo "$AUTH_REQUIRED" | grep -q '"accounts":\[\]'
+STEP="authentication-challenge-presence"
 echo "$AUTH_REQUIRED" | grep -q '"userPresenceRequired":true'
+STEP="authentication-challenge-availability"
 echo "$AUTH_REQUIRED" | grep -q '"credentialUseAvailable":false'
+STEP="authentication-direct-account"
 headless fill @e1 -- 'fixture@example.test' | grep -q '"valueLength":20'
+STEP="authentication-direct-password"
 headless fill @e2 -- 'synthetic-direct-password' | grep -q '"valueLength":25'
+STEP="authentication-direct-submit"
 headless click @e3 | grep -q '"clicked"'
+STEP="authentication-direct-continuation"
 headless wait --text 'Signed in' | grep -q 'Signed in'
+STEP="authentication-no-implicit-save"
 test ! -e "$HOME/.local/share/headless/credential-vault/credentials-index.json"
+STEP="authentication-cookie-state"
 headless inspect --text | grep -q 'Cookie state: signed-in'
+STEP="authentication-storage-state"
 headless inspect --text | grep -q 'Storage state: signed-in'
 PROFILE_RESTART_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$PROFILE_RESTART_PID"
