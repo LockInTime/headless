@@ -68,6 +68,14 @@ while let line = readLine() {
         }
         do {
             let invocation = try CLIParser().parse(argv)
+            if case .credentials = invocation.local {
+                toolResult(
+                    id: id,
+                    text: "Credential commands require direct local user interaction and are unavailable over MCP.",
+                    isError: true
+                )
+                continue
+            }
             guard let command = invocation.request else {
                 toolResult(id: id, text: "MCP accepts browser commands only; run `headless start` on the VM first.", isError: true)
                 continue

@@ -93,6 +93,7 @@ trap 'rm -rf "$SWIFT_SCRATCH"' EXIT
 HOST_BINARIES=()
 CLI_BINARIES=()
 MCP_BINARIES=()
+BROKER_BINARIES=()
 RESOURCE_BUNDLE=""
 for arch in "${ARCHS[@]}"; do
   ARCH_SCRATCH="$SWIFT_SCRATCH/$arch"
@@ -101,9 +102,11 @@ for arch in "${ARCHS[@]}"; do
   swift build "${SDK_ARGS[@]}" "${TARGET_ARGS[@]}" -c release --product headless-host --scratch-path "$ARCH_SCRATCH"
   swift build "${SDK_ARGS[@]}" "${TARGET_ARGS[@]}" -c release --product headless --scratch-path "$ARCH_SCRATCH"
   swift build "${SDK_ARGS[@]}" "${TARGET_ARGS[@]}" -c release --product headless-mcp --scratch-path "$ARCH_SCRATCH"
+  swift build "${SDK_ARGS[@]}" "${TARGET_ARGS[@]}" -c release --product headless-credential-broker --scratch-path "$ARCH_SCRATCH"
   HOST_BINARIES+=("$BIN_PATH/headless-host")
   CLI_BINARIES+=("$BIN_PATH/headless")
   MCP_BINARIES+=("$BIN_PATH/headless-mcp")
+  BROKER_BINARIES+=("$BIN_PATH/headless-credential-broker")
   if [[ -z "$RESOURCE_BUNDLE" ]]; then
     RESOURCE_BUNDLE="$BIN_PATH/Headless_HeadlessProtocol.bundle"
   fi
@@ -127,8 +130,10 @@ copy_or_merge "$APP/Contents/MacOS/Headless" "${HOST_BINARIES[@]}"
 mkdir -p "$APP/Contents/Resources/bin"
 copy_or_merge "$APP/Contents/Resources/bin/headless" "${CLI_BINARIES[@]}"
 copy_or_merge "$APP/Contents/Resources/bin/headless-mcp" "${MCP_BINARIES[@]}"
+copy_or_merge "$APP/Contents/Resources/bin/headless-credential-broker" "${BROKER_BINARIES[@]}"
 cp "$APP/Contents/Resources/bin/headless" build/bin/headless
 cp "$APP/Contents/Resources/bin/headless-mcp" build/bin/headless-mcp
+cp "$APP/Contents/Resources/bin/headless-credential-broker" build/bin/headless-credential-broker
 cp -R "$RESOURCE_BUNDLE" "$APP/Contents/Resources/Headless_HeadlessProtocol.bundle"
 
 cp "$ICON" "$APP/Contents/Resources/Headless.icns"
@@ -204,6 +209,7 @@ if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
   fi
   codesign "${SIGN_ARGS[@]}" "$APP/Contents/Resources/bin/headless"
   codesign "${SIGN_ARGS[@]}" "$APP/Contents/Resources/bin/headless-mcp"
+  codesign "${SIGN_ARGS[@]}" "$APP/Contents/Resources/bin/headless-credential-broker"
   codesign "${SIGN_ARGS[@]}" "${APP_ENTITLEMENT_ARGS[@]}" "$APP"
   codesign --verify --deep --strict "$APP"
   echo "▸ signed as $CODESIGN_IDENTITY"
@@ -214,6 +220,7 @@ else
   fi
   codesign --force --sign - "$APP/Contents/Resources/bin/headless" 2>/dev/null
   codesign --force --sign - "$APP/Contents/Resources/bin/headless-mcp" 2>/dev/null
+  codesign --force --sign - "$APP/Contents/Resources/bin/headless-credential-broker" 2>/dev/null
   codesign --force --sign - "$APP" 2>/dev/null
 fi
 SIZE=$(du -sh "$APP" | cut -f1)

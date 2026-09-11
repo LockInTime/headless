@@ -239,7 +239,7 @@ jobs:
           archive="apps/headless/build/headless-${VERSION}-linux-amd64.tar.gz"
           test -s "$archive"
           tar -tzf "$archive" > archive-contents.txt
-          for expected in headless headless-host headless-mcp install-linux.sh Headless_HeadlessProtocol.resources/AgentRuntime.js; do
+          for expected in headless headless-host headless-mcp headless-credential-broker install-linux.sh Headless_HeadlessProtocol.resources/AgentRuntime.js; do
             grep -qx "$expected" archive-contents.txt
           done
       - uses: actions/upload-artifact@v7
@@ -269,7 +269,7 @@ jobs:
           archive="apps/headless/build/headless-${VERSION}-linux-arm64.tar.gz"
           test -s "$archive"
           tar -tzf "$archive" > archive-contents.txt
-          for expected in headless headless-host headless-mcp install-linux.sh Headless_HeadlessProtocol.resources/AgentRuntime.js; do
+          for expected in headless headless-host headless-mcp headless-credential-broker install-linux.sh Headless_HeadlessProtocol.resources/AgentRuntime.js; do
             grep -qx "$expected" archive-contents.txt
           done
       - uses: actions/upload-artifact@v7

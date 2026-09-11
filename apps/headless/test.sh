@@ -59,11 +59,38 @@ done
 BIN_PATH="$(swift build "${SDK_ARGS[@]}" --scratch-path "$TEST_SCRATCH" --show-bin-path)"
 swift build "${SDK_ARGS[@]}" --product headless-protocol-tests --scratch-path "$TEST_SCRATCH"
 swift build "${SDK_ARGS[@]}" --product headless --scratch-path "$TEST_SCRATCH"
+swift build "${SDK_ARGS[@]}" --product headless-credential-broker --scratch-path "$TEST_SCRATCH"
 swift build "${SDK_ARGS[@]}" --product headless-mcp --scratch-path "$TEST_SCRATCH"
 swift build "${SDK_ARGS[@]}" --product headless-mcp-tests --scratch-path "$TEST_SCRATCH"
 "$BIN_PATH/headless-protocol-tests"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  cc -D_GNU_SOURCE -std=c11 -Wall -Wextra -Werror \
+    -I SecurePrompt/include SecurePrompt/SecurePrompt.c Tests/secure-prompt.c \
+    -o "$TEST_SCRATCH/secure-prompt-tests"
+else
+  cc -D_GNU_SOURCE -std=c11 -Wall -Wextra -Werror \
+    -I SecurePrompt/include SecurePrompt/SecurePrompt.c Tests/secure-prompt.c \
+    -lutil -o "$TEST_SCRATCH/secure-prompt-tests"
+fi
+"$TEST_SCRATCH/secure-prompt-tests"
 [[ "$("$BIN_PATH/headless" --version)" == "headless $EXPECTED_VERSION" ]] || {
   echo "headless tests: CLI product version does not match $EXPECTED_VERSION" >&2
   exit 1
 }
+PATH_INVOCATION_ROOT="$TEST_SCRATCH/path-invocation"
+mkdir -p "$PATH_INVOCATION_ROOT"
+ln -s "$BIN_PATH/headless" "$PATH_INVOCATION_ROOT/headless"
+for invocation in path symlink; do
+  set +e
+  if [[ "$invocation" == "path" ]]; then
+    BROKER_OUTPUT="$(PATH="$PATH_INVOCATION_ROOT:/usr/bin:/bin" headless credentials list 2>&1)"
+  else
+    BROKER_OUTPUT="$("$PATH_INVOCATION_ROOT/headless" credentials list 2>&1)"
+  fi
+  set -e
+  if [[ "$BROKER_OUTPUT" == *"trusted headless-credential-broker executable is missing"* ]]; then
+    echo "headless tests: broker discovery failed for $invocation invocation" >&2
+    exit 1
+  fi
+done
 "$BIN_PATH/headless-mcp-tests" "$BIN_PATH/headless-mcp" "$EXPECTED_VERSION"

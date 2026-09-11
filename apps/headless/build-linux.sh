@@ -22,8 +22,9 @@ trap cleanup EXIT INT TERM
 docker cp "$CONTAINER:/usr/local/bin/headless" build/linux/headless
 docker cp "$CONTAINER:/usr/local/bin/headless-host" build/linux/headless-host
 docker cp "$CONTAINER:/usr/local/bin/headless-mcp" build/linux/headless-mcp
+docker cp "$CONTAINER:/usr/local/bin/headless-credential-broker" build/linux/headless-credential-broker
 docker cp "$CONTAINER:/usr/local/bin/Headless_HeadlessProtocol.resources" build/linux/Headless_HeadlessProtocol.resources
-chmod 0755 build/linux/headless build/linux/headless-host build/linux/headless-mcp
+chmod 0755 build/linux/headless build/linux/headless-host build/linux/headless-mcp build/linux/headless-credential-broker
 cp install-linux.sh build/linux/install-linux.sh
 cp docs/P1.md docs/P2.md build/linux/
 chmod 0755 build/linux/install-linux.sh
@@ -31,7 +32,7 @@ PLATFORM_LABEL="${HEADLESS_LINUX_PLATFORM:-}"
 PLATFORM_LABEL="${PLATFORM_LABEL##*/}"
 if [ -z "$PLATFORM_LABEL" ]; then PLATFORM_LABEL="$(uname -m)"; fi
 ARCHIVE="build/headless-linux-$PLATFORM_LABEL.tar.gz"
-tar -czf "$ARCHIVE" -C build/linux headless headless-host headless-mcp Headless_HeadlessProtocol.resources install-linux.sh P1.md P2.md
+tar -czf "$ARCHIVE" -C build/linux headless headless-host headless-mcp headless-credential-broker Headless_HeadlessProtocol.resources install-linux.sh P1.md P2.md
 echo "Linux binaries: $PWD/build/linux"
 echo "Linux package: $PWD/$ARCHIVE"
 echo "The Docker image includes Debian Chromium at /usr/lib/chromium/chromium."

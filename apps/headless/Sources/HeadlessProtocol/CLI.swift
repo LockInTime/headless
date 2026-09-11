@@ -13,6 +13,7 @@ public enum LocalCommand: Equatable, Sendable {
     case start(presentation: AgentStartupPresentation?)
     case getStartupPresentation
     case setStartupPresentation(AgentStartupPresentation)
+    case credentials(CredentialCLICommand)
 }
 
 public struct CLIInvocation: Equatable, Sendable {
@@ -116,6 +117,9 @@ public struct CLIParser {
             default:
                 throw CLIParseError.invalidOption(arguments.first ?? "config")
             }
+        case "credentials":
+            guard session == nil else { throw CLIParseError.invalidOption("--session") }
+            return try parseCredentials(arguments)
         case "status":
             try requireEmpty(arguments)
             return remote(.ping, session: session, jsonOutput: jsonOutput)
@@ -224,6 +228,58 @@ public struct CLIParser {
         default:
             throw CLIParseError.unknownCommand("session \(subcommand)")
         }
+    }
+
+    private func parseCredentials(_ arguments: [String]) throws -> CLIInvocation {
+        guard let subcommand = arguments.first else {
+            throw CLIParseError.missingArgument("credentials list|add|rename|remove")
+        }
+        var args = Array(arguments.dropFirst())
+        let originValue = try removeOption("--origin", from: &args)
+        let aliasValue = try removeOption("--alias", from: &args)
+        switch subcommand {
+        case "list":
+            try requireNoCredentialArguments(args)
+            let origin = try originValue.map(CredentialOrigin.init(rawValue:))
+            guard aliasValue == nil else { throw CLIParseError.invalidOption("--alias") }
+            return CLIInvocation(local: .credentials(.list(origin: origin)), jsonOutput: true)
+        case "add":
+            guard removeFlag("--interactive", from: &args) else {
+                throw CLIParseError.missingArgument("--interactive")
+            }
+            try requireNoCredentialArguments(args)
+            guard let originValue else { throw CLIParseError.missingArgument("--origin") }
+            guard let aliasValue else { throw CLIParseError.missingArgument("--alias") }
+            return CLIInvocation(local: .credentials(.add(
+                origin: try CredentialOrigin(rawValue: originValue),
+                alias: try CredentialAlias(rawValue: aliasValue)
+            )), jsonOutput: true)
+        case "rename":
+            let newAliasValue = try removeOption("--to", from: &args)
+            try requireNoCredentialArguments(args)
+            guard let originValue else { throw CLIParseError.missingArgument("--origin") }
+            guard let aliasValue else { throw CLIParseError.missingArgument("--alias") }
+            guard let newAliasValue else { throw CLIParseError.missingArgument("--to") }
+            return CLIInvocation(local: .credentials(.rename(
+                origin: try CredentialOrigin(rawValue: originValue),
+                alias: try CredentialAlias(rawValue: aliasValue),
+                newAlias: try CredentialAlias(rawValue: newAliasValue)
+            )), jsonOutput: true)
+        case "remove":
+            try requireNoCredentialArguments(args)
+            guard let originValue else { throw CLIParseError.missingArgument("--origin") }
+            guard let aliasValue else { throw CLIParseError.missingArgument("--alias") }
+            return CLIInvocation(local: .credentials(.remove(
+                origin: try CredentialOrigin(rawValue: originValue),
+                alias: try CredentialAlias(rawValue: aliasValue)
+            )), jsonOutput: true)
+        default:
+            throw CredentialCommandError.invalidArguments
+        }
+    }
+
+    private func requireNoCredentialArguments(_ arguments: [String]) throws {
+        guard arguments.isEmpty else { throw CredentialCommandError.invalidArguments }
     }
 
     private func parseInspect(_ arguments: [String], session: String?, jsonOutput: Bool) throws -> CLIInvocation {
@@ -679,6 +735,10 @@ Commands:
   profile clear
   config get startup-presentation
   config set startup-presentation background|foreground
+  credentials list [--origin URL]
+  credentials add --origin URL --alias NAME --interactive
+  credentials rename --origin URL --alias OLD --to NEW
+  credentials remove --origin URL --alias NAME
   session create [NAME] | session list | session close NAME
   visit URL
   inspect [--context summary|outline|text|actions|full] [--task TEXT]
