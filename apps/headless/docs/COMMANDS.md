@@ -83,7 +83,7 @@ credentials list [--origin URL]
 credentials add --origin URL --alias NAME --interactive
 credentials rename --origin URL --alias OLD --to NEW
 credentials remove --origin URL --alias NAME
-auth login --challenge ID --account ALIAS
+auth login --challenge ID --account ALIAS | auth login --interactive
 ```
 
 Credential commands are local-only and never enter the browser protocol or MCP.
@@ -131,6 +131,16 @@ redirected, needs additional verification or a passkey, rejected the
 credentials, or requires fresh inspection because verification is ambiguous.
 It never retries the original blocked action.
 
+`auth login --interactive` instead opens trusted input owned by Headless. On
+macOS this is a native secure dialog; on Linux it reads the username and hidden
+password from the foreground `/dev/tty`. It can create a challenge from the
+current confirmed form, so a challenge ID is optional. After Headless verifies
+that the form disappeared or redirected, it separately asks whether to save,
+with No as the default. Saving requires a user-entered alias and sends the
+candidate secret only through a bounded pipe to the trusted broker. Failed,
+unverified, additional-verification, and passkey continuations never offer to
+save. Raw `fill` remains available and never saves implicitly.
+
 Heuristic login hints do not create challenges. Cross-origin frames are not
 inspected or filled and are reported as an explicit continuation. Public HTTP
 origins cannot use saved credentials. Authentication metadata is marked as
@@ -144,10 +154,7 @@ Saved entry does not put the password in an input-event payload. Page
 diagnostics are suppressed during credential submission, discarded afterward,
 and restored only after the password field is cleared or a new document commits.
 
-Interactive login, save consent, and short-lived save offers remain deferred;
-this increment only authorizes credentials that the user previously enrolled
-with `credentials add --interactive`. Linux can enroll and manage Secret
-Service records, but saved use currently returns `USER_PRESENCE_UNAVAILABLE`:
+Linux can enroll and manage Secret Service records, but saved use currently returns `USER_PRESENCE_UNAVAILABLE`:
 an unlocked Secret Service does not guarantee a fresh prompt, and Headless does
 not silently weaken the per-use authorization policy.
 

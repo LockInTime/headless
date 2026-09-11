@@ -218,14 +218,23 @@ public struct CommandRequest: Codable, Equatable, Sendable {
              .captureInfo, .artifactList, .recordStatus, .qaReport, .qaClear:
             try allow([])
         case .authLogin:
-            try allow(["challenge", "account"])
-            if let challenge = try string("challenge", required: true, maximumBytes: 64),
+            try allow(["challenge", "account", "interactive"])
+            if let challenge = try string("challenge", maximumBytes: 64),
                UUID(uuidString: challenge) == nil {
                 throw ProtocolValidationError.invalidParameter("Invalid authentication challenge")
             }
-            if let account = try string("account", required: true, maximumBytes: 64) {
+            if let account = try string("account", maximumBytes: 64) {
                 do { _ = try CredentialAlias(rawValue: account) }
                 catch { throw ProtocolValidationError.invalidParameter("Invalid account alias") }
+            }
+            try boolean("interactive")
+            let hasAccount = parameters["account"] != nil
+            let interactive = parameters["interactive"]?.boolValue ?? false
+            guard hasAccount != interactive,
+                  interactive || parameters["challenge"] != nil else {
+                throw ProtocolValidationError.invalidParameter(
+                    "Choose either interactive login or one account alias"
+                )
             }
         case .sessionCreate:
             try allow(["name", "isolated"])

@@ -129,6 +129,13 @@ public struct AuthenticationCredential: @unchecked Sendable {
         guard !password.isEmpty else { throw AuthenticationError.invalidBrokerResponse }
         self.password = password
     }
+
+    public func copy() throws -> AuthenticationCredential {
+        try AuthenticationCredential(
+            account: account,
+            password: AuthenticationSecret(password.withUnsafeBytes { Array($0) })
+        )
+    }
 }
 
 private func validatedAuthenticationAccount(_ value: String) throws -> String {
@@ -143,6 +150,18 @@ private func validatedAuthenticationAccount(_ value: String) throws -> String {
 public protocol AuthenticationBroker: Sendable {
     func aliases(for origin: CredentialOrigin) throws -> [AuthenticationAlias]
     func credential(for origin: CredentialOrigin, alias: CredentialAlias) throws -> AuthenticationCredential
+    func store(
+        _ credential: AuthenticationCredential, for origin: CredentialOrigin, alias: CredentialAlias
+    ) throws
+}
+
+public extension AuthenticationBroker {
+    func store(
+        _ credential: AuthenticationCredential, for origin: CredentialOrigin, alias: CredentialAlias
+    ) throws {
+        credential.password.clear()
+        throw AuthenticationError.vaultUnavailable
+    }
 }
 
 public struct UnavailableAuthenticationBroker: AuthenticationBroker {
@@ -150,6 +169,54 @@ public struct UnavailableAuthenticationBroker: AuthenticationBroker {
     public func aliases(for origin: CredentialOrigin) throws -> [AuthenticationAlias] { [] }
     public func credential(for origin: CredentialOrigin, alias: CredentialAlias) throws -> AuthenticationCredential {
         throw AuthenticationError.vaultUnavailable
+    }
+    public func store(
+        _ credential: AuthenticationCredential, for origin: CredentialOrigin, alias: CredentialAlias
+    ) throws {
+        credential.password.clear()
+        throw AuthenticationError.vaultUnavailable
+    }
+}
+
+public struct SecureTerminalAuthenticationPrompt {
+    public init() {}
+
+    public func readCredential() throws -> AuthenticationCredential {
+        let accountBytes = try read(prompt: "Account username/email: ", hidden: false, maximum: 320)
+        guard let account = String(bytes: accountBytes, encoding: .utf8) else {
+            throw AuthenticationError.userPresenceDenied
+        }
+        return try AuthenticationCredential(
+            account: account,
+            password: AuthenticationSecret(
+                try read(prompt: "Password: ", hidden: true, maximum: 4_096)
+            )
+        )
+    }
+
+    public func confirmSave() throws -> CredentialAlias? {
+        let answerBytes = try read(prompt: "Save this credential? [y/N] ", hidden: false, maximum: 3)
+        guard let answer = String(bytes: answerBytes, encoding: .utf8)?.lowercased(),
+              answer == "y" || answer == "yes" else { return nil }
+        let aliasBytes = try read(prompt: "Credential alias: ", hidden: false, maximum: 64)
+        guard let alias = String(bytes: aliasBytes, encoding: .utf8) else {
+            throw AuthenticationError.userPresenceDenied
+        }
+        return try CredentialAlias(rawValue: alias)
+    }
+
+    private func read(prompt: String, hidden: Bool, maximum: Int) throws -> [UInt8] {
+        var pointer: UnsafeMutablePointer<UInt8>?
+        var count = 0
+        let result = prompt.withCString {
+            headless_read_tty_line($0, hidden ? 1 : 0, &pointer, &count)
+        }
+        guard result == Int32(HEADLESS_PROMPT_SUCCESS.rawValue), let pointer else {
+            throw AuthenticationError.userPresenceUnavailable
+        }
+        defer { headless_clear_and_free(pointer, count + 1) }
+        guard count <= maximum else { throw AuthenticationError.invalidBrokerResponse }
+        return Array(UnsafeBufferPointer(start: pointer, count: count))
     }
 }
 

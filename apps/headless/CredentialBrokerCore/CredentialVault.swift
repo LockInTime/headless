@@ -294,6 +294,13 @@ public final class CredentialVaultController {
             throw CredentialVaultError.operationFailed("password confirmation did not match")
         }
 
+        return try store(origin: origin, alias: alias, account: account, secret: secret)
+    }
+
+    public func store(
+        origin: CredentialOrigin, alias: CredentialAlias, account: String, secret: SensitiveBytes
+    ) throws -> JSONValue {
+        guard !secret.isEmpty else { throw CredentialVaultError.promptFailed }
         return try withRecoveredState { transaction in
             guard transaction.state.records.count < Self.maximumRecords else {
                 throw CredentialVaultError.capacityExceeded

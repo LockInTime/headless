@@ -164,6 +164,7 @@ headless credentials list --origin https://example.com
 headless credentials rename --origin https://example.com --alias work --to client
 headless credentials remove --origin https://example.com --alias client
 headless auth login --challenge CHALLENGE_ID --account client
+headless auth login --interactive
 ```
 
 The interactive broker reads and confirms passwords only through the attached
@@ -178,9 +179,11 @@ document-bound, single-use
 fresh broker-owned user-presence check, fills inside the trusted host, submits
 once, and reports the continuation without replaying the blocked action.
 Heuristic hints and cross-origin frames never trigger credential retrieval.
-Interactive login and save consent remain a later slice of #157. Linux vault
-management is available, but saved use fails closed until a trusted per-use
-confirmation surface exists.
+Interactive login uses trusted native or terminal input rather than password
+arguments. It asks whether to save only after verified success, defaults to
+No, and requires a user-entered alias. Linux vault management is available,
+but saved alias use fails closed until a trusted per-use confirmation surface
+exists.
 
 ## Agent skill
 
