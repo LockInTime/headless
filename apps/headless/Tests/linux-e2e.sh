@@ -148,9 +148,9 @@ headless wait --text 'Signed in' | grep -q 'Signed in'
 STEP="authentication-no-implicit-save"
 test ! -e "$HOME/.local/share/headless/credential-vault/credentials-index.json"
 STEP="authentication-cookie-state"
-headless inspect --text | grep -q 'Cookie state: signed-in'
+headless cookies list | grep -q '"name":"headless_auth_state"'
 STEP="authentication-storage-state"
-headless inspect --text | grep -q 'Storage state: signed-in'
+headless storage list --scope local | grep -q 'headless_auth_state'
 PROFILE_RESTART_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$PROFILE_RESTART_PID"
 headless stop | grep -q '"stopping":true'
