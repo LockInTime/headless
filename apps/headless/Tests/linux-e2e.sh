@@ -4,6 +4,8 @@ set -eu
 export HEADLESS_ARTIFACT_DIR="/tmp/headless-artifacts-e2e-$$"
 export XDG_DATA_HOME="/tmp/headless-data-e2e-$$"
 export XDG_CONFIG_HOME="/tmp/headless-config-e2e-$$"
+export HEADLESS_HOST_LOG="/tmp/headless-host-e2e-$$.log"
+STEP="setup"
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
@@ -20,6 +22,15 @@ busybox httpd -f -p 127.0.0.1:41739 -h "$FIXTURE_ROOT" &
 FIXTURE_PID=$!
 
 cleanup() {
+  status=$?
+  trap - EXIT INT TERM
+  if [ "$status" -ne 0 ]; then
+    echo "Linux E2E failed during: $STEP" >&2
+    if [ -s "$HEADLESS_HOST_LOG" ]; then
+      echo "--- host log ---" >&2
+      cat "$HEADLESS_HOST_LOG" >&2
+    fi
+  fi
   headless stop >/dev/null 2>&1 || true
   kill "$FIXTURE_PID" >/dev/null 2>&1 || true
   rm -rf "$FIXTURE_ROOT"
@@ -27,6 +38,8 @@ cleanup() {
   rm -rf "$HEADLESS_ARTIFACT_DIR"
   rm -rf "$XDG_DATA_HOME"
   rm -rf "$XDG_CONFIG_HOME"
+  rm -f "$HEADLESS_HOST_LOG"
+  exit "$status"
 }
 trap cleanup EXIT INT TERM
 
@@ -55,6 +68,7 @@ echo "$CREDENTIAL_LIST" | grep -q 'VAULT_UNAVAILABLE'
 test ! -e "$HOME/.local/share/headless/credential-vault/credentials-index.json"
 /opt/headless/linux-credential-vault.sh
 
+STEP="runtime-discovery"
 headless runtime | grep -q '"executable":"/usr/lib/chromium/chromium"'
 headless runtime | grep -q '"transport":"inherited-devtools-pipe"'
 if SNAP_RUNTIME="$(HEADLESS_CHROMIUM_EXECUTABLE=/snap/bin/chromium headless runtime 2>&1)"; then
@@ -69,6 +83,7 @@ if RELATIVE_RUNTIME="$(HEADLESS_CHROMIUM_EXECUTABLE=relative/chromium headless r
 fi
 echo "$RELATIVE_RUNTIME" | grep -q 'must be absolute'
 
+STEP="settings"
 SETTINGS_LIST="$(headless config list)"
 echo "$SETTINGS_LIST" | grep -q '"key":"startup-presentation"'
 echo "$SETTINGS_LIST" | grep -q '"access":"agent-writable"'
@@ -94,6 +109,7 @@ if PRESENTATION_START="$(headless start --foreground 2>&1)"; then
 fi
 echo "$PRESENTATION_START" | grep -q 'UNSUPPORTED_CAPABILITY'
 
+STEP="host-start"
 headless start | grep -q '"ready":true'
 test "$(stat -c %a "$XDG_DATA_HOME/headless")" = "700"
 test "$(stat -c %a "$XDG_DATA_HOME/headless/chromium-profile")" = "700"
@@ -103,6 +119,7 @@ if RUNNING_PRESENTATION_START="$(headless start --foreground 2>&1)"; then
 fi
 echo "$RUNNING_PRESENTATION_START" | grep -q 'UNSUPPORTED_CAPABILITY'
 
+STEP="authentication"
 headless visit 'http://127.0.0.1:41739/auth-state/?action=login' | grep -q 'Authentication State'
 
 if AUTH_REQUIRED="$(headless visit 'http://127.0.0.1:41739/auth-login/' 2>&1)"; then
