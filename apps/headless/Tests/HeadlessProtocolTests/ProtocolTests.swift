@@ -1029,7 +1029,6 @@ struct ProtocolTests {
             (["tour", "--pace", "750"], .tour),
             (["capture-info"], .captureInfo),
             (["artifacts", "list"], .artifactList),
-            (["artifacts", "add", "/tmp/resume.pdf", "--name", "resume.pdf"], .artifactAdd),
             (["upload", "@e12", "--artifact", "resume.pdf"], .upload),
             (["qa", "report"], .qaReport),
             (["qa", "clear"], .qaClear),
@@ -1064,6 +1063,9 @@ struct ProtocolTests {
             (["credentials", "list", "--origin", "https://example.com"], .credentials(.list(
                 origin: try CredentialOrigin(rawValue: "https://example.com")
             ))),
+            (["artifacts", "add", "/tmp/resume.pdf", "--name", "resume.pdf"], .artifactsAdd(
+                source: "/tmp/resume.pdf", name: "resume.pdf"
+            )),
             (["help"], .help),
             (["--help"], .help),
             (["version"], .version),
@@ -1895,13 +1897,6 @@ struct ProtocolTests {
             parameters: ["target": .string("@e1"), "value": .string(secret)]
         )
         try expect(fill == nil, "fill values must never become replayable flow steps")
-        try expect(
-            flowStepIfSafe(
-                command: .artifactAdd,
-                parameters: ["source": .string("/tmp/resume.pdf"), "name": .string("resume.pdf")]
-            ) == nil,
-            "artifacts add must not be recorded because it carries a local path"
-        )
         let uploadStep = flowStepIfSafe(
             command: .upload,
             parameters: ["target": .string("@e1"), "artifact": .string("resume.pdf")]
@@ -2173,9 +2168,10 @@ struct ProtocolTests {
         let localCommandNames = Set(localCommands.compactMap(\.stringValue))
         try expect(
             localCommandNames.isSuperset(of: [
+                "artifacts.add",
                 "config.describe", "config.get", "config.list", "config.reset", "config.set",
             ]),
-            "capabilities should advertise every local config command"
+            "capabilities should advertise every local config and ingest command"
         )
         try expect(
             settingDefinitions == SettingsRegistry.shared.definitions.compactMap {
@@ -2404,7 +2400,14 @@ struct ProtocolTests {
         )
         try expect(RecordingFormat.webm.videoCodec == "vp9", "recording metadata should report the codec, not encoder")
         try expect(!agentRuntimeJavaScript.contains("hints.push('select')"), "inspect must not advertise a missing select command")
-        try expect(agentRuntimeJavaScript.contains("hints.push('upload')"), "inspect must advertise upload on file inputs")
+        try expect(
+            agentRuntimeJavaScript.contains("__headlessFileUpload"),
+            "upload hints must be gated on engine file-upload support"
+        )
+        try expect(
+            agentRuntimeJavaScript.contains("hints.push('upload')"),
+            "inspect must advertise upload on file inputs when the engine supports it"
+        )
         try expect(!agentRuntimeJavaScript.contains("hints.push('slide')"), "inspect must not advertise a missing slide command")
     }
 
@@ -3318,14 +3321,20 @@ struct ProtocolTests {
 
     static func artifactUploadCommands() throws {
         let add = try CLIParser().parse(["artifacts", "add", "/tmp/resume.pdf", "--name", "resume.pdf"])
-        try expect(add.request?.command == .artifactAdd, "artifacts add should parse as artifact.add")
-        try expect(add.request?.parameters["source"] == .string("/tmp/resume.pdf"), "absolute source should be preserved")
-        try expect(add.request?.parameters["name"] == .string("resume.pdf"), "destination name should parse")
+        try expect(add.request == nil, "artifacts add must not become a socket command")
+        try expect(
+            add.local == .artifactsAdd(source: "/tmp/resume.pdf", name: "resume.pdf"),
+            "artifacts add should stay a local CLI ingest"
+        )
 
         let relative = try CLIParser().parse(["artifacts", "add", "resume.pdf", "--name", "resume.pdf"])
-        let resolved = relative.request?.parameters["source"]?.stringValue ?? ""
+        guard case .artifactsAdd(let resolved, let relativeName) = relative.local else {
+            throw TestFailure(description: "relative artifacts add should stay local")
+        }
+        try expect(relative.request == nil, "relative artifacts add must not become a socket command")
         try expect(resolved.hasPrefix("/"), "CLI must resolve cwd-relative sources to absolute paths")
         try expect(resolved.hasSuffix("/resume.pdf") || resolved.hasSuffix("resume.pdf"), "resolved source should keep the basename")
+        try expect(relativeName == "resume.pdf", "destination name should parse")
 
         let semantic = try CLIParser().parse([
             "upload", "--role", "textbox", "--name", "Resume", "--artifact", "resume.pdf",
@@ -3352,33 +3361,17 @@ struct ProtocolTests {
             _ = try CLIParser().parse(["artifacts", "add", "/tmp/page.html", "--name", "page.html"])
         }
 
-        try CommandRequest(
-            command: .artifactAdd,
-            parameters: ["source": .string("/tmp/resume.pdf"), "name": .string("resume.pdf")]
-        ).validate()
+        try expectThrows("raw artifact.add protocol requests must be rejected as unknown") {
+            _ = try ProtocolCodec.decodeLine(
+                CommandRequest.self,
+                from: Data(#"{"id":"request-1","version":"0.5","command":"artifact.add","parameters":{"source":"/tmp/resume.pdf","name":"resume.pdf"}}"#.utf8)
+            )
+        }
         try CommandRequest(
             command: .upload,
             parameters: ["target": .string("@e12"), "artifact": .string("resume.pdf")]
         ).validate()
-        try expectThrows("relative protocol source should be rejected") {
-            try CommandRequest(
-                command: .artifactAdd,
-                parameters: ["source": .string("resume.pdf"), "name": .string("resume.pdf")]
-            ).validate()
-        }
-        try expectThrows("path traversal artifact names should be rejected") {
-            try CommandRequest(
-                command: .artifactAdd,
-                parameters: ["source": .string("/tmp/resume.pdf"), "name": .string("../escape.pdf")]
-            ).validate()
-        }
-        for name in ["payload.exe", "page.html", "image.svg"] {
-            try expectThrows("ingest should reject \(name)") {
-                try CommandRequest(
-                    command: .artifactAdd,
-                    parameters: ["source": .string("/tmp/file"), "name": .string(name)]
-                ).validate()
-            }
+        for name in ["payload.exe", "page.html", "image.svg", "../escape.pdf"] {
             try expectThrows("upload should reject \(name)") {
                 try CommandRequest(
                     command: .upload,
@@ -3449,7 +3442,7 @@ struct ProtocolTests {
         }
         let hugePath = sourceDir + "/huge.txt"
         try Data(count: ProtocolBounds.artifactUploadBytes + 1).write(to: URL(fileURLWithPath: hugePath))
-        try expectThrows("oversized ingest should fail closed") {
+        try expectThrows("oversized ingest should fail from the chunked reader, not a trusted st_size") {
             _ = try store.ingest(sourcePath: hugePath, name: "huge.txt")
         }
         try expectThrows("missing source should fail closed") {
@@ -3474,40 +3467,23 @@ struct ProtocolTests {
         )
         defer { core.stop() }
 
-        let hostAdd = core.handle(CommandRequest(
-            command: .artifactAdd,
-            parameters: ["source": .string(pngPath), "name": .string("host.png")]
-        ))
-        try expect(hostAdd.ok, "HostCore artifact.add should succeed without a session")
-        try expect(session.agentControlEnableCount == 0, "artifact.add must not enable page control")
-        guard case .object(let hostAddResult) = hostAdd.result else {
-            throw TestFailure(description: "HostCore artifact.add result")
-        }
-        try expect(hostAddResult["name"] == .string("host.png"), "HostCore ingest should return store metadata")
-
+        try expect(session.agentControlEnableCount == 0, "local ingest must not enable page control")
         let uploaded = core.handle(CommandRequest(
             command: .upload,
-            parameters: ["target": .string("@e1"), "artifact": .string("host.png")]
+            parameters: ["target": .string("@e1"), "artifact": .string("tiny.png")]
         ))
         try expect(uploaded.ok, "HostCore upload should resolve a stored artifact")
-        try expect(session.lastUploadPath == root + "/host.png" || session.lastUploadPath == URL(fileURLWithPath: root + "/host.png").path, "engine must receive the store path, not the source path")
+        try expect(session.lastUploadPath == root + "/tiny.png" || session.lastUploadPath == URL(fileURLWithPath: root + "/tiny.png").path, "engine must receive the store path, not the source path")
         let encoded = String(decoding: try ProtocolCodec.encoder.encode(uploaded), as: UTF8.self)
         try expect(!encoded.contains(pngPath), "upload responses must not include the source path")
         try expect(!encoded.contains("\"path\""), "upload responses must not include a filesystem path")
-        try expect(encoded.contains("host.png"), "upload responses should name the artifact")
+        try expect(encoded.contains("tiny.png"), "upload responses should name the artifact")
 
         let missingUpload = core.handle(CommandRequest(
             command: .upload,
             parameters: ["target": .string("@e1"), "artifact": .string("absent.pdf")]
         ))
         try expect(missingUpload.error?.code == "ARTIFACT_ERROR", "missing upload artifacts should fail specifically")
-
-        let overwrite = core.handle(CommandRequest(
-            command: .artifactAdd,
-            parameters: ["source": .string(pngPath), "name": .string("host.png")]
-        ))
-        try expect(!overwrite.ok, "HostCore ingest overwrite should fail")
-        try expect(overwrite.error?.code == "ARTIFACT_ERROR", "overwrite should surface as an artifact error")
     }
 
     static func main() {

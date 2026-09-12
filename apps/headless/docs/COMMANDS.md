@@ -197,7 +197,8 @@ back | reload
   `--artifact` is a validated basename only — never a filesystem path. File
   bytes never travel on the socket. Linux Chromium attaches through
   `DOM.setFileInputFiles`; macOS WebKit returns `UNSUPPORTED_CAPABILITY`.
-  Downloads stay denied. Ingest the fixture first with `artifacts add`.
+  Downloads stay denied. Ingest the fixture first with the local CLI
+  `artifacts add`; that path is not a protocol or MCP command.
 - `wait --timeout` and the tour duration are bounded; unbounded waits are
   rejected at parse time.
 
@@ -221,10 +222,11 @@ report create [--output REPORT.json]
   you copy them.
 - `artifacts add` copies a local regular file (absolute or cwd-relative; 5 MiB
   cap; `pdf`/`png`/`jpg`/`jpeg`/`gif`/`webp`/`txt`/`csv`/`json` only) into that
-  store as a new `0600` name. It is a protocol command so MCP can ingest too.
+  store as a new `0600` name. It runs in the CLI process as a local operator
+  path, like `credentials`; it is not a socket command and MCP rejects it.
   HTML, SVG, executables, and archives are rejected. The stored object is
-  bytes, not a symlink. `upload` then names that basename; it is not a
-  download manager.
+  bytes, not a symlink. `artifacts list` remains a protocol command. `upload`
+  then names that basename; it is not a download manager.
 - `--clipboard` capture is macOS only. Linux rejects clipboard capture because
   VM clipboards are not a reliable boundary.
 - PDF screenshots and element-scoped capture follow the engine matrix reported
@@ -259,7 +261,7 @@ flow start | flow stop [--output FLOW.json] | flow run FLOW.json
 - Flows replay recorded commands but skip every `fill` value by design; rerun
   fills explicitly when you replay. `upload` may be recorded with the artifact
   basename only; replay needs that same store name. `artifacts add` is never
-  recorded because it carries a local path.
+  recorded because it is a local CLI path, not a protocol command.
 
 ## Where to go next
 

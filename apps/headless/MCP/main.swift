@@ -76,6 +76,14 @@ while let line = readLine() {
                 )
                 continue
             }
+            if case .artifactsAdd = invocation.local {
+                toolResult(
+                    id: id,
+                    text: "Artifact ingest requires a local operator and is unavailable over MCP.",
+                    isError: true
+                )
+                continue
+            }
             guard let command = invocation.request else {
                 toolResult(id: id, text: "MCP accepts browser commands only; run `headless start` on the VM first.", isError: true)
                 continue

@@ -266,7 +266,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
             source: webKitQAScript, injectionTime: .atDocumentStart, forMainFrameOnly: false
         ))
         conf.userContentController.addUserScript(WKUserScript(
-            source: agentRuntimeJavaScript,
+            source: "globalThis.__headlessFileUpload = false;\n" + agentRuntimeJavaScript,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false,
             in: agentWorld

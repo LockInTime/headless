@@ -222,10 +222,11 @@ public final class ArtifactStore: @unchecked Sendable {
         ])
     }
 
-    /// Copies a local regular file into the store. The source is read by the
-    /// host process (same UID as the socket peer); file bytes never appear in
-    /// protocol parameters. Symlinks, directories, FIFOs, and oversized files
-    /// fail closed. The stored object is always a new `0600` regular file.
+    /// Copies a local regular file into the store. Called only from the local
+    /// CLI process (same UID as the operator). File bytes never appear on the
+    /// Unix socket, and HostCore cannot reach this path. Symlinks, directories,
+    /// FIFOs, and oversized files fail closed. The stored object is always a
+    /// new `0600` regular file.
     public func ingest(sourcePath: String, name: String) throws -> JSONValue {
         do { try validateArtifactName(name, expectedExtensions: uploadArtifactExtensions) }
         catch { throw ArtifactError.invalidName(name) }
@@ -271,9 +272,6 @@ public final class ArtifactStore: @unchecked Sendable {
         guard (info.st_mode & S_IFMT) == S_IFREG else {
             throw ArtifactError.writeFailed("Source must be a regular file")
         }
-        guard info.st_size >= 0, info.st_size <= off_t(ProtocolBounds.artifactUploadBytes) else {
-            throw ArtifactError.writeFailed("Source file exceeds the 5 MiB upload limit")
-        }
         let descriptor = open(sourceURL.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard descriptor >= 0 else {
             throw ArtifactError.writeFailed("Source file is missing or unreadable")
@@ -283,15 +281,31 @@ public final class ArtifactStore: @unchecked Sendable {
         guard fstat(descriptor, &opened) == 0, (opened.st_mode & S_IFMT) == S_IFREG else {
             throw ArtifactError.writeFailed("Source must be a regular file")
         }
-        guard opened.st_size >= 0, opened.st_size <= off_t(ProtocolBounds.artifactUploadBytes) else {
-            throw ArtifactError.writeFailed("Source file exceeds the 5 MiB upload limit")
-        }
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
-        let data: Data
-        do { data = try handle.readToEnd() ?? Data() }
-        catch { throw ArtifactError.writeFailed("Source file is missing or unreadable") }
-        guard data.count <= ProtocolBounds.artifactUploadBytes else {
-            throw ArtifactError.writeFailed("Source file exceeds the 5 MiB upload limit")
+        // st_size is not the read bound. A growing or lying regular file is
+        // stopped at the limit without slurping the rest of the file.
+        return try readBounded(
+            descriptor: descriptor, maximumBytes: ProtocolBounds.artifactUploadBytes
+        )
+    }
+
+    private func readBounded(descriptor: Int32, maximumBytes: Int, chunkBytes: Int = 64 * 1_024) throws -> Data {
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: max(1, chunkBytes))
+        while true {
+            #if canImport(Darwin)
+            let count = Darwin.read(descriptor, &buffer, buffer.count)
+            #else
+            let count = Glibc.read(descriptor, &buffer, buffer.count)
+            #endif
+            if count < 0 && errno == EINTR { continue }
+            guard count >= 0 else {
+                throw ArtifactError.writeFailed("Source file is missing or unreadable")
+            }
+            if count == 0 { break }
+            if data.count + count > maximumBytes {
+                throw ArtifactError.writeFailed("Source file exceeds the 5 MiB upload limit")
+            }
+            data.append(buffer, count: count)
         }
         return data
     }

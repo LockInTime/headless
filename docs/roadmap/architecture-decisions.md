@@ -487,34 +487,48 @@ no TCP listener, fail closed, bounded everything.
 
 ---
 
-## 23. File upload is artifact-store ingest plus engine attach
+## 23. File upload is local ingest plus engine attach of store basenames
 
-**Decision:** agents attach files that already live in the private artifact
-store. `artifact.add` copies a local regular file into the store (validated
-basename, `O_EXCL`, `0600`, 5 MiB, allow-listed extensions). `upload` targets
-a file input with the same grammar as `click` and asks the engine to attach
-that on-disk artifact. File bytes never appear on the Unix socket, in protocol
-parameters, MCP, logs, flows, snapshots, diagnostics, or errors. Downloads
-remain denied. There is no TCP fixture server, no home-directory path on
-`upload`, and no arbitrary-JS verb.
+**Decision:** ingest of a local file into the private artifact store is a
+local CLI/TTY operator path (`headless artifacts add`), never a protocol
+command and never available over MCP. The agent cannot read outside the
+artifact store. `upload` is a protocol command that names a basename already
+in the store and asks the engine to attach that on-disk file. File bytes
+never appear on the Unix socket, in protocol parameters, MCP, logs, flows,
+snapshots, diagnostics, or errors. Downloads remain denied. There is no TCP
+fixture server, no home-directory path on `upload`, and no arbitrary-JS verb.
+
+`artifacts add` copies a local regular file into the store in the CLI process
+(same UID as the operator): validated basename, `O_EXCL`, `0600`, 5 MiB
+chunked read that does not trust `st_size` as the read bound, allow-listed
+extensions. `artifacts list` remains a protocol command. `upload` targets a
+file input with the same grammar as `click`.
 
 Linux Chromium attaches via `DOM.setFileInputFiles` using an isolated-world
-objectId. macOS WKWebView returns `UNSUPPORTED_CAPABILITY` until a native
-attach path exists that does not evaluate page JavaScript or shuttle file
-bytes through JS. Capabilities declare `fileUpload` accordingly.
+objectId. Attachment success is completion: bounded `{ref, role, name}`
+metadata is captured before attach, and a successful CDP response is not
+followed by a second node lookup. macOS WKWebView returns
+`UNSUPPORTED_CAPABILITY` until a native attach path exists that does not
+evaluate page JavaScript or shuttle file bytes through JS. Capabilities
+declare `fileUpload` accordingly; inspect advertises `upload` only when that
+flag is true.
 
-**Status:** decided 2026-09-10 (owner-approved product contract for #168).
+**Status:** revised 2026-09-12 (review of #169: ingest is not an agent/MCP
+primitive). Originally decided 2026-09-10 (owner-approved product contract
+for #168).
 
 **Rationale:** resume/import/image QA needs file inputs; the existing store
 already has the safety properties we need. Putting bytes on the wire would
-blow the 1 MiB frame and leak file contents into logs. WebKit has no
+blow the 1 MiB frame and leak file contents into logs. A protocol
+`artifact.add` would let an agent ingest any readable host file, which
+SECURITY.md classifies as reading outside the store. WebKit has no
 equivalent of `setFileInputFiles` without a JS hole.
 
-**Consequences:** MCP can ingest because `artifact.add` is a protocol command
-(MCP rejects local-only CLI). WebKit clients must skip upload or fail closed.
-Replay of `upload` requires the same artifact basename still in the store.
-`artifacts add` is not flow-recorded because it carries a local filesystem
-path.
+**Consequences:** MCP and the Unix socket cannot ingest. Operators copy
+fixtures with the local CLI, then agents attach by basename. WebKit clients
+must skip upload or fail closed. Replay of `upload` requires the same
+artifact basename still in the store. `artifacts add` cannot be
+flow-recorded because it is not a protocol command.
 
 **Revisit trigger:** a documented WKWebView/native attach API that does not
 execute page JS and does not pass file bytes through the JS bridge.
@@ -768,7 +782,7 @@ rule that durable saved-credential retrieval needs trusted per-use presence.
 | 19  | Keep macOS agent startup behind the current app             | Implemented                                               | 2026-08-12 |
 | 20  | Omit passkeys unless Apple provisions Developer ID release  | Implemented                                               | 2026-08-12 |
 | 21  | Rust port of shared core, protocol layer first              | In progress                                               | 2026-08-22 |
-| 23  | Artifact-store ingest + engine file attach; downloads denied | Decided                                                  | 2026-09-10 |
+| 23  | Local CLI ingest + engine attach of store basenames; downloads denied | Decided (revised 2026-09-12)                    | 2026-09-10 |
 | 24  | Credential broker on the unsigned local tier                | Decided                                                   | 2026-09-10 |
 | 25  | Typed local settings registry; security policy stays fixed  | Implemented                                               | 2026-09-12 |
 | 26  | Isolated sessions own one ephemeral browser context         | Implemented                                               | 2026-09-12 |

@@ -72,8 +72,9 @@ prompt-injected or confused agent _cannot_ violate them.
   (`main.swift:733-748`). Dangerous remote extensions hard-blocked (25-entry
   list), archives surfaced as `caution` (`Protocol.swift:576-591`). Upload is
   the inverse: a user-supplied fixture is ingested into the private artifact
-  store (`artifact.add`) and attached by basename (`upload`). It is not a
-  download manager.
+  store by the local CLI (`artifacts add`, never a protocol or MCP command)
+  and attached by basename (`upload`). It is not a download manager. The
+  agent cannot read outside the store.
 - **Private control plane.** `0600` socket in a `0700` per-user dir, peer-UID
   check (`getpeereid`/`SO_PEERCRED`), 1 MiB frame cap, strict request
   decoding with per-command parameter allow-lists (`Transport.swift`,
@@ -87,9 +88,10 @@ prompt-injected or confused agent _cannot_ violate them.
   `--values` and a host started with `HEADLESS_ALLOW_SENSITIVE_DIAGNOSTICS=1`;
   auth/cookie/token/secret headers and URL credentials are always redacted
   (`Diagnostics.swift:204-235`).
-- **Typed values never persisted.** Flow recording excludes `fill` and
-  `artifact.add` (local paths). `upload` may record the artifact basename
-  only; replay files can never contain credentials (`Flows.swift`).
+- **Typed values never persisted.** Flow recording excludes `fill`. Ingest
+  is a local CLI path, so it cannot be recorded. `upload` may record the
+  artifact basename only; replay files can never contain credentials
+  (`Flows.swift`).
 - **Linux never weakens the sandbox.** No `--no-sandbox`, refuses root
   (`BrowserProcess.swift:161-163`); Snap Chromium rejected _before launch_ by
   path and shebang sniffing rather than failing mysteriously later

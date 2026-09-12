@@ -21,6 +21,7 @@ public enum LocalCommand: Equatable, Sendable {
     case start(presentation: AgentStartupPresentation?)
     case config(ConfigCLICommand)
     case credentials(CredentialCLICommand)
+    case artifactsAdd(source: String, name: String)
 }
 
 public struct CLIInvocation: Equatable, Sendable {
@@ -394,13 +395,8 @@ public struct CLIParser {
             guard args.count == 1 else { throw CLIParseError.invalidOption(args[1]) }
             guard let name else { throw CLIParseError.missingArgument("--name") }
             try validateArtifactName(name, expectedExtensions: uploadArtifactExtensions)
-            return remote(
-                .artifactAdd,
-                session: session,
-                parameters: [
-                    "source": .string(try absoluteSourcePath(source)),
-                    "name": .string(name),
-                ],
+            return CLIInvocation(
+                local: .artifactsAdd(source: try absoluteSourcePath(source), name: name),
                 jsonOutput: jsonOutput
             )
         default:

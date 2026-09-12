@@ -82,11 +82,12 @@ if (!globalThis.__headlessAgent) {
       // Only advertise verbs implemented by the public Headless protocol.
       // Unsupported controls can still appear for context, but must not route
       // an agent toward nonexistent select/slide commands. File inputs advertise
-      // upload only — never fill or click as the primary verb.
+      // upload only when the host injected __headlessFileUpload, never fill or
+      // click as the primary verb.
       if (element instanceof HTMLInputElement) {
         const type = (element.getAttribute('type') || 'text').toLowerCase();
         if (type === 'file') {
-          hints.push('upload');
+          if (globalThis.__headlessFileUpload === true) hints.push('upload');
           return Array.from(new Set(hints));
         } else if (['checkbox', 'radio'].includes(type)) hints.push('click');
         else if (type === 'range') hints.push('fill');
@@ -616,7 +617,23 @@ if (!globalThis.__headlessAgent) {
       if (!(element instanceof HTMLInputElement) || type !== 'file') {
         fail('ELEMENT_NOT_FOUND', 'ELEMENT_NOT_FOUND: target is not a file input');
       }
+      if (element.disabled || element.getAttribute('aria-disabled') === 'true') {
+        fail('NOT_EDITABLE', 'NOT_EDITABLE: file input is disabled');
+      }
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      if (style.display === 'none' || style.visibility === 'hidden' || rect.width <= 0 || rect.height <= 0) {
+        fail('ELEMENT_NOT_VISIBLE', 'ELEMENT_NOT_VISIBLE: file input is not visible');
+      }
       return element;
+    };
+    const fileInputPrepare = args => {
+      const element = fileInput(args);
+      return {
+        uploaded: refFor(element),
+        role: role(element),
+        name: name(element),
+      };
     };
     const fileInputResult = args => {
       const element = fileInput(args);
@@ -937,7 +954,7 @@ if (!globalThis.__headlessAgent) {
       return {count: document.getAnimations().length, animations: all, truncated: document.getAnimations().length > all.length};
     };
     return {
-      snapshot, click, fill, credentialFill, finishCredentialFill, press, inputTarget, fileInput, fileInputResult,
+      snapshot, click, fill, credentialFill, finishCredentialFill, press, inputTarget, fileInput, fileInputPrepare, fileInputResult,
       authentication, scroll, state, tour, screenshotPlan, scrollToCapturePoint, rectangle, styles, storage,
       performance: performanceSummary, animations
     };

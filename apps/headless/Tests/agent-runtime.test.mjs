@@ -408,6 +408,15 @@ const fileInput = uploadControls.querySelector('input[type="file"]');
 fileInput.getBoundingClientRect = () => ({
   x: 20, y: 140, top: 140, left: 20, right: 220, bottom: 180, width: 200, height: 40,
 });
+window.__headlessFileUpload = false;
+const webkitFileSnapshot = agent.snapshot(false, false, {context: 'full', limit: 250});
+const webkitFileItem = webkitFileSnapshot.elements.find(
+  element => element.name === 'Resume' && element.inputType === 'file',
+);
+assert.equal(webkitFileItem?.inputType, 'file');
+assert.equal(webkitFileItem?.actions?.length ?? 0, 0);
+assert.ok(!(webkitFileItem?.actions ?? []).includes('upload'));
+window.__headlessFileUpload = true;
 agent.snapshot(false, false, {context: 'actions', limit: 20});
 const fileSnapshot = agent.snapshot(false, false, {context: 'actions', task: 'upload Resume', limit: 20});
 const fileItem = fileSnapshot.elements.find(element => element.name === 'Resume');
@@ -415,6 +424,7 @@ assert.equal(fileItem?.inputType, 'file');
 assert.equal(fileItem?.actions?.length, 1);
 assert.equal(fileItem?.actions?.[0], 'upload');
 assert.equal(agent.fileInput({role: 'textbox', name: 'Resume'}), fileInput);
+assert.equal(agent.fileInputPrepare({role: 'textbox', name: 'Resume'}).uploaded, fileItem.ref);
 assert.equal(agent.fileInputResult({role: 'textbox', name: 'Resume'}).uploaded, fileItem.ref);
 assert.throws(
   () => agent.fileInput({role: 'button', name: 'Not a file'}),
@@ -423,6 +433,31 @@ assert.throws(
 assert.throws(
   () => agent.fileInput({role: 'button', name: 'Runtime action'}),
   error => error.headlessCode === 'ELEMENT_NOT_FOUND',
+);
+fileInput.disabled = true;
+assert.throws(
+  () => agent.fileInput({target: fileItem.ref}),
+  error => error.headlessCode === 'NOT_EDITABLE',
+);
+fileInput.disabled = false;
+fileInput.style.display = 'none';
+assert.throws(
+  () => agent.fileInput({target: fileItem.ref}),
+  error => error.headlessCode === 'ELEMENT_NOT_VISIBLE',
+);
+fileInput.style.display = '';
+fileInput.style.visibility = 'hidden';
+assert.throws(
+  () => agent.fileInput({target: fileItem.ref}),
+  error => error.headlessCode === 'ELEMENT_NOT_VISIBLE',
+);
+fileInput.style.visibility = '';
+fileInput.getBoundingClientRect = () => ({
+  x: 20, y: 140, top: 140, left: 20, right: 20, bottom: 140, width: 0, height: 0,
+});
+assert.throws(
+  () => agent.fileInput({target: fileItem.ref}),
+  error => error.headlessCode === 'ELEMENT_NOT_VISIBLE',
 );
 
 console.log(JSON.stringify({

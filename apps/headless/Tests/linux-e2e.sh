@@ -303,6 +303,7 @@ TRUSTED_INPUT="$(headless --session qa inspect --text)"
 echo "$TRUSTED_INPUT" | grep -q 'input:true'
 echo "$TRUSTED_INPUT" | grep -q 'key:Enter:true'
 echo "$TRUSTED_INPUT" | grep -q 'click:true'
+STEP="file-upload"
 printf 'resume-fixture\n' > "$FIXTURE_ROOT/resume.txt"
 ADD="$(headless artifacts add "$FIXTURE_ROOT/resume.txt" --name resume.txt)"
 echo "$ADD" | grep -q '"name":"resume.txt"'
@@ -343,6 +344,31 @@ if BUTTON_UPLOAD="$(headless --session qa upload --role button --name 'Not a fil
   exit 1
 fi
 echo "$BUTTON_UPLOAD" | grep -q 'ELEMENT_NOT_FOUND'
+EPHEMERAL="$(headless --session qa upload --role textbox --name Ephemeral --artifact resume.txt)"
+echo "$EPHEMERAL" | grep -q '"artifact":"resume.txt"'
+echo "$EPHEMERAL" | grep -q '"uploaded"'
+if DISABLED_UPLOAD="$(headless --session qa upload --role textbox --name 'Disabled resume' --artifact resume.txt)"; then
+  echo "disabled file input upload was not rejected" >&2
+  exit 1
+fi
+echo "$DISABLED_UPLOAD" | grep -E -q 'NOT_EDITABLE|ELEMENT_NOT_FOUND|OPERATION_FAILED'
+if HIDDEN_NAME_UPLOAD="$(headless --session qa upload --role textbox --name 'Already hidden' --artifact resume.txt)"; then
+  echo "hidden file input upload was not rejected" >&2
+  exit 1
+fi
+echo "$HIDDEN_NAME_UPLOAD" | grep -E -q 'ELEMENT_NOT_FOUND|ELEMENT_NOT_VISIBLE|OPERATION_FAILED'
+HIDE_SNAP="$(headless --session qa inspect --interactive --limit 50)"
+HIDEABLE_REF="$(printf '%s' "$HIDE_SNAP" | grep -o '"name":"Hideable","ref":"@e[0-9]*"' | head -n1 | grep -o '@e[0-9]*')"
+test -n "$HIDEABLE_REF"
+headless --session qa click --role button --name 'Hide file input' | grep -q '"clicked"'
+if HIDDEN_REF_UPLOAD="$(headless --session qa upload "$HIDEABLE_REF" --artifact resume.txt)"; then
+  echo "previously issued ref to a hidden file input was accepted" >&2
+  exit 1
+fi
+echo "$HIDDEN_REF_UPLOAD" | grep -E -q 'ELEMENT_NOT_VISIBLE|ELEMENT_NOT_FOUND|OPERATION_FAILED'
+LEAVE="$(headless --session qa upload --role textbox --name Leave --artifact resume.txt)"
+echo "$LEAVE" | grep -q '"artifact":"resume.txt"'
+echo "$LEAVE" | grep -q '"uploaded"'
 headless --session qa visit http://127.0.0.1:41739/designers/dashboard/ | grep -q 'Designers Dashboard'
 if EXTERNAL_RESULT="$(headless --session qa click --role link --name 'External application')"; then
   echo "external application link was not blocked" >&2

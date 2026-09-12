@@ -9,11 +9,25 @@
     <h1>File upload fixture</h1>
     <label for="resume">Resume</label>
     <input id="resume" type="file" name="resume">
+    <label for="ephemeral">Ephemeral</label>
+    <input id="ephemeral" type="file" name="ephemeral">
+    <label for="leave">Leave</label>
+    <input id="leave" type="file" name="leave">
+    <label for="hideable">Hideable</label>
+    <input id="hideable" type="file" name="hideable">
+    <button type="button" id="hide-file">Hide file input</button>
+    <label for="disabled-resume">Disabled resume</label>
+    <input id="disabled-resume" type="file" name="disabled-resume" disabled>
+    <label for="already-hidden">Already hidden</label>
+    <input id="already-hidden" type="file" name="already-hidden" style="display:none">
     <button type="button">Not a file</button>
     <output aria-label="Upload evidence">waiting</output>
   </main>
   <script>
     const input = document.getElementById('resume');
+    const ephemeral = document.getElementById('ephemeral');
+    const leave = document.getElementById('leave');
+    const hideable = document.getElementById('hideable');
     const output = document.querySelector('output');
     const record = () => {
       const names = Array.from(input.files || []).map(file => file.name);
@@ -21,6 +35,15 @@
     };
     input.addEventListener('change', record);
     input.addEventListener('input', record);
+    ephemeral.addEventListener('change', () => {
+      ephemeral.remove();
+    });
+    leave.addEventListener('change', () => {
+      location.href = '/next/';
+    });
+    document.getElementById('hide-file').addEventListener('click', () => {
+      hideable.style.display = 'none';
+    });
   </script>
 </body>
 </html>

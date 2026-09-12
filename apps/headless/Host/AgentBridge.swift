@@ -465,7 +465,10 @@ extension BrowserWindowController {
             // WKWebView can expose its initial about:blank document before
             // document-start scripts run. Install once in that document, then
             // subsequent calls use the cached isolated-world runtime.
-            return try evaluate(agentRuntimeJavaScript + "\n" + agentEvaluationBody(body))
+            return try evaluate(
+                "globalThis.__headlessFileUpload = false;\n" + agentRuntimeJavaScript
+                    + "\n" + agentEvaluationBody(body)
+            )
         }
     }
 }

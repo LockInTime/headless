@@ -234,19 +234,6 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             if request.command == .artifactList {
                 return .success(id: request.id, result: try artifacts.list())
             }
-            if request.command == .artifactAdd {
-                guard let source = request.parameters["source"]?.stringValue,
-                      let name = request.parameters["name"]?.stringValue else {
-                    throw HostError(
-                        code: .missingParameter,
-                        message: "Artifact source and name are required."
-                    )
-                }
-                return .success(
-                    id: request.id,
-                    result: try artifacts.ingest(sourcePath: source, name: name)
-                )
-            }
             switch request.command {
             case .sessionCreate:
                 return try createSession(request)
@@ -561,7 +548,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             )
         case .flowRun:
             return try runFlow(request, sessionName: name)
-        case .ping, .shutdown, .profileClear, .sessionCreate, .sessionList, .sessionClose, .artifactList, .artifactAdd:
+        case .ping, .shutdown, .profileClear, .sessionCreate, .sessionList, .sessionClose, .artifactList:
             throw HostError(code: .invalidCommand, message: "Command is not valid in this context.")
         }
     }

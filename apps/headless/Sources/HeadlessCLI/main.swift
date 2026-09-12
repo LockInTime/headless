@@ -225,6 +225,8 @@ do {
             }
         case .credentials(let command):
             try CredentialBrokerLauncher().run(command)
+        case .artifactsAdd(let source, let name):
+            printJSON(try ArtifactStore().ingest(sourcePath: source, name: name))
         }
     } else if let request = invocation.request {
         let launcher = HostLauncher()
@@ -287,6 +289,12 @@ do {
 } catch let error as CredentialBrokerLaunchError {
     let response = CommandResponse.failure(
         id: "unknown", code: "VAULT_UNAVAILABLE", message: error.description
+    )
+    try? printResponse(response)
+    exit(69)
+} catch let error as ArtifactError {
+    let response = CommandResponse.failure(
+        id: "unknown", code: "ARTIFACT_ERROR", message: error.description
     )
     try? printResponse(response)
     exit(69)

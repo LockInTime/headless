@@ -332,6 +332,13 @@ STEP="file-upload-unsupported"
 UPLOAD_SOURCE="$(mktemp "${TMPDIR:-/tmp}/headless-upload-source.XXXXXX")"
 printf 'resume-fixture\n' > "$UPLOAD_SOURCE"
 "$CLI" artifacts add "$UPLOAD_SOURCE" --name resume.txt | grep -q '"name":"resume.txt"'
+"$CLI" --session qa visit "http://127.0.0.1:$PORT/file-upload" | grep -q 'File upload fixture'
+UPLOAD_SNAPSHOT="$("$CLI" --session qa inspect --interactive)"
+echo "$UPLOAD_SNAPSHOT" | grep -q '"name":"Resume"'
+if echo "$UPLOAD_SNAPSHOT" | grep -q '"actions":\["upload"\]'; then
+  echo "WebKit inspect advertised upload despite missing fileUpload support" >&2
+  fail
+fi
 if UPLOAD="$("$CLI" --session qa upload --role textbox --name Resume --artifact resume.txt)"; then
   echo "WebKit file upload was unexpectedly exposed" >&2
   fail

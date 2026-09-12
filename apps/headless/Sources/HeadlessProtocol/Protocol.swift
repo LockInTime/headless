@@ -74,7 +74,6 @@ public enum CommandName: String, Codable, CaseIterable, Sendable {
     case captureInfo = "capture.info"
     case screenshot
     case artifactList = "artifact.list"
-    case artifactAdd = "artifact.add"
     case recordStart = "record.start"
     case recordStatus = "record.status"
     case recordStop = "record.stop"
@@ -278,16 +277,6 @@ public struct CommandRequest: Codable, Equatable, Sendable {
             try allow(["target", "role", "name", "artifact"])
             if let artifact = try string("artifact", required: true, maximumBytes: 128) {
                 try validateArtifactName(artifact, expectedExtensions: uploadArtifactExtensions)
-            }
-        case .artifactAdd:
-            try allow(["source", "name"])
-            if let source = try string("source", required: true) {
-                guard source.hasPrefix("/") else {
-                    throw ProtocolValidationError.invalidParameter("Source must be an absolute path")
-                }
-            }
-            if let name = try string("name", required: true, maximumBytes: 128) {
-                try validateArtifactName(name, expectedExtensions: uploadArtifactExtensions)
             }
         case .press:
             try allow(["key"])

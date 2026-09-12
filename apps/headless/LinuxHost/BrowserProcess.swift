@@ -6,6 +6,8 @@ import Darwin
 import Glibc
 #endif
 
+private let linuxAgentRuntimeJavaScript = "globalThis.__headlessFileUpload = true;\n" + agentRuntimeJavaScript
+
 private final class ChromiumChildProcess {
     let processIdentifier: Int32
     private let lock = NSLock()
@@ -442,7 +444,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
         _ = try command("DOM.enable")
         _ = try command("Log.enable")
         _ = try command("Page.addScriptToEvaluateOnNewDocument", parameters: [
-            "source": agentRuntimeJavaScript,
+            "source": linuxAgentRuntimeJavaScript,
             "worldName": "HeadlessAgent",
             "runImmediately": true,
         ])
@@ -559,6 +561,13 @@ final class LinuxBrowserSession: @unchecked Sendable {
 
     func upload(parameters: [String: JSONValue], artifactURL: URL) throws -> JSONValue {
         let args = try browserTargetArguments(parameters)
+        let prepared = try evaluate(
+            "return globalThis.__headlessAgent.fileInputPrepare(args);",
+            input: ["args": args]
+        )
+        guard case .object(var metadata) = prepared else {
+            throw CDPError.invalidResponse("file input metadata")
+        }
         let objectId = try evaluateNode(
             "return globalThis.__headlessAgent.fileInput(args);",
             input: ["args": args]
@@ -568,15 +577,8 @@ final class LinuxBrowserSession: @unchecked Sendable {
             "objectId": objectId,
             "files": [artifactURL.path],
         ])
-        var result = try evaluate(
-            "return globalThis.__headlessAgent.fileInputResult(args);",
-            input: ["args": args]
-        )
-        if case .object(var object) = result {
-            object["artifact"] = .string(artifactURL.lastPathComponent)
-            result = .object(object)
-        }
-        return result
+        metadata["artifact"] = .string(artifactURL.lastPathComponent)
+        return .object(metadata)
     }
 
     func fill(parameters: [String: JSONValue]) throws -> JSONValue {
@@ -1167,7 +1169,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
         let installedValue = (installed["result"] as? [String: Any])?["value"] as? Bool ?? false
         if !installedValue {
             _ = try command("Runtime.evaluate", parameters: [
-                "expression": agentRuntimeJavaScript,
+                "expression": linuxAgentRuntimeJavaScript,
                 "returnByValue": true,
                 "contextId": identifier,
             ])

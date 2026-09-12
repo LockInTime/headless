@@ -205,6 +205,7 @@ public let capabilitiesDocument: JSONValue = {
         ]),
         "screenshotSeries": stringArray(["viewport", "section"]),
         "localCommands": stringArray([
+            "artifacts.add",
             "config.describe", "config.get", "config.list", "config.reset", "config.set",
             "credentials.add", "credentials.list", "credentials.remove", "credentials.rename",
         ]),
