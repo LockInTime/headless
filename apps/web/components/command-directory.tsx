@@ -23,6 +23,11 @@ export function CommandDirectory({ groups }: { groups: CommandGroup[] }) {
     );
   }, [groups, normalized]);
 
+  const countLabel =
+    visible.length === 0
+      ? `No commands match “${query}”.`
+      : `${visible.length} of ${groups.length} groups`;
+
   return (
     <>
       <div className="command-filter">
@@ -32,28 +37,34 @@ export function CommandDirectory({ groups }: { groups: CommandGroup[] }) {
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="visit, inspect, record…"
+          placeholder="visit, inspect, credentials…"
           autoComplete="off"
           spellCheck={false}
         />
-        <p>
-          {visible.length} of {groups.length} groups
+        <p role="status" aria-live="polite">
+          {countLabel}
         </p>
       </div>
-      {visible.length === 0 ? (
-        <p role="status">No commands match “{query}”.</p>
-      ) : (
-        visible.map((group, index) => (
-          <section id={group.id} key={group.id}>
-            <p className="docs-label">
-              {String(index + 1).padStart(2, "0")} / {group.title}
-            </p>
-            <h2>{group.title}</h2>
-            <p>{plainText(group.description)}</p>
-            <CommandBlock>{group.usage}</CommandBlock>
-          </section>
-        ))
-      )}
+      {visible.length > 0 ? (
+        <nav className="docs-toc docs-toc-inline" aria-label="On this page">
+          <p>On this page</p>
+          {visible.map((group) => (
+            <a href={`#${group.id}`} key={group.id}>
+              {group.title}
+            </a>
+          ))}
+        </nav>
+      ) : null}
+      {visible.map((group, index) => (
+        <section id={group.id} key={group.id}>
+          <p className="docs-label">
+            {String(index + 1).padStart(2, "0")} / {group.title}
+          </p>
+          <h2>{group.title}</h2>
+          <p>{plainText(group.description)}</p>
+          <CommandBlock>{group.usage}</CommandBlock>
+        </section>
+      ))}
     </>
   );
 }

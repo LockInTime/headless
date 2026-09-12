@@ -1309,6 +1309,9 @@ h3,
 .docs-toc {
   margin-top: 30px;
 }
+.docs-toc-inline {
+  margin: 0 0 42px;
+}
 .docs-sidebar p {
   margin: 0 0 6px;
   color: var(--amber-ink);
@@ -1989,7 +1992,7 @@ h3,
     overflow-x: auto;
   }
   .docs-sidebar p,
-  .docs-toc {
+  .docs-sidebar .docs-toc {
     display: none;
   }
   .docs-nav-group {

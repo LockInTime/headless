@@ -389,15 +389,41 @@ function commandNames(usage) {
 function commandGroup(commandReference, title) {
   const section = extractSection(commandReference, title);
   const usage = fencedCode(section);
-  const description = bulletItems(section)[0];
+  if (!usage) fail(`missing command usage fence: ${title}`);
+  const description = bulletItems(section)[0] || paragraphs(section)[0];
   if (!description) fail(`missing command description: ${title}`);
   return {
     title,
-    id: title.toLowerCase().replaceAll(" ", "-"),
+    id: title.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
     commands: commandNames(usage),
     description,
     usage,
   };
+}
+
+function commandGroupsFromReference(commandReference) {
+  const titles = [...commandReference.matchAll(/^## (.+)$/gm)].map(
+    (match) => match[1],
+  );
+  return titles.flatMap((title) => {
+    if (title === "Where to go next") return [];
+    const usage = fencedCodeBlocks(extractSection(commandReference, title))[0];
+    return usage ? [commandGroup(commandReference, title)] : [];
+  });
+}
+
+export function sessionModelFromCommands(commandReference) {
+  const lifecycle = extractSection(commandReference, "Host lifecycle");
+  const shared = bulletItems(lifecycle).find((item) =>
+    /one browser profile/i.test(item),
+  );
+  if (!shared) {
+    fail("COMMANDS.md is missing the shared-profile session contract");
+  }
+  if (/stays isolated until you close it/i.test(shared)) {
+    fail("session contract must not claim sessions stay isolated");
+  }
+  return shared;
 }
 
 function listCommandForms(groups) {
@@ -469,15 +495,7 @@ export function loadDocumentationContent() {
   if (documentationCache) return documentationCache;
   const readme = readRepositoryFile("README.md");
   const commandReference = readRepositoryFile("apps/headless/docs/COMMANDS.md");
-  const sessionModel = bulletItems(
-    extractSection(commandReference, "Host lifecycle"),
-  ).find(
-    (item) =>
-      item.includes("one browser profile") && item.includes("not an isolation"),
-  );
-  if (!sessionModel) {
-    fail("COMMANDS.md is missing the shared-profile session contract");
-  }
+  const sessionModel = sessionModelFromCommands(commandReference);
   const workflowSection = extractSection(readme, "Agent workflow");
   const workflowCommands = fencedCode(workflowSection)
     .split("\n")
@@ -520,12 +538,7 @@ export function loadDocumentationContent() {
       workflowSection,
       "For scrollable-page QA",
     ),
-    commandGroups: [
-      commandGroup(commandReference, "Host lifecycle"),
-      commandGroup(commandReference, "Navigation and interaction"),
-      commandGroup(commandReference, "Capture and evidence"),
-      commandGroup(commandReference, "Diagnostics"),
-    ],
+    commandGroups: commandGroupsFromReference(commandReference),
     security: bulletItems(extractSection(readme, "Security boundary")),
     platforms: bulletItems(
       readme.slice(0, readme.indexOf("## Computer use comparison")),
@@ -586,12 +599,7 @@ export function loadProductDocsContent() {
     fail("Headless MCP configuration is malformed");
   }
 
-  const commandGroups = [
-    commandGroup(commandReference, "Host lifecycle"),
-    commandGroup(commandReference, "Navigation and interaction"),
-    commandGroup(commandReference, "Capture and evidence"),
-    commandGroup(commandReference, "Diagnostics"),
-  ];
+  const commandGroups = commandGroupsFromReference(commandReference);
   const commandForms = commandFormCount(commandGroups);
   if (commandForms < 30) fail("command reference contains fewer than 30 forms");
 
@@ -779,6 +787,18 @@ export function validateRepositoryContent() {
   }
   if (productDocs.commands.forms.length !== productDocs.commands.count) {
     fail("command directory forms drifted from the generated command count");
+  }
+  sessionModelFromCommands(readRepositoryFile("apps/headless/docs/COMMANDS.md"));
+  if (
+    !productDocs.commands.groups.some((group) => group.title === "Credential vault")
+  ) {
+    fail("command directory omitted the Credential vault section");
+  }
+  const directory = readRepositoryFile(
+    "apps/web/components/command-directory.tsx",
+  );
+  if (!directory.includes('role="status"')) {
+    fail("command directory must announce filter result counts");
   }
   for (const convention of ["not-found.tsx", "robots.ts", "sitemap.ts"]) {
     readRepositoryFile(`apps/web/app/${convention}`);

@@ -96,6 +96,7 @@ export const PRODUCT_DOC_ROUTES: Array<{
   category: string;
 }>;
 
+export function sessionModelFromCommands(commandReference: string): string;
 export function loadBenchmarkContent(): BenchmarkContent;
 export function loadDocumentationContent(): DocumentationContent;
 export function loadProductDocsContent(): ProductDocsContent;
