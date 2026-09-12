@@ -525,6 +525,11 @@ assert_page_stays_on_loopback() {
   snapshot=""
   while [ "$waited" -lt 20 ]; do
     snapshot="$(headless inspect --context summary 2>/dev/null || true)"
+    if echo "$snapshot" | grep -q 'HOST_UNAVAILABLE'; then
+      echo "$reason (host stopped responding)" >&2
+      echo "$snapshot" >&2
+      exit 1
+    fi
     if echo "$snapshot" | grep -q '"url":"http://127.0.0.1' \
       && ! echo "$snapshot" | grep -q '"url":"https://example.com'; then
       return 0
@@ -536,6 +541,7 @@ assert_page_stays_on_loopback() {
   echo "$snapshot" >&2
   exit 1
 }
+STEP="navigation-allowlist"
 ALLOWLIST_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 headless stop >/dev/null 2>&1 || true
 wait_for_host_exit "$ALLOWLIST_PID"

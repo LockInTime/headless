@@ -562,6 +562,11 @@ assert_page_stays_on_loopback() {
   local snapshot=""
   while (( waited < 20 )); do
     snapshot="$("$CLI" inspect --context summary 2>/dev/null || true)"
+    if print -r -- "$snapshot" | grep -q 'HOST_UNAVAILABLE'; then
+      print -r -u2 -- "$reason (host stopped responding)"
+      print -r -u2 -- "$snapshot"
+      fail
+    fi
     if print -r -- "$snapshot" | grep -q '"url":"http://127.0.0.1' \
       && ! print -r -- "$snapshot" | grep -q '"url":"https://example.com'; then
       return 0

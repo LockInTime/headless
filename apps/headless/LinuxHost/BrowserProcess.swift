@@ -439,7 +439,9 @@ final class ChromiumProcess {
             leftovers = []
         }
         sessionsLock.unlock()
-        leftovers.forEach { closeExtraPageTarget(targetID: $0.targetID) }
+        leftovers.forEach {
+            closeExtraPageTarget(targetID: $0.targetID, sessionID: $0.sessionID)
+        }
     }
 
     private func handleAttachedToTarget(_ event: [String: Any]) {
@@ -482,7 +484,7 @@ final class ChromiumProcess {
         }
         sessionsLock.unlock()
         if isCloseablePageTargetType(type) {
-            closeExtraPageTarget(targetID: targetID)
+            closeExtraPageTarget(targetID: targetID, sessionID: sessionID)
             return
         }
         if waiting {
@@ -492,7 +494,15 @@ final class ChromiumProcess {
         }
     }
 
-    private func closeExtraPageTarget(targetID: String) {
+    private func closeExtraPageTarget(targetID: String, sessionID: String? = nil) {
+        // A target paused at waitForDebuggerOnStart will not process
+        // Target.closeTarget until resumed. Leaving it paused wedges the
+        // DevTools pipe and the host looks dead to later inspect/click.
+        if let sessionID {
+            try? browserConnection.sendWithoutWaiting(
+                "Runtime.runIfWaitingForDebugger", sessionID: sessionID
+            )
+        }
         try? browserConnection.sendWithoutWaiting(
             "Target.closeTarget", parameters: ["targetId": targetID]
         )
