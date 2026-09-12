@@ -365,7 +365,12 @@ final class ChromiumProcess {
     private func routeEvent(_ event: [String: Any]) {
         let method = event["method"] as? String
         if method == "Target.attachedToTarget" {
-            handleAttachedToTarget(event)
+            // Auto-attach is only enabled for a restricted allowlist. Ignoring
+            // this event on an unrestricted host keeps attachToTarget from
+            // closing the agent page it just created.
+            if processNavigationAllowlist.isRestricted {
+                handleAttachedToTarget(event)
+            }
             return
         }
         let sessionID = event["sessionId"] as? String
@@ -438,6 +443,7 @@ final class ChromiumProcess {
     }
 
     private func handleAttachedToTarget(_ event: [String: Any]) {
+        guard processNavigationAllowlist.isRestricted else { return }
         guard let parameters = event["params"] as? [String: Any],
               let sessionID = parameters["sessionId"] as? String,
               let targetInfo = parameters["targetInfo"] as? [String: Any],
