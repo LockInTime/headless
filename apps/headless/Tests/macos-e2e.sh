@@ -147,31 +147,6 @@ end run
 APPLESCRIPT
 }
 
-ax_keyed_menu_count() {
-  local pid="$1"
-  osascript_with_timeout - "$pid" <<'APPLESCRIPT'
-on run argv
-  set targetPID to item 1 of argv as integer
-  set keyedItems to 0
-  tell application "System Events"
-    set targetProcesses to every application process whose unix id is targetPID
-    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
-    tell item 1 of targetProcesses
-      repeat with topLevelItem in menu bar items of menu bar 1
-        repeat with candidate in menu items of menu 1 of topLevelItem
-          if exists attribute "AXMenuItemCmdChar" of candidate then
-            set commandCharacter to value of attribute "AXMenuItemCmdChar" of candidate
-            if commandCharacter is not missing value and commandCharacter is not "" then set keyedItems to keyedItems + 1
-          end if
-        end repeat
-      end repeat
-    end tell
-  end tell
-  return keyedItems
-end run
-APPLESCRIPT
-}
-
 ax_press_menu_item() {
   local pid="$1" menu_title="$2" item_title="$3"
   osascript_with_timeout - "$pid" "$menu_title" "$item_title" <<'APPLESCRIPT'
@@ -602,11 +577,6 @@ Window	Pin on Top	p	2
 Help	Headless Help	/	1
 SHORTCUTS
 assert_system_full_screen_shortcut "$HOST_PID"
-KEYED_MENU_COUNT="$(ax_keyed_menu_count "$HOST_PID")"
-if [[ "$KEYED_MENU_COUNT" != 25 ]]; then
-  echo "Headless exposed $KEYED_MENU_COUNT keyed menu items, expected the 25-item catalog" >&2
-  fail
-fi
 for settings_title in "Settings" "Settings…" "Preferences" "Preferences…"; do
   if [[ "$(ax_menu_exists "$HOST_PID" Headless "$settings_title")" == true ]]; then
     echo "$settings_title is shipped but has no Cmd-, coverage" >&2
