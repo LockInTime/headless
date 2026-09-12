@@ -485,9 +485,11 @@ fi
 
 STEP="durable-authentication-profile"
 "$CLI" start --background | grep -q '"ready":true'
+STEP="durable-authentication-login"
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=login" | grep -q 'Authentication State'
 "$CLI" inspect --text | grep -q 'Cookie state: signed-in'
 "$CLI" inspect --text | grep -q 'Storage state: signed-in'
+STEP="durable-authentication-first-stop"
 PROFILE_RESTART_PID="$("$CLI" status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$PROFILE_RESTART_PID"
 "$CLI" stop >/dev/null
@@ -499,13 +501,16 @@ if kill -0 "$PROFILE_RESTART_PID" >/dev/null 2>&1; then
   echo "host did not exit during durable profile restart" >&2
   fail
 fi
+STEP="durable-authentication-persisted-state"
 "$CLI" start --background | grep -q '"ready":true'
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" | grep -q 'Authentication State'
 "$CLI" inspect --text | grep -q 'Cookie state: signed-in'
 "$CLI" inspect --text | grep -q 'Storage state: signed-in'
+STEP="durable-authentication-logout"
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=logout" >/dev/null
 "$CLI" inspect --text | grep -q 'Cookie state: missing'
 "$CLI" inspect --text | grep -q 'Storage state: missing'
+STEP="durable-authentication-second-stop"
 LOGOUT_RESTART_PID="$("$CLI" status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$LOGOUT_RESTART_PID"
 "$CLI" stop >/dev/null
@@ -517,10 +522,12 @@ if kill -0 "$LOGOUT_RESTART_PID" >/dev/null 2>&1; then
   echo "host did not exit while verifying durable logout" >&2
   fail
 fi
+STEP="durable-authentication-persisted-logout"
 "$CLI" start --background >/dev/null
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" >/dev/null
 "$CLI" inspect --text | grep -q 'Cookie state: missing'
 "$CLI" inspect --text | grep -q 'Storage state: missing'
+STEP="durable-authentication-profile-clear"
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=login" >/dev/null
 "$CLI" profile clear | grep -q '"cleared":true'
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" | grep -q 'Authentication State'
