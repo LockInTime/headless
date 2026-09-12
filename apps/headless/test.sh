@@ -25,6 +25,8 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
     if swiftc -module-cache-path build/module-cache -sdk "$sdk" \
         -target "$(uname -m)-apple-macos13.0" -typecheck \
         Sources/HeadlessProtocol/Protocol.swift \
+        Sources/HeadlessProtocol/ProtocolSchema.swift \
+        Sources/HeadlessProtocol/SupervisedHost.swift \
         Sources/HeadlessProtocol/CredentialCommands.swift \
         Sources/HeadlessProtocol/HostError.swift \
         Sources/HeadlessProtocol/CaptureFormats.swift \
@@ -77,6 +79,11 @@ fi
 "$TEST_SCRATCH/secure-prompt-tests"
 [[ "$("$BIN_PATH/headless" --version)" == "headless $EXPECTED_VERSION" ]] || {
   echo "headless tests: CLI product version does not match $EXPECTED_VERSION" >&2
+  exit 1
+}
+"$BIN_PATH/headless" schema > "$TEST_SCRATCH/protocol-schema.json"
+cmp "$TEST_SCRATCH/protocol-schema.json" ../../sdk/protocol-schema.json || {
+  echo "headless tests: sdk/protocol-schema.json is stale; regenerate it with headless schema" >&2
   exit 1
 }
 PATH_INVOCATION_ROOT="$TEST_SCRATCH/path-invocation"

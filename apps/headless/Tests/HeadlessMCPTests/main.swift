@@ -90,6 +90,17 @@ func run() throws {
     let serverInfo = try object(initialize["serverInfo"], "initialize server info was absent")
     try expect(serverInfo["name"] as? String == "headless", "initialize server name changed")
     try expect(serverInfo["version"] as? String == CommandLine.arguments[2], "MCP product version changed")
+    try expect(
+        serverInfo["headlessProtocolVersion"] as? String == headlessProtocolVersion,
+        "MCP wire version drifted from the SDK contract"
+    )
+    let mcpSchemaVersion = try integer(
+        serverInfo["headlessSchemaVersion"], "MCP schema version was absent"
+    )
+    try expect(
+        mcpSchemaVersion == headlessProtocolSchemaVersion,
+        "MCP schema version drifted from the SDK contract"
+    )
 
     let list = try object(responses[1]["result"], "tools/list result was absent")
     guard let tools = list["tools"] as? [[String: Any]], tools.count == 1 else {

@@ -17,8 +17,12 @@ public enum LocalCommand: Equatable, Sendable {
     case help
     case version
     case capabilities
+    case schema
     case runtime
-    case start(presentation: AgentStartupPresentation?, allowlist: NavigationAllowlist)
+    case start(
+        presentation: AgentStartupPresentation?, allowlist: NavigationAllowlist,
+        supervised: Bool
+    )
     case config(ConfigCLICommand)
     case credentials(CredentialCLICommand)
 }
@@ -96,6 +100,9 @@ public struct CLIParser {
         case "capabilities":
             try requireEmpty(arguments)
             return CLIInvocation(local: .capabilities, jsonOutput: true)
+        case "schema":
+            try requireEmpty(arguments)
+            return CLIInvocation(local: .schema, jsonOutput: true)
         case "runtime":
             try requireEmpty(arguments)
             return CLIInvocation(local: .runtime, jsonOutput: true)
@@ -528,6 +535,7 @@ public struct CLIParser {
 
     private func parseStart(_ arguments: [String], jsonOutput: Bool) throws -> CLIInvocation {
         var args = arguments
+        let supervised = removeFlag("--supervised", from: &args)
         var presentation: AgentStartupPresentation?
         if removeFlag("--background", from: &args) {
             presentation = .background
@@ -547,7 +555,9 @@ public struct CLIParser {
             allowlist = try NavigationAllowlist.parse(rawAllows)
         }
         return CLIInvocation(
-            local: .start(presentation: presentation, allowlist: allowlist),
+            local: .start(
+                presentation: presentation, allowlist: allowlist, supervised: supervised
+            ),
             jsonOutput: jsonOutput
         )
     }
@@ -810,7 +820,7 @@ Core workflow:
 
 Commands:
   version | --version
-  start [--background|--foreground] [--allow PATTERN]... | status | stop | runtime
+  start [--background|--foreground] [--allow PATTERN]... [--supervised] | status | stop | runtime
   profile clear
   config list | config describe KEY | config get KEY
   config set KEY VALUE | config reset KEY
@@ -852,6 +862,7 @@ Commands:
   flow start | flow stop [--output FLOW.json] | flow run FLOW.json
   report create [--output REPORT.json]
   capabilities
+  schema
 
 Global options:
   --session NAME   target a named browser session

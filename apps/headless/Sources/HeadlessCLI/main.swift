@@ -22,6 +22,11 @@ private func printResponse(_ response: CommandResponse) throws {
 }
 
 private struct HostLauncher {
+    struct Launch {
+        let response: CommandResponse
+        let process: Process?
+    }
+
     let client = LocalSocketClient()
 
     func ping() -> CommandResponse? {
@@ -30,14 +35,16 @@ private struct HostLauncher {
 
     func start(
         presentation: AgentStartupPresentation? = nil,
-        allowlist: NavigationAllowlist = .unrestricted
-    ) throws -> CommandResponse {
+        allowlist: NavigationAllowlist = .unrestricted,
+        supervised: Bool = false
+    ) throws -> Launch {
         #if !os(macOS)
         if presentation != nil { throw SettingsError.unsupportedPlatform("startup-presentation") }
         #endif
         if let response = ping(), response.ok {
+            if supervised { throw HostLaunchError.alreadyRunning }
             try validateRunningAllowlist(response, requested: allowlist)
-            return response
+            return Launch(response: response, process: nil)
         }
         #if os(Linux)
         // Report an unsupported browser directly to the operator instead of
@@ -60,13 +67,14 @@ private struct HostLauncher {
         let effectivePresentation = AgentStartupPresentation.background
         #endif
         environment["HEADLESS_START_FOREGROUND"] = effectivePresentation == .foreground ? "1" : "0"
+        environment["HEADLESS_SUPERVISED"] = supervised ? "1" : "0"
         if allowlist.isRestricted {
             environment[headlessNavigationAllowlistEnvironmentKey] = allowlist.environmentValue
         } else {
             environment.removeValue(forKey: headlessNavigationAllowlistEnvironmentKey)
         }
         process.environment = environment
-        process.standardInput = FileHandle.nullDevice
+        process.standardInput = supervised ? FileHandle.standardInput : FileHandle.nullDevice
         if let hostLog = environment["HEADLESS_HOST_LOG"], hostLog.hasPrefix("/") {
             let logURL = URL(fileURLWithPath: hostLog)
             FileManager.default.createFile(atPath: logURL.path, contents: nil)
@@ -84,18 +92,36 @@ private struct HostLauncher {
             if let response = ping(), response.ok {
                 do {
                     try validateRunningAllowlist(response, requested: allowlist)
-                    return response
+                    return Launch(response: response, process: supervised ? process : nil)
                 } catch {
-                    process.terminate()
+                    terminateAndReap(process)
                     throw error
                 }
             }
             if !process.isRunning {
+                process.waitUntilExit()
                 throw HostLaunchError.exited(process.terminationStatus)
             }
             Thread.sleep(forTimeInterval: 0.05)
         } while Date() < deadline
+        terminateAndReap(process)
         throw HostLaunchError.timedOut
+    }
+
+    private func terminateAndReap(_ process: Process) {
+        guard process.isRunning else {
+            process.waitUntilExit()
+            return
+        }
+        process.terminate()
+        let deadline = Date().addingTimeInterval(3)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if process.isRunning {
+            _ = kill(process.processIdentifier, SIGKILL)
+        }
+        process.waitUntilExit()
     }
 
     private func validateRunningAllowlist(
@@ -144,6 +170,7 @@ private struct HostLauncher {
 
 private enum HostLaunchError: Error, CustomStringConvertible {
     case notFound
+    case alreadyRunning
     case timedOut
     case exited(Int32)
     case allowlistMismatch(running: [String], requested: [String])
@@ -151,6 +178,8 @@ private enum HostLaunchError: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .notFound: return "Could not find headless-host. Run the Headless build first."
+        case .alreadyRunning:
+            return "A shared Headless host is already running. Stop it before starting a supervised host."
         case .timedOut: return "Headless host did not become ready within 8 seconds."
         case .exited(let status): return "Headless host exited during startup (status \(status))."
         case .allowlistMismatch(let running, let requested):
@@ -239,6 +268,8 @@ do {
             print("headless \(headlessProductVersion)")
         case .capabilities:
             printJSON(capabilitiesDocument)
+        case .schema:
+            printJSON(protocolSchemaDocument)
         case .runtime:
             #if os(Linux)
             printJSON(try ChromiumRuntimeResolver().resolve().diagnostic)
@@ -248,8 +279,15 @@ do {
                 "supported": .bool(true), "transport": .string("native-webkit"),
             ]))
             #endif
-        case .start(let presentation, let allowlist):
-            try printResponse(try HostLauncher().start(presentation: presentation, allowlist: allowlist))
+        case .start(let presentation, let allowlist, let supervised):
+            let launch = try HostLauncher().start(
+                presentation: presentation, allowlist: allowlist, supervised: supervised
+            )
+            try printResponse(launch.response)
+            if let process = launch.process {
+                process.waitUntilExit()
+                exit(process.terminationStatus)
+            }
         case .config(let command):
             let settings = try SettingsStore.production()
             switch command {

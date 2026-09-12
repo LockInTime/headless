@@ -812,6 +812,49 @@ rule that durable saved-credential retrieval needs trusted per-use presence.
 
 ---
 
+## 28. SDKs derive from one Swift-owned protocol contract
+
+**Decision:** SDK generation starts from a deterministic machine-readable
+contract emitted by `headless schema`. The Swift descriptors define every wire
+command's parameter names, primitive types, required fields, byte and numeric
+bounds, enum values, and array limits, and those descriptors execute before
+command-specific semantic validation. `sdk/protocol-schema.json` is a golden
+artifact checked against the executable in tests, not a second hand-maintained
+validator.
+
+SDKs use only the existing newline-framed JSON protocol over the private
+same-user Unix socket. They do not add TCP, remote control, arbitrary
+JavaScript, a Chromium debug port, unrestricted profile paths, or direct
+credential values. Authentication APIs carry aliases and challenge IDs only.
+Page-derived results stay identified as untrusted, sensitive diagnostics keep
+both gates, and unsupported engine behavior is capability-negotiated and fails
+explicitly.
+
+Wire compatibility is exact by `headlessProtocolVersion` and independent of
+the product and SDK package versions. Compatible additions may retain the wire
+version; removals, changed meanings, weaker validation, or incompatible
+envelopes require a new wire version. The schema format has a separate integer
+version. Clients reject unknown schema versions and mismatched response IDs or
+wire versions before decoding command results.
+
+Cancellation before send writes no request. Cancellation or timeout after send
+closes the client connection but cannot claim the browser operation was rolled
+back; clients report an unknown outcome and refresh state. SDK-owned hosts use
+`headless start --supervised`, which refuses to attach to an existing host and
+keeps a standard-input owner pipe open. Closing that pipe stops the owned host
+and lets the launcher reap it. SDKs never stop a shared host they discovered.
+
+**Status:** accepted for [#163](https://github.com/LockInTime/headless/issues/163).
+
+**Consequences:** TypeScript and Python clients generate or validate their
+public command types from the golden schema and pin its digest. Schema, SDK,
+CLI-parser, protocol-validator, and MCP parity are tested together. SDK package
+versions may advance independently while declaring the supported wire version.
+Deprecation, support-window, provenance, and security-reporting rules live with
+the schema so client packages cannot silently invent a different policy.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -836,5 +879,6 @@ rule that durable saved-credential retrieval needs trusted per-use presence.
 | 25  | Typed local settings registry; security policy stays fixed  | Implemented                                               | 2026-09-12 |
 | 26  | Isolated sessions own one ephemeral browser context         | Implemented                                               | 2026-09-12 |
 | 27  | Interactive authentication keeps consent in trusted host    | Implemented                                               | 2026-09-12 |
+| 28  | SDKs derive from one Swift-owned protocol contract          | Decided                                                   | 2026-09-12 |
 
 New decisions append here with the same format.
