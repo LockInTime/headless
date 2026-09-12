@@ -1531,6 +1531,8 @@ h3,
   margin-top: 27px;
 }
 .docs-content .command-block pre {
+  max-width: 100%;
+  overflow-x: auto;
   margin: 0;
   padding: 24px 74px 24px 24px;
   border: 1px solid rgba(255, 176, 32, 0.3);

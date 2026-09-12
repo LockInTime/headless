@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test:browser": "playwright test",
     "lint": "node scripts/validate-harness-onboarding.mjs && node scripts/validate-content-provenance.mjs && node scripts/validate-command-directory.mjs && node --test scripts/command-directory.test.mjs && node scripts/validate-bundle-policy.mjs && node scripts/validate-deployment-config.mjs && eslint .",
     "brand": "node scripts/render-brand.mjs"
   },
@@ -18,6 +19,7 @@
     "simple-icons": "^16.26.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.51.1",
     "@tailwindcss/postcss": "^4.1.11",
     "@types/node": "^26.5.0",
     "@types/react": "^19.2.18",

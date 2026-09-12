@@ -13,14 +13,10 @@ if (typeof nodeModule.registerHooks === "function") {
 
 const { groups } = loadProductDocsContent().commands;
 
-async function renderDirectory({ width = 1280 } = {}) {
+async function renderDirectory() {
   const dom = new JSDOM('<div id="root"></div>', {
     pretendToBeVisual: true,
     url: "https://headless.test/docs/commands",
-  });
-  Object.defineProperty(dom.window, "innerWidth", {
-    configurable: true,
-    value: width,
   });
 
   const previousGlobals = new Map();
@@ -187,32 +183,6 @@ test("handles normalized queries, no matches, and clearing without stale links",
     assert.equal(status.textContent, `${groups.length} of ${groups.length} groups`);
     assert.equal(view.document.querySelectorAll("section").length, groups.length);
     assertTocTargetsExist(view.document);
-  } finally {
-    await view.cleanup();
-  }
-});
-
-test("keeps command discovery functional in a mobile viewport", async () => {
-  const view = await renderDirectory({ width: 375 });
-  try {
-    assert.equal(view.document.defaultView.innerWidth, 375);
-    assert.ok(view.input);
-    assert.equal(view.document.querySelectorAll("section").length, groups.length);
-    assertTocTargetsExist(view.document);
-
-    await typeWithKeyboard(view, "visit");
-    assert.equal(
-      view.document.querySelector("[role=status]").textContent,
-      `1 of ${groups.length} groups`,
-    );
-    assert.equal(
-      view.document.querySelector("nav[aria-label='On this page'] a").hash,
-      "#navigation-and-interaction",
-    );
-    assert.equal(
-      view.document.querySelector("section")?.id,
-      "navigation-and-interaction",
-    );
   } finally {
     await view.cleanup();
   }
