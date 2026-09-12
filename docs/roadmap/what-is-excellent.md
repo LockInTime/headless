@@ -63,7 +63,10 @@ prompt-injected or confused agent _cannot_ violate them.
 - **HTTP/HTTPS only.** `normalizedWebURL` / `agentMayNavigate`
   (`Protocol.swift:530-609`): no `file:`, `javascript:`, `data:`, external app
   schemes, or credential-bearing URLs; bare hosts default to https except
-  local dev addresses. Enforced at _three_ layers: visit, host navigation
+  local dev addresses. An optional host allowlist (`headless start --allow`)
+  is a further host-enforced conjunct: when set, visit, top-frame navigation,
+  and in-page clicks to a non-matching host fail closed with
+  `UNSAFE_NAVIGATION`. Enforced at _three_ layers: visit, host navigation
   policy (macOS `decidePolicyFor`, Linux frame-event enforcement), and the
   in-page click guard.
 - **Downloads denied.** `Browser.setDownloadBehavior deny` on Linux

@@ -550,5 +550,91 @@ fi
 "$CLI" --session private-crash inspect --text | grep -q 'Storage state: missing'
 "$CLI" session close private-crash >/dev/null
 "$CLI" stop >/dev/null
+for _ in {1..100}; do
+  ! "$CLI" status >/dev/null 2>&1 && break
+  sleep 0.05
+done
+
+STEP="navigation-allowlist"
+assert_page_stays_on_loopback() {
+  local reason="$1"
+  local waited=0
+  local snapshot=""
+  while (( waited < 20 )); do
+    snapshot="$("$CLI" inspect --context summary 2>/dev/null || true)"
+    if print -r -- "$snapshot" | grep -q 'HOST_UNAVAILABLE'; then
+      print -r -u2 -- "$reason (host stopped responding)"
+      print -r -u2 -- "$snapshot"
+      fail
+    fi
+    if print -r -- "$snapshot" | grep -q '"url":"http://127.0.0.1' \
+      && ! print -r -- "$snapshot" | grep -q '"url":"https://example.com'; then
+      return 0
+    fi
+    waited=$((waited + 1))
+    sleep 0.1
+  done
+  print -r -u2 -- "$reason"
+  print -r -u2 -- "$snapshot"
+  fail
+}
+ALLOWLIST_START="$("$CLI" start --allow 127.0.0.1)"
+echo "$ALLOWLIST_START" | grep -q '"ready":true'
+echo "$ALLOWLIST_START" | grep -q '"navigationAllowlist":\["127.0.0.1"\]'
+"$CLI" visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'
+if ALLOWLIST_VISIT="$("$CLI" visit https://example.com/)"; then
+  echo "off-allowlist visit was not blocked" >&2
+  fail
+fi
+echo "$ALLOWLIST_VISIT" | grep -q 'UNSAFE_NAVIGATION'
+if ALLOWLIST_CLICK="$("$CLI" click --role link --name 'Off-allowlist site')"; then
+  echo "off-allowlist click was not blocked" >&2
+  fail
+fi
+echo "$ALLOWLIST_CLICK" | grep -q 'UNSAFE_NAVIGATION'
+"$CLI" visit "http://127.0.0.1:$PORT/allowlist-exits" | grep -q 'Allowlist exits'
+if ALLOWLIST_FORM="$("$CLI" click --role button --name 'Leave via form')"; then
+  echo "off-allowlist form submit was not blocked" >&2
+  fail
+fi
+echo "$ALLOWLIST_FORM" | grep -q 'UNSAFE_NAVIGATION'
+assert_page_stays_on_loopback "form submit left the allowlist"
+"$CLI" click --role button --name 'Leave via script' >/dev/null 2>&1 || true
+sleep 0.5
+assert_page_stays_on_loopback "script navigation left the allowlist"
+ALLOWLIST_SESSIONS_BEFORE="$("$CLI" session list)"
+print -r -- "$ALLOWLIST_SESSIONS_BEFORE" | grep -q '"sessions":\["default"\]'
+"$CLI" click --role button --name 'Leave via window' >/dev/null 2>&1 || true
+sleep 0.5
+assert_page_stays_on_loopback "window.open left the allowlist"
+ALLOWLIST_SESSIONS_AFTER="$("$CLI" session list)"
+print -r -- "$ALLOWLIST_SESSIONS_AFTER" | grep -q '"sessions":\["default"\]'
+"$CLI" visit "http://127.0.0.1:$PORT/allowlist-redirect" >/dev/null 2>&1 || true
+sleep 0.5
+assert_page_stays_on_loopback "redirect left the allowlist"
+"$CLI" start --allow 127.0.0.1 | grep -q '"ready":true'
+"$CLI" stop >/dev/null
+for _ in {1..100}; do
+  ! "$CLI" status >/dev/null 2>&1 && break
+  sleep 0.05
+done
+"$CLI" start --allow 127.0.0.1 --allow localhost | grep -q '"navigationAllowlist":\["127.0.0.1","localhost"\]'
+"$CLI" start --allow localhost --allow 127.0.0.1 | grep -q '"ready":true'
+"$CLI" start --allow localhost --allow 127.0.0.1 | grep -q '"navigationAllowlist":\["127.0.0.1","localhost"\]'
+if ALLOWLIST_MISMATCH="$("$CLI" start --allow example.com)"; then
+  echo "a conflicting --allow list was accepted on a running host" >&2
+  fail
+fi
+echo "$ALLOWLIST_MISMATCH" | grep -q 'NAVIGATION_ALLOWLIST_CONFLICT'
+echo "$ALLOWLIST_MISMATCH" | grep -q 'headless stop'
+"$CLI" start | grep -q '"ready":true'
+"$CLI" status | grep -q '"navigationAllowlist":\["127.0.0.1","localhost"\]'
+"$CLI" stop >/dev/null
+for _ in {1..100}; do
+  ! "$CLI" status >/dev/null 2>&1 && break
+  sleep 0.05
+done
+"$CLI" start | grep -q '"navigationAllowlist":\[\]'
+"$CLI" stop >/dev/null
 
 echo "macOS P2 end-to-end flow passed"

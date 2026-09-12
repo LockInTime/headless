@@ -167,6 +167,7 @@ do {
     #if canImport(Glibc)
     signal(SIGPIPE, SIG_IGN)
     #endif
+    let navigationAllowlist = try NavigationAllowlist(environment: ProcessInfo.processInfo.environment)
     let engine = try ChromiumBrowserEngine()
     let artifacts = try ArtifactStore()
     let stopped = DispatchSemaphore(value: 0)
@@ -181,6 +182,7 @@ do {
         artifacts: artifacts,
         defaultSession: try engine.createSession(),
         authenticationBroker: authenticationBroker,
+        navigationAllowlist: navigationAllowlist,
         shutdownHandler: { stopped.signal() }
     )
     let server = LocalSocketServer()

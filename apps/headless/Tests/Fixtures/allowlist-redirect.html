@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Allowlist redirect</title>
+</head>
+<body>
+  <main>
+    <h1>Allowlist redirect</h1>
+    <p>Leaving the allowlist once.</p>
+  </main>
+  <script>
+    if (!sessionStorage.getItem('headless-allowlist-redirected')) {
+      sessionStorage.setItem('headless-allowlist-redirected', '1');
+      location.href = 'https://example.com/';
+    }
+  </script>
+</body>
+</html>
