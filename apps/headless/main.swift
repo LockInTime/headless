@@ -743,8 +743,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     @objc func togglePin(_ sender: Any?) {
         guard let window else { return }
         let pinned = window.level == .floating
+        let nextState: NSControl.StateValue = pinned ? .off : .on
         window.level = pinned ? .normal : .floating
-        showToast(pinned ? "Unpinned" : "Pinned on top")
+        (sender as? NSMenuItem)?.state = nextState
+        showToast(nextState == .on ? "Pinned on top" : "Unpinned")
     }
 
     @objc func showHelpPage(_ sender: Any?) { loadStartPage() }
