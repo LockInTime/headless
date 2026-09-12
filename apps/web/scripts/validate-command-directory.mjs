@@ -12,11 +12,6 @@ const commands = await readFile(
   join(root, "apps/headless/docs/COMMANDS.md"),
   "utf8",
 );
-const directory = await readFile(
-  join(root, "apps/web/components/command-directory.tsx"),
-  "utf8",
-);
-
 const sessionModel = sessionModelFromCommands(commands);
 assert.match(sessionModel, /one browser profile/i);
 assert.doesNotMatch(sessionModel, /stays isolated until you close it/i);
@@ -30,12 +25,9 @@ assert.ok(
   surface.groups.some((group) => /auth login/.test(group.usage)),
   "command directory must include auth login",
 );
-assert.match(directory, /role="status"/);
-assert.match(directory, /aria-live="polite"/);
-assert.match(directory, /docs-toc-inline/);
 assert.doesNotMatch(
   await readFile(join(root, "apps/web/app/docs/commands/page.tsx"), "utf8"),
   /sections=\{commands\.groups/,
 );
 
-console.log("command directory search and accessibility checks passed");
+console.log("command directory content checks passed");

@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "node scripts/validate-harness-onboarding.mjs && node scripts/validate-content-provenance.mjs && node scripts/validate-command-directory.mjs && node scripts/validate-bundle-policy.mjs && node scripts/validate-deployment-config.mjs && eslint .",
+    "lint": "node scripts/validate-harness-onboarding.mjs && node scripts/validate-content-provenance.mjs && node scripts/validate-command-directory.mjs && node --test scripts/command-directory.test.mjs && node scripts/validate-bundle-policy.mjs && node scripts/validate-deployment-config.mjs && eslint .",
     "brand": "node scripts/render-brand.mjs"
   },
   "dependencies": {
@@ -24,6 +24,7 @@
     "@types/react-dom": "^19.2.7",
     "eslint": "^9.36.0",
     "eslint-config-next": "^16.3.3",
+    "jsdom": "30.0.1",
     "tailwindcss": "^4.1.11",
     "typescript": "^6.0.3"
   }
