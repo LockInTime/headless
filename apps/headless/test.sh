@@ -66,7 +66,7 @@ swift build "${SDK_ARGS[@]}" --product headless --scratch-path "$TEST_SCRATCH"
 swift build "${SDK_ARGS[@]}" --product headless-credential-broker --scratch-path "$TEST_SCRATCH"
 swift build "${SDK_ARGS[@]}" --product headless-mcp --scratch-path "$TEST_SCRATCH"
 swift build "${SDK_ARGS[@]}" --product headless-mcp-tests --scratch-path "$TEST_SCRATCH"
-"$BIN_PATH/headless-protocol-tests"
+HEADLESS_REQUIRE_SDK_CONTRACT=1 "$BIN_PATH/headless-protocol-tests"
 if [[ "$(uname -s)" == "Darwin" ]]; then
   cc -D_GNU_SOURCE -std=c11 -Wall -Wextra -Werror \
     -I SecurePrompt/include SecurePrompt/SecurePrompt.c Tests/secure-prompt.c \
@@ -102,4 +102,5 @@ for invocation in path symlink; do
     exit 1
   fi
 done
-"$BIN_PATH/headless-mcp-tests" "$BIN_PATH/headless-mcp" "$EXPECTED_VERSION"
+"$BIN_PATH/headless-mcp-tests" "$BIN_PATH/headless-mcp" "$EXPECTED_VERSION" \
+  "../../sdk/protocol-fixtures.json"

@@ -39,9 +39,9 @@ schema
   controls the host afterwards. `runtime` reports which engine is active and
   where it came from.
 - `start --supervised` is for SDK-owned lifecycle management. It refuses to
-  attach to an existing host, keeps the launcher alive, and shuts the host down
-  when the launcher's standard-input owner pipe closes. Normal starts remain
-  shared and detached.
+  attach to an existing host, verifies the launched host PID, and shuts the host
+  down when the launcher input closes or the launcher exits. Normal starts
+  remain shared and detached.
 - `schema` prints the versioned SDK contract generated from the Swift request
   definitions. It is local-only and includes request and response envelopes,
   command parameters and bounds, errors, compatibility, cancellation, and

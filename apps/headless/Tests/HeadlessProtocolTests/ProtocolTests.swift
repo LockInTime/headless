@@ -36,6 +36,16 @@ private func expectThrows(_ message: String, _ body: () throws -> Void) throws {
     }
 }
 
+private func repositoryFile(_ relativePath: String) -> URL? {
+    var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    while directory.path != "/" {
+        let candidate = directory.appendingPathComponent(relativePath)
+        if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+        directory.deleteLastPathComponent()
+    }
+    return nil
+}
+
 private func expectSettingsError(
     _ expected: SettingsError, _ message: String, _ body: () throws -> Void
 ) throws {
@@ -2592,11 +2602,19 @@ struct ProtocolTests {
             screenshotFormat?.values == ["png", "jpg", "jpeg", "pdf"],
             "the schema must expose every accepted screenshot spelling"
         )
+        try expect(
+            screenshotFormat?.caseInsensitiveValues == true,
+            "the schema must preserve case-insensitive screenshot formats"
+        )
         let recordingQuality = protocolCommandDefinition(for: .recordStart).parameters
             .first { $0.name == "quality" }
         try expect(
             recordingQuality?.values == RecordingQuality.allCases.map(\.rawValue),
             "the schema must derive recording quality values from the parser enum"
+        )
+        try expect(
+            recordingQuality?.caseInsensitiveValues == true,
+            "the schema must preserve case-insensitive recording quality values"
         )
         try expect(
             protocolErrorCodes.contains(AuthenticationError.challengeExpired.code)
@@ -2610,18 +2628,81 @@ struct ProtocolTests {
             schemaData.count < headlessMaximumMessageBytes,
             "the protocol schema must fit the protocol frame bound"
         )
-        let source = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("sdk/protocol-schema.json")
-        let golden = try Data(contentsOf: source)
-        try expect(
-            try ProtocolCodec.decoder.decode(JSONValue.self, from: golden) == protocolSchemaDocument,
-            "the checked-in SDK schema must match the Swift-owned contract"
+        if let source = repositoryFile("sdk/protocol-schema.json") {
+            let golden = try Data(contentsOf: source)
+            try expect(
+                try ProtocolCodec.decoder.decode(JSONValue.self, from: golden) == protocolSchemaDocument,
+                "the checked-in SDK schema must match the Swift-owned contract"
+            )
+        } else if ProcessInfo.processInfo.environment["HEADLESS_REQUIRE_SDK_CONTRACT"] == "1" {
+            throw TestFailure(description: "required sdk/protocol-schema.json was not found")
+        }
+    }
+
+    static func sdkProtocolFixtures() throws {
+        guard let source = repositoryFile("sdk/protocol-fixtures.json") else {
+            if ProcessInfo.processInfo.environment["HEADLESS_REQUIRE_SDK_CONTRACT"] == "1" {
+                throw TestFailure(description: "required sdk/protocol-fixtures.json was not found")
+            }
+            return
+        }
+        let document = try ProtocolCodec.decoder.decode(
+            JSONValue.self, from: Data(contentsOf: source)
         )
+        guard case .object(let root) = document,
+              root["schemaVersion"] == .number(Double(headlessProtocolSchemaVersion)),
+              root["protocolVersion"] == .string(headlessProtocolVersion),
+              case .array(let cases)? = root["cases"],
+              case .array(let directRequests)? = root["directRequests"],
+              case .array(let invalidRequests)? = root["invalidRequests"] else {
+            throw TestFailure(description: "SDK fixture envelope is invalid")
+        }
+
+        for fixture in cases {
+            guard case .object(let fields) = fixture,
+                  case .array(let rawArguments)? = fields["argv"],
+                  case .object? = fields["request"],
+                  let requestValue = fields["request"],
+                  let responseValue = fields["response"] else {
+                throw TestFailure(description: "SDK fixture case is invalid")
+            }
+            let arguments = rawArguments.compactMap(\.stringValue)
+            try expect(arguments.count == rawArguments.count, "fixture argv must contain strings")
+            let request = try ProtocolCodec.decoder.decode(
+                CommandRequest.self, from: ProtocolCodec.encoder.encode(requestValue)
+            )
+            try request.validate()
+            let invocation = try CLIParser().parse(arguments)
+            guard let parsed = invocation.request else {
+                throw TestFailure(description: "fixture argv did not produce a wire request")
+            }
+            try expect(parsed.command == request.command, "fixture CLI command drifted")
+            try expect(parsed.session == request.session, "fixture CLI session drifted")
+            try expect(parsed.parameters == request.parameters, "fixture CLI parameters drifted")
+
+            let response = try ProtocolCodec.decoder.decode(
+                CommandResponse.self, from: ProtocolCodec.encoder.encode(responseValue)
+            )
+            try expect(response.id == request.id, "fixture response id drifted")
+            try expect(response.version == headlessProtocolVersion, "fixture response version drifted")
+            guard response.ok, let result = response.result else {
+                throw TestFailure(description: "fixture success response is invalid")
+            }
+            try protocolResultDefinition(for: request.command).validate(result)
+        }
+
+        for value in directRequests {
+            let request = try ProtocolCodec.decoder.decode(
+                CommandRequest.self, from: ProtocolCodec.encoder.encode(value)
+            )
+            try request.validate()
+        }
+        for value in invalidRequests {
+            let request = try ProtocolCodec.decoder.decode(
+                CommandRequest.self, from: ProtocolCodec.encoder.encode(value)
+            )
+            try expectThrows("invalid SDK fixture request was accepted") { try request.validate() }
+        }
     }
 
     static func supervisedHostOwnerPipe() throws {
@@ -3985,6 +4066,7 @@ struct ProtocolTests {
             ("recording arguments and bounds", recordingArgumentsAndFailureBounds),
             ("capabilities match commands", capabilitiesMatchProtocolCommands),
             ("SDK protocol schema contract", sdkProtocolSchemaContract),
+            ("SDK protocol fixtures", sdkProtocolFixtures),
             ("supervised host owner pipe", supervisedHostOwnerPipe),
             ("screenshot series helpers", screenshotSeriesHelpers),
             ("diagnostic summary", diagnosticSummary),

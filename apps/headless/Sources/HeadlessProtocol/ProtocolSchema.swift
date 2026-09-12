@@ -62,6 +62,41 @@ public struct ProtocolResultDefinition: Sendable {
             "fields": .array(fields.map(\.document)),
         ])
     }
+
+    public func validate(_ value: JSONValue) throws {
+        guard case .object(let object) = value else {
+            throw ProtocolValidationError.invalidParameter("Invalid \(name) result: expected object")
+        }
+        for field in fields {
+            guard let value = object[field.name] else {
+                if field.required {
+                    throw ProtocolValidationError.invalidParameter(
+                        "Invalid \(name) result: missing \(field.name)"
+                    )
+                }
+                continue
+            }
+            guard field.accepts(value) else {
+                throw ProtocolValidationError.invalidParameter(
+                    "Invalid \(name) result: \(field.name) must be \(field.kind.rawValue)"
+                )
+            }
+        }
+    }
+}
+
+private extension ProtocolResultField {
+    func accepts(_ value: JSONValue) -> Bool {
+        switch (kind, value) {
+        case (.string, .string), (.number, .number), (.boolean, .bool),
+             (.object, .object), (.array, .array), (.json, _):
+            return true
+        case (.stringOrNull, .string), (.stringOrNull, .null):
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 private func resultField(
@@ -158,7 +193,12 @@ public func protocolResultDefinition(for command: CommandName) -> ProtocolResult
             resultField("quality", .string, required: false),
             resultField("name", .string, required: false),
         ])
-    case .qaReport: return result("QAReport", [resultField("summary", .object, required: false)])
+    case .qaReport:
+        return result("QAReport", [
+            resultField("untrustedContent", .boolean), resultField("summary", .object),
+            resultField("issues", .array), resultField("events", .array),
+            resultField("omitted", .object), resultField("truncated", .boolean),
+        ])
     case .qaClear: return result("QAClear", [resultField("cleared", .number)])
     case .consoleList:
         return result("ConsoleList", [
@@ -231,6 +271,8 @@ public func protocolResultDefinition(for command: CommandName) -> ProtocolResult
         return result("AuthenticationLogin", [
             resultField("origin", .string), resultField("account", .stringOrNull),
             resultField("saved", .boolean), resultField("continuation", .string),
+            resultField("passwordExposed", .boolean),
+            resultField("originalActionReplayed", .boolean),
         ])
     }
 }
@@ -243,6 +285,7 @@ public struct ProtocolParameterDefinition: Sendable {
     public let minimum: Double?
     public let maximum: Double?
     public let values: [String]?
+    public let caseInsensitiveValues: Bool
     public let maximumItems: Int?
     public let itemMaximumBytes: Int?
     public let sensitive: Bool
@@ -255,6 +298,7 @@ public struct ProtocolParameterDefinition: Sendable {
         minimum: Double? = nil,
         maximum: Double? = nil,
         values: [String]? = nil,
+        caseInsensitiveValues: Bool = false,
         maximumItems: Int? = nil,
         itemMaximumBytes: Int? = nil,
         sensitive: Bool = false
@@ -266,6 +310,7 @@ public struct ProtocolParameterDefinition: Sendable {
         self.minimum = minimum
         self.maximum = maximum
         self.values = values
+        self.caseInsensitiveValues = caseInsensitiveValues
         self.maximumItems = maximumItems
         self.itemMaximumBytes = itemMaximumBytes
         self.sensitive = sensitive
@@ -284,7 +329,12 @@ public struct ProtocolParameterDefinition: Sendable {
         case (.string, .string(let text)):
             guard (!required || !text.isEmpty),
                   maximumBytes.map({ text.utf8.count <= $0 }) ?? true,
-                  values.map({ $0.contains(text) }) ?? true else {
+                  values.map({ allowed in
+                      if caseInsensitiveValues {
+                          return allowed.contains { $0.caseInsensitiveCompare(text) == .orderedSame }
+                      }
+                      return allowed.contains(text)
+                  }) ?? true else {
                 throw ProtocolValidationError.invalidParameter("Invalid string parameter: \(name)")
             }
         case (.number, .number(let number)), (.integer, .number(let number)):
@@ -332,6 +382,7 @@ public struct ProtocolParameterDefinition: Sendable {
         if let minimum { result["minimum"] = .number(minimum) }
         if let maximum { result["maximum"] = .number(maximum) }
         if let values { result["values"] = .array(values.map(JSONValue.string)) }
+        if caseInsensitiveValues { result["caseInsensitiveValues"] = .bool(true) }
         if let maximumItems { result["maximumItems"] = .number(Double(maximumItems)) }
         if let itemMaximumBytes { result["itemMaximumBytes"] = .number(Double(itemMaximumBytes)) }
         return .object(result)
@@ -387,11 +438,12 @@ public struct ProtocolCommandDefinition: Sendable {
 
 private func string(
     _ name: String, required: Bool = false, maximumBytes: Int = 8_192,
-    values: [String]? = nil, sensitive: Bool = false
+    values: [String]? = nil, caseInsensitiveValues: Bool = false,
+    sensitive: Bool = false
 ) -> ProtocolParameterDefinition {
     ProtocolParameterDefinition(
         name, kind: .string, required: required, maximumBytes: maximumBytes,
-        values: values, sensitive: sensitive
+        values: values, caseInsensitiveValues: caseInsensitiveValues, sensitive: sensitive
     )
 }
 
@@ -497,7 +549,10 @@ public let protocolCommandDefinitions: [CommandName: ProtocolCommandDefinition] 
             boolean("fullPage"), string("output", maximumBytes: 128),
             string("series", maximumBytes: 32, values: ["viewport", "section"]),
             string("outputPrefix", maximumBytes: 80),
-            string("format", maximumBytes: 16, values: ["png", "jpg", "jpeg", "pdf"]),
+            string(
+                "format", maximumBytes: 16, values: ["png", "jpg", "jpeg", "pdf"],
+                caseInsensitiveValues: true
+            ),
             boolean("clipboard"),
         ], capabilityNegotiated: true, constraints: [
             "target, full-page, and series modes are mutually constrained",
@@ -506,8 +561,14 @@ public let protocolCommandDefinitions: [CommandName: ProtocolCommandDefinition] 
         command(.artifactList),
         command(.recordStart, [
             string("output", maximumBytes: 128), number("fps", minimum: 1, maximum: 30),
-            string("format", maximumBytes: 16, values: RecordingFormat.allCases.map(\.rawValue)),
-            string("quality", maximumBytes: 16, values: RecordingQuality.allCases.map(\.rawValue)),
+            string(
+                "format", maximumBytes: 16, values: RecordingFormat.allCases.map(\.rawValue),
+                caseInsensitiveValues: true
+            ),
+            string(
+                "quality", maximumBytes: 16, values: RecordingQuality.allCases.map(\.rawValue),
+                caseInsensitiveValues: true
+            ),
         ]),
         command(.recordStatus),
         command(.recordStop, [string("output", maximumBytes: 128)]),
@@ -660,6 +721,45 @@ public let protocolSchemaDocument: JSONValue = {
             "config.set", "credentials.add", "credentials.list", "credentials.remove",
             "credentials.rename", "help", "runtime", "schema", "start", "version",
         ].map(JSONValue.string)),
+        "localLifecycle": .object([
+            "connect": .object([
+                "transport": .string("local-unix-socket"),
+                "ownership": .string("shared"),
+                "errors": .array(["HOST_UNAVAILABLE"].map(JSONValue.string)),
+            ]),
+            "launch": .object([
+                "command": .string("start"),
+                "argv": .array(["start", "--background", "--supervised"].map(JSONValue.string)),
+                "options": .array([
+                    .object([
+                        "name": .string("presentation"), "type": .string("string"),
+                        "values": .array(["background", "foreground"].map(JSONValue.string)),
+                        "required": .bool(false),
+                    ]),
+                    .object([
+                        "name": .string("allow"), "type": .string("string-array"),
+                        "maximumItems": .number(Double(NavigationAllowlist.maximumPatternCount)),
+                        "itemMaximumBytes": .number(300),
+                        "required": .bool(false),
+                    ]),
+                    .object([
+                        "name": .string("supervised"), "type": .string("boolean"),
+                        "required": .bool(true), "const": .bool(true),
+                    ]),
+                ]),
+                "result": protocolResultDefinition(for: .ping).document,
+                "errors": .array([
+                    "HOST_START_FAILED", "NAVIGATION_ALLOWLIST_CONFLICT",
+                    "UNSUPPORTED_BROWSER_RUNTIME", "UNSUPPORTED_CAPABILITY",
+                ].map(JSONValue.string)),
+                "ownership": .string("owned-only-after-response-pid-matches-launched-child"),
+            ]),
+        ]),
+        "localErrorCodes": .array([
+            "CONFIGURATION_FAILED", "HOST_START_FAILED", "HOST_UNAVAILABLE",
+            "INVALID_CONFIGURATION", "NAVIGATION_ALLOWLIST_CONFLICT",
+            "UNSUPPORTED_BROWSER_RUNTIME", "UNSUPPORTED_CAPABILITY", "VAULT_UNAVAILABLE",
+        ].map(JSONValue.string)),
         "hostLifecycle": .object([
             "connect": .string("attach to an existing host and never assume ownership"),
             "sharedStart": .string("headless start --background"),
@@ -695,6 +795,15 @@ public let protocolSchemaDocument: JSONValue = {
             "stableRemoval": .string("major SDK release and migration notes"),
             "provenance": .string("publish from reviewed tags with package attestations"),
             "securityReporting": .string("SECURITY.md; never include secrets or private artifacts"),
+        ]),
+        "supportWindow": .object([
+            "wireVersions": .array([headlessProtocolVersion].map(JSONValue.string)),
+            "schemaVersions": .array([.number(Double(headlessProtocolSchemaVersion))]),
+            "hostPlatforms": .array(["macOS 13 or newer", "Linux amd64", "Linux arm64"].map(JSONValue.string)),
+            "typescriptRuntimes": .array(["Node.js 22 or newer"].map(JSONValue.string)),
+            "pythonRuntimes": .array(["CPython 3.11 through 3.14"].map(JSONValue.string)),
+            "maintenance": .string("latest two minor SDK lines and at least 12 months after supersession, whichever is longer"),
+            "securityFixes": .string("supported SDK lines receive applicable security fixes"),
         ]),
         "security": .object([
             "unknownRequestFields": .string("rejected"),

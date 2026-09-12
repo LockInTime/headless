@@ -1,14 +1,15 @@
 # Headless SDK contract
 
 `protocol-schema.json` is the checked-in SDK contract emitted by the Swift
-implementation:
+implementation. `protocol-fixtures.json` contains representative requests and
+responses consumed by Swift, MCP, and every generated SDK:
 
 ```sh
 swift run --package-path apps/headless headless schema > sdk/protocol-schema.json
 ```
 
-The protocol suite compares this file byte-for-byte with `headless schema` and
-also decodes it back to the Swift value. Do not edit the JSON by hand.
+The protocol suite compares the schema byte-for-byte with `headless schema` and
+also decodes it back to the Swift value. Do not edit the schema JSON by hand.
 
 ## Compatibility
 
@@ -37,9 +38,12 @@ or client shutdown.
 
 Use `headless start --background --supervised` for an owned host. The command
 fails if a shared host already exists, prints the normal startup response, and
-then remains attached to the host. The SDK keeps the child standard-input pipe
-open for the ownership lifetime. Closing the pipe makes the host stop and lets
-the launcher be awaited. A plain `headless start` remains detached and shared.
+then remains attached to the host. The launcher owns a private pipe to the host,
+so the host still stops if the launcher is killed while another process retains
+the launcher's input stream. The startup response PID must match the launched
+host before ownership is granted. Closing the launcher input makes the host stop
+and lets the launcher be awaited. A plain `headless start` remains detached and
+shared.
 
 ## Release policy
 
@@ -49,3 +53,9 @@ Headless product while declaring their supported wire versions. Before 1.0,
 deprecations remain for at least one minor SDK release; after 1.0, removals
 require a major SDK release. Security reports use the repository process in
 `SECURITY.md` and must not include credentials, cookies, or private artifacts.
+
+The initial support window covers wire protocol `0.5`, schema format `1`,
+macOS 13 or newer, Linux amd64/arm64, Node.js 22 or newer, and CPython 3.11
+through 3.14. The latest two minor SDK lines remain maintained for at least 12
+months after supersession, whichever period is longer. Applicable security
+fixes are backported to supported lines.

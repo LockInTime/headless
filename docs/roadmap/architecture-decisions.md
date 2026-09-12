@@ -841,14 +841,17 @@ Cancellation before send writes no request. Cancellation or timeout after send
 closes the client connection but cannot claim the browser operation was rolled
 back; clients report an unknown outcome and refresh state. SDK-owned hosts use
 `headless start --supervised`, which refuses to attach to an existing host and
-keeps a standard-input owner pipe open. Closing that pipe stops the owned host
-and lets the launcher reap it. SDKs never stop a shared host they discovered.
+creates a private owner pipe after launching the host. Ownership is granted only
+when the startup response PID matches that child. Closing launcher input, or the
+launcher exiting, closes the private pipe, stops the owned host, and lets the
+launcher reap it. SDKs never stop a shared host they discovered.
 
 **Status:** accepted for [#163](https://github.com/LockInTime/headless/issues/163).
 
 **Consequences:** TypeScript and Python clients generate or validate their
 public command types from the golden schema and pin its digest. Schema, SDK,
-CLI-parser, protocol-validator, and MCP parity are tested together. SDK package
+shared fixtures, CLI-parser, protocol-validator, and MCP parity are tested
+together. SDK package
 versions may advance independently while declaring the supported wire version.
 Deprecation, support-window, provenance, and security-reporting rules live with
 the schema so client packages cannot silently invent a different policy.
