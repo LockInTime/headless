@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "${0:a:h}/.."
 
-for tool in node curl defaults lsof osascript; do
+for tool in node curl defaults lsof osascript perl pgrep; do
   command -v "$tool" >/dev/null 2>&1 || { echo "macOS E2E tests require $tool" >&2; exit 69; }
 done
 
@@ -22,6 +22,8 @@ export HEADLESS_E2E_DATA_STORE_ID="$(uuidgen)"
 LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-e2e.XXXXXX")"
 HOST_LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-host.XXXXXX")"
 RESTORE_LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-restore.XXXXXX")"
+SNAPSHOT_MARKER="$(mktemp "${TMPDIR:-/tmp}/headless-macos-snapshot.XXXXXX")"
+MENU_SNAPSHOT_PATH=""
 export HEADLESS_HOST_LOG="$HOST_LOG"
 STEP="boot"
 RESTORE_PID=""
@@ -63,6 +65,8 @@ fail() {
   cat "$HOST_LOG" >&2 || true
   print -r -u2 -- "---- restore log ----"
   cat "$RESTORE_LOG" >&2 || true
+  cleanup
+  trap - EXIT INT TERM
   exit 1
 }
 trap 'fail' ERR
@@ -72,22 +76,247 @@ frontmost_pid() {
     -e 'ObjC.import("AppKit"); Number($.NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier)'
 }
 
+osascript_with_timeout() {
+  perl -e '
+    my $seconds = shift @ARGV;
+    my $pid = fork();
+    die "could not start osascript: $!\n" unless defined $pid;
+    if ($pid == 0) {
+      exec @ARGV;
+      die "could not execute osascript: $!\n";
+    }
+    $SIG{ALRM} = sub {
+      kill "TERM", $pid;
+      select undef, undef, undef, 0.2;
+      kill "KILL", $pid;
+      waitpid $pid, 0;
+      print STDERR "osascript timed out; grant Accessibility access to the test runner\n";
+      exit 124;
+    };
+    alarm $seconds;
+    waitpid $pid, 0;
+    alarm 0;
+    my $status = $?;
+    exit 127 if $status == -1;
+    exit 128 + ($status & 127) if $status & 127;
+    exit $status >> 8;
+  ' 10 /usr/bin/osascript "$@"
+}
+
+ax_menu_attribute() {
+  local pid="$1" menu_title="$2" item_title="$3" attribute_name="$4"
+  osascript_with_timeout - "$pid" "$menu_title" "$item_title" "$attribute_name" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  set menuTitle to item 2 of argv
+  set itemTitle to item 3 of argv
+  set attributeName to item 4 of argv
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      set targetItem to menu item itemTitle of menu 1 of menu bar item menuTitle of menu bar 1
+      set attributeValue to value of attribute attributeName of targetItem
+    end tell
+  end tell
+  if attributeValue is missing value then return "__MISSING__"
+  return attributeValue as text
+end run
+APPLESCRIPT
+}
+
+ax_menu_exists() {
+  local pid="$1" menu_title="$2" item_title="$3"
+  osascript_with_timeout - "$pid" "$menu_title" "$item_title" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  set menuTitle to item 2 of argv
+  set itemTitle to item 3 of argv
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      return exists menu item itemTitle of menu 1 of menu bar item menuTitle of menu bar 1
+    end tell
+  end tell
+end run
+APPLESCRIPT
+}
+
+ax_keyed_menu_count() {
+  local pid="$1"
+  osascript_with_timeout - "$pid" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  set keyedItems to 0
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      repeat with topLevelItem in menu bar items of menu bar 1
+        repeat with candidate in menu items of menu 1 of topLevelItem
+          if exists attribute "AXMenuItemCmdChar" of candidate then
+            set commandCharacter to value of attribute "AXMenuItemCmdChar" of candidate
+            if commandCharacter is not missing value and commandCharacter is not "" then set keyedItems to keyedItems + 1
+          end if
+        end repeat
+      end repeat
+    end tell
+  end tell
+  return keyedItems
+end run
+APPLESCRIPT
+}
+
+ax_press_menu_item() {
+  local pid="$1" menu_title="$2" item_title="$3"
+  osascript_with_timeout - "$pid" "$menu_title" "$item_title" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  set menuTitle to item 2 of argv
+  set itemTitle to item 3 of argv
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      set frontmost to true
+      perform action "AXPress" of menu item itemTitle of menu 1 of menu bar item menuTitle of menu bar 1
+    end tell
+  end tell
+end run
+APPLESCRIPT
+}
+
+ax_window_count() {
+  local pid="$1"
+  osascript_with_timeout - "$pid" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses to return count of windows
+  end tell
+end run
+APPLESCRIPT
+}
+
+ax_focused_element() {
+  local pid="$1"
+  osascript_with_timeout - "$pid" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      set focusedElement to value of attribute "AXFocusedUIElement"
+      set focusedRole to value of attribute "AXRole" of focusedElement
+      set focusedValue to value of attribute "AXValue" of focusedElement
+    end tell
+  end tell
+  if focusedValue is missing value then set focusedValue to ""
+  return focusedRole & tab & focusedValue
+end run
+APPLESCRIPT
+}
+
+ax_escape() {
+  local pid="$1"
+  osascript_with_timeout - "$pid" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses to set frontmost to true
+    key code 53
+  end tell
+end run
+APPLESCRIPT
+}
+
+assert_menu_shortcut() {
+  local pid="$1" menu_title="$2" item_title="$3" expected_key="$4" expected_modifiers="$5"
+  local actual_key actual_modifiers
+  if ! actual_key="$(ax_menu_attribute "$pid" "$menu_title" "$item_title" AXMenuItemCmdChar)"; then
+    echo "Could not inspect $menu_title > $item_title through Accessibility" >&2
+    return 1
+  fi
+  if ! actual_modifiers="$(ax_menu_attribute "$pid" "$menu_title" "$item_title" AXMenuItemCmdModifiers)"; then
+    echo "Could not inspect $menu_title > $item_title modifiers through Accessibility" >&2
+    return 1
+  fi
+  if [[ "$actual_key" == "__MISSING__" || "${actual_key:l}" != "${expected_key:l}" ]]; then
+    echo "$menu_title > $item_title key was $actual_key, expected $expected_key" >&2
+    return 1
+  fi
+  if [[ "$actual_modifiers" == "__MISSING__" || "$actual_modifiers" != "$expected_modifiers" ]]; then
+    echo "$menu_title > $item_title modifiers were $actual_modifiers, expected $expected_modifiers" >&2
+    return 1
+  fi
+}
+
 node Tests/fixture-server.mjs >"$LOG" 2>&1 &
 FIXTURE_PID=$!
 
 cleanup() {
+  trap - ERR
+  local host_pid_output
+  local -a host_pids
+  host_pid_output="$({
+    lsof -t "$HEADLESS_SOCKET" 2>/dev/null || true
+    pgrep -f -x "$HOST" 2>/dev/null || true
+    pgrep -f -x "${HOST#/private}" 2>/dev/null || true
+  } | sort -u)"
+  host_pids=("${(@f)host_pid_output}")
   if "$CLI" status >/dev/null 2>&1; then
     "$CLI" profile clear >/dev/null 2>&1 || true
   fi
   "$CLI" stop >/dev/null 2>&1 || true
+  for _ in {1..100}; do
+    local hosts_stopped=1
+    for host_pid in "${host_pids[@]}"; do
+      if [[ -n "$host_pid" ]] && kill -0 "$host_pid" >/dev/null 2>&1; then
+        hosts_stopped=0
+        break
+      fi
+    done
+    [[ "$hosts_stopped" == 1 ]] && break
+    sleep 0.05
+  done
+  for host_pid in "${host_pids[@]}"; do
+    if [[ -n "$host_pid" ]] && kill -0 "$host_pid" >/dev/null 2>&1; then
+      kill "$host_pid" >/dev/null 2>&1 || true
+    fi
+  done
+  for _ in {1..40}; do
+    local hosts_stopped=1
+    for host_pid in "${host_pids[@]}"; do
+      if [[ -n "$host_pid" ]] && kill -0 "$host_pid" >/dev/null 2>&1; then
+        hosts_stopped=0
+        break
+      fi
+    done
+    [[ "$hosts_stopped" == 1 ]] && break
+    sleep 0.05
+  done
+  for host_pid in "${host_pids[@]}"; do
+    if [[ -n "$host_pid" ]] && kill -0 "$host_pid" >/dev/null 2>&1; then
+      kill -9 "$host_pid" >/dev/null 2>&1 || true
+    fi
+  done
   if [[ -n "$RESTORE_PID" ]]; then
     kill "$RESTORE_PID" >/dev/null 2>&1 || true
   fi
   kill "$FIXTURE_PID" >/dev/null 2>&1 || true
   restore_last_url
   restore_startup_presentation
+  if [[ -n "$MENU_SNAPSHOT_PATH" ]]; then
+    rm -f "$MENU_SNAPSHOT_PATH"
+  fi
   rm -rf "$HEADLESS_ARTIFACT_DIR"
-  rm -f "$LOG" "$HOST_LOG" "$RESTORE_LOG"
+  rm -f "$HEADLESS_SOCKET" "$LOG" "$HOST_LOG" "$RESTORE_LOG" "$SNAPSHOT_MARKER"
 }
 trap cleanup EXIT INT TERM
 
@@ -113,37 +342,6 @@ for _ in {1..100}; do
   sleep 0.05
 done
 "$CLI" status | grep -q '"ready":true'
-STEP="menu-shortcuts"
-grep -F '&#8997;&#8984; P' main.swift >/dev/null
-if grep -F '<kbd>&#8984; P</kbd>' main.swift >/dev/null; then
-  echo "start page still advertises Command-P for pin" >&2
-  fail
-fi
-grep -F 'NSSelectorFromString(spec.selector)' main.swift >/dev/null
-PIN_CHAR="$(osascript <<'APPLESCRIPT' || true
-tell application "System Events"
-  tell process "Headless"
-    get value of attribute "AXMenuItemCmdChar" of menu item "Pin on Top" of menu "Window" of menu bar item "Window" of menu bar 1
-  end tell
-end tell
-APPLESCRIPT
-)"
-if [[ -n "$PIN_CHAR" && "$PIN_CHAR" != "P" ]]; then
-  echo "Pin on Top menu chord character was $PIN_CHAR, expected P" >&2
-  fail
-fi
-HELP_CHAR="$(osascript <<'APPLESCRIPT' || true
-tell application "System Events"
-  tell process "Headless"
-    get value of attribute "AXMenuItemCmdChar" of menu item "Headless Help" of menu "Help" of menu bar item "Help" of menu bar 1
-  end tell
-end tell
-APPLESCRIPT
-)"
-if [[ -n "$HELP_CHAR" && "$HELP_CHAR" != "/" ]]; then
-  echo "Headless Help menu chord character was $HELP_CHAR, expected /" >&2
-  fail
-fi
 RESTORED_URL_CLEARED=0
 for _ in {1..300}; do
   if ! defaults read "$DEFAULTS_DOMAIN" LastURL >/dev/null 2>&1; then
@@ -239,6 +437,172 @@ if lsof -nP -a -p "$HOST_PID" -iTCP -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; t
   echo "Headless host opened an unexpected TCP listener" >&2
   fail
 fi
+STEP="menu-shortcut-inventory"
+# AX encodes Shift, Option, and Control as bits 1, 2, and 4. Command is
+# implicit unless the NoCommand bit (8) is present.
+while IFS=$'\t' read -r menu_title item_title expected_key expected_modifiers; do
+  assert_menu_shortcut "$HOST_PID" "$menu_title" "$item_title" "$expected_key" "$expected_modifiers"
+done <<'SHORTCUTS'
+Headless	Hide Headless	h	0
+Headless	Hide Others	h	2
+Headless	Quit Headless	q	0
+File	New Window	n	0
+File	Open Location…	l	0
+File	Save Snapshot to Desktop	s	1
+File	Close Window	w	0
+Edit	Undo	z	0
+Edit	Redo	z	1
+Edit	Cut	x	0
+Edit	Copy	c	0
+Edit	Paste	v	0
+Edit	Select All	a	0
+Edit	Copy Current URL	c	1
+View	Reload Page	r	0
+View	Reload Ignoring Cache	r	1
+View	Zoom In	=	0
+View	Zoom Out	-	0
+View	Actual Size	0	0
+View	Enter Full Screen	f	4
+History	Back	[	0
+History	Forward	]	0
+Window	Minimize	m	0
+Window	Pin on Top	p	2
+Help	Headless Help	/	1
+SHORTCUTS
+KEYED_MENU_COUNT="$(ax_keyed_menu_count "$HOST_PID")"
+if [[ "$KEYED_MENU_COUNT" != 25 ]]; then
+  echo "Headless exposed $KEYED_MENU_COUNT keyed menu items, expected the 25-item catalog" >&2
+  fail
+fi
+for settings_title in "Settings" "Settings…" "Preferences" "Preferences…"; do
+  if [[ "$(ax_menu_exists "$HOST_PID" Headless "$settings_title")" == true ]]; then
+    echo "$settings_title is shipped but has no Cmd-, coverage" >&2
+    fail
+  fi
+done
+
+STEP="menu-new-window-close"
+WINDOWS_BEFORE="$(ax_window_count "$HOST_PID")"
+ax_press_menu_item "$HOST_PID" File "New Window"
+NEW_WINDOW_OPENED=0
+for _ in {1..100}; do
+  if [[ "$(ax_window_count "$HOST_PID")" == $((WINDOWS_BEFORE + 1)) ]]; then
+    NEW_WINDOW_OPENED=1
+    break
+  fi
+  sleep 0.05
+done
+if [[ "$NEW_WINDOW_OPENED" != 1 ]]; then
+  echo "New Window menu action did not create a window" >&2
+  fail
+fi
+ax_press_menu_item "$HOST_PID" File "Close Window"
+NEW_WINDOW_CLOSED=0
+for _ in {1..100}; do
+  if [[ "$(ax_window_count "$HOST_PID")" == "$WINDOWS_BEFORE" ]]; then
+    NEW_WINDOW_CLOSED=1
+    break
+  fi
+  sleep 0.05
+done
+if [[ "$NEW_WINDOW_CLOSED" != 1 ]]; then
+  echo "Close Window menu action did not close the active window" >&2
+  fail
+fi
+
+STEP="menu-open-location"
+ax_press_menu_item "$HOST_PID" File "Open Location…"
+LOCATION_FOCUSED=0
+for _ in {1..100}; do
+  FOCUSED_ELEMENT="$(ax_focused_element "$HOST_PID")"
+  if [[ "$FOCUSED_ELEMENT" == AXTextField$'\t'http://* ]]; then
+    LOCATION_FOCUSED=1
+    break
+  fi
+  sleep 0.05
+done
+if [[ "$LOCATION_FOCUSED" != 1 ]]; then
+  echo "Open Location did not focus the address field with the current URL" >&2
+  fail
+fi
+ax_escape "$HOST_PID"
+
+STEP="menu-reload"
+"$CLI" visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'
+NETWORK_BEFORE="$("$CLI" network list | sed -n 's/.*"available":\([0-9][0-9]*\).*/\1/p')"
+test -n "$NETWORK_BEFORE"
+ax_press_menu_item "$HOST_PID" View "Reload Page"
+RELOAD_OBSERVED=0
+for _ in {1..200}; do
+  NETWORK_AFTER="$("$CLI" network list | sed -n 's/.*"available":\([0-9][0-9]*\).*/\1/p')"
+  if [[ -n "$NETWORK_AFTER" && "$NETWORK_AFTER" -gt "$NETWORK_BEFORE" ]]; then
+    RELOAD_OBSERVED=1
+    break
+  fi
+  sleep 0.05
+done
+if [[ "$RELOAD_OBSERVED" != 1 ]]; then
+  echo "Reload Page did not produce a new page request" >&2
+  fail
+fi
+"$CLI" wait --text 'Designers dashboard' --settled --timeout 10000 | grep -q 'Designers Dashboard'
+
+STEP="menu-snapshot"
+touch "$SNAPSHOT_MARKER"
+sleep 1
+ax_press_menu_item "$HOST_PID" File "Save Snapshot to Desktop"
+for _ in {1..200}; do
+  MENU_SNAPSHOT_PATH="$(find "$HOME/Desktop" -maxdepth 1 -type f -name 'headless *.png' -newer "$SNAPSHOT_MARKER" -print -quit)"
+  [[ -n "$MENU_SNAPSHOT_PATH" && -s "$MENU_SNAPSHOT_PATH" ]] && break
+  sleep 0.05
+done
+if [[ -z "$MENU_SNAPSHOT_PATH" || ! -s "$MENU_SNAPSHOT_PATH" ]]; then
+  echo "Save Snapshot to Desktop did not create a non-empty PNG" >&2
+  fail
+fi
+file "$MENU_SNAPSHOT_PATH" | grep -q 'PNG image data'
+
+STEP="menu-zoom"
+"$CLI" screenshot --output menu-zoom-baseline.png >/dev/null
+ax_press_menu_item "$HOST_PID" View "Zoom In"
+"$CLI" screenshot --output menu-zoom-in.png >/dev/null
+if cmp -s "$HEADLESS_ARTIFACT_DIR/menu-zoom-baseline.png" "$HEADLESS_ARTIFACT_DIR/menu-zoom-in.png"; then
+  echo "Zoom In did not change rendered page output" >&2
+  fail
+fi
+ax_press_menu_item "$HOST_PID" View "Actual Size"
+"$CLI" screenshot --output menu-zoom-reset.png >/dev/null
+cmp -s "$HEADLESS_ARTIFACT_DIR/menu-zoom-baseline.png" "$HEADLESS_ARTIFACT_DIR/menu-zoom-reset.png"
+ax_press_menu_item "$HOST_PID" View "Zoom Out"
+"$CLI" screenshot --output menu-zoom-out.png >/dev/null
+if cmp -s "$HEADLESS_ARTIFACT_DIR/menu-zoom-baseline.png" "$HEADLESS_ARTIFACT_DIR/menu-zoom-out.png"; then
+  echo "Zoom Out did not change rendered page output" >&2
+  fail
+fi
+ax_press_menu_item "$HOST_PID" View "Actual Size"
+
+STEP="menu-history"
+"$CLI" visit "http://127.0.0.1:$PORT/next" | grep -q 'Designer Details'
+ax_press_menu_item "$HOST_PID" History Back
+"$CLI" wait --url /designers/dashboard --text 'Designers dashboard' --settled --timeout 10000 | grep -q 'Designers Dashboard'
+ax_press_menu_item "$HOST_PID" History Forward
+"$CLI" wait --url /next --text 'Designer details' --settled --timeout 10000 | grep -q 'Designer Details'
+
+STEP="menu-pin"
+ax_press_menu_item "$HOST_PID" Window "Pin on Top"
+PINNED_MARK="$(ax_menu_attribute "$HOST_PID" Window "Pin on Top" AXMenuItemMarkChar)"
+if [[ "$PINNED_MARK" == "__MISSING__" || -z "$PINNED_MARK" ]]; then
+  echo "Pin on Top did not enter its checked state" >&2
+  fail
+fi
+ax_press_menu_item "$HOST_PID" Window "Pin on Top"
+UNPINNED_MARK="$(ax_menu_attribute "$HOST_PID" Window "Pin on Top" AXMenuItemMarkChar)"
+if [[ "$UNPINNED_MARK" != "__MISSING__" && -n "$UNPINNED_MARK" ]]; then
+  echo "Pin on Top did not return to its unchecked state" >&2
+  fail
+fi
+echo "▸ menu shortcut inventory and actions passed"
+
 STEP="cross-engine-conformance"
 HEADLESS_CONFORMANCE_CLI="$CLI" \
 HEADLESS_CONFORMANCE_ENGINE=webkit \
