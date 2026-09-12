@@ -5,7 +5,7 @@
 // (the Safari engine). Made for clean screenshots and fullscreen video.
 //
 //   ⌘L  search / open url        ⇧⌘S  snapshot page → Desktop
-//   ⌘R  reload                   ⌘P   pin window on top
+//   ⌘R  reload                   ⌥⌘P  pin window on top
 //   ⌘[ ⌘]  back / forward        ⌃⌘F  fullscreen
 //   ⌘= ⌘- ⌘0  zoom               ⌘drag  move the window
 //
@@ -172,7 +172,7 @@ let startPageHTML = """
     <div class="k"><kbd>&#8984; drag</kbd></div>    <div>move the window</div>
     <div class="k"><kbd>&#8963;&#8984; F</kbd></div><div>fullscreen</div>
     <div class="k"><kbd>&#8679;&#8984; S</kbd></div><div>snapshot the page &rarr; desktop</div>
-    <div class="k"><kbd>&#8984; P</kbd></div>       <div>pin on top of every window</div>
+    <div class="k"><kbd>&#8997;&#8984; P</kbd></div> <div>pin on top of every window</div>
     <div class="k"><kbd>&#8984; [</kbd> <kbd>&#8984; ]</kbd></div><div>back / forward</div>
     <div class="k"><kbd>esc</kbd></div>             <div>bail out &mdash; back to this page</div>
     <div class="k"><kbd>&#8984; =</kbd> <kbd>&#8984; &minus;</kbd> <kbd>&#8984; 0</kbd></div><div>zoom</div>
@@ -696,12 +696,37 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
         let name = "headless \(formatter.string(from: Date())).png"
-        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
-        let path = desktop.appendingPathComponent(name).path
+        let environment = ProcessInfo.processInfo.environment
+        let path: String
+        let successMessage: String
+        if let testPath = environment["HEADLESS_E2E_MENU_SNAPSHOT_PATH"] {
+            let temporaryRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+                .resolvingSymlinksInPath().standardizedFileURL.path
+            let candidate = URL(fileURLWithPath: testPath).standardizedFileURL
+            let parent = candidate.deletingLastPathComponent().resolvingSymlinksInPath()
+            var isDirectory: ObjCBool = false
+            guard environment["HEADLESS_E2E_DATA_STORE_ID"] != nil,
+                  testPath.hasPrefix("/"),
+                  parent.path.hasPrefix(temporaryRoot + "/"),
+                  FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue,
+                  !FileManager.default.fileExists(
+                      atPath: parent.appendingPathComponent(candidate.lastPathComponent).path
+                  ) else {
+                showToast("Snapshot failed")
+                return
+            }
+            path = parent.appendingPathComponent(candidate.lastPathComponent).path
+            successMessage = "Saved test snapshot"
+        } else {
+            let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+            path = desktop.appendingPathComponent(name).path
+            successMessage = "Saved “\(name)” to Desktop"
+        }
         webView.takeSnapshot(with: nil) { [weak self] image, _ in
             guard let self else { return }
             if let image, self.writePNG(from: image, to: path) != nil {
-                self.showToast("Saved “\(name)” to Desktop")
+                self.showToast(successMessage)
             } else {
                 self.showToast("Snapshot failed")
             }
@@ -718,8 +743,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     @objc func togglePin(_ sender: Any?) {
         guard let window else { return }
         let pinned = window.level == .floating
+        let nextState: NSControl.StateValue = pinned ? .off : .on
         window.level = pinned ? .normal : .floating
-        showToast(pinned ? "Unpinned" : "Pinned on top")
+        (sender as? NSMenuItem)?.state = nextState
+        showToast(nextState == .on ? "Pinned on top" : "Unpinned")
     }
 
     @objc func showHelpPage(_ sender: Any?) { loadStartPage() }
@@ -1058,6 +1085,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Menu
 
+    private func menuItem(from spec: MenuShortcutSpec) -> NSMenuItem {
+        let item = NSMenuItem(
+            title: spec.title,
+            action: NSSelectorFromString(spec.selector),
+            keyEquivalent: spec.key
+        )
+        var mask: NSEvent.ModifierFlags = []
+        if spec.command { mask.insert(.command) }
+        if spec.shift { mask.insert(.shift) }
+        if spec.option { mask.insert(.option) }
+        if spec.control { mask.insert(.control) }
+        item.keyEquivalentModifierMask = mask
+        switch spec.target {
+        case .application:
+            item.target = NSApp
+        case .appDelegate:
+            item.target = self
+        case .firstResponder:
+            item.target = nil
+        }
+        return item
+    }
+
+    private func appendShortcuts(to menu: NSMenu, named menuName: String) {
+        for spec in headlessMenuShortcuts where spec.menu == menuName {
+            if spec.separatorBefore { menu.addItem(.separator()) }
+            menu.addItem(menuItem(from: spec))
+        }
+    }
+
     private func buildMenu() {
         let main = NSMenu()
 
@@ -1065,80 +1122,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(withTitle: "About Headless",
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide Headless", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        let hideOthers = appMenu.addItem(withTitle: "Hide Others",
-                                         action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
-        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        for spec in headlessMenuShortcuts where spec.menu == "Headless" && spec.title != "Quit Headless" {
+            appMenu.addItem(menuItem(from: spec))
+        }
         appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit Headless", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        if let quit = headlessMenuShortcuts.first(where: { $0.title == "Quit Headless" }) {
+            appMenu.addItem(menuItem(from: quit))
+        }
         main.addItem(withTitle: "Headless", action: nil, keyEquivalent: "").submenu = appMenu
 
         let fileMenu = NSMenu(title: "File")
-        let newWin = fileMenu.addItem(withTitle: "New Window", action: #selector(newWindow(_:)), keyEquivalent: "n")
-        newWin.target = self
-        fileMenu.addItem(withTitle: "Open Location…",
-                         action: #selector(BrowserWindowController.openLocation(_:)), keyEquivalent: "l")
-        fileMenu.addItem(.separator())
-        let snap = fileMenu.addItem(withTitle: "Save Snapshot to Desktop",
-                                    action: #selector(BrowserWindowController.saveSnapshot(_:)), keyEquivalent: "s")
-        snap.keyEquivalentModifierMask = [.command, .shift]
-        fileMenu.addItem(.separator())
-        fileMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        appendShortcuts(to: fileMenu, named: "File")
         main.addItem(withTitle: "File", action: nil, keyEquivalent: "").submenu = fileMenu
 
         let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(withTitle: "Undo", action: NSSelectorFromString("undo:"), keyEquivalent: "z")
-        editMenu.addItem(withTitle: "Redo", action: NSSelectorFromString("redo:"), keyEquivalent: "Z")
-        editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        editMenu.addItem(.separator())
-        let copyURL = editMenu.addItem(withTitle: "Copy Current URL",
-                                       action: #selector(BrowserWindowController.copyPageURL(_:)), keyEquivalent: "c")
-        copyURL.keyEquivalentModifierMask = [.command, .shift]
+        appendShortcuts(to: editMenu, named: "Edit")
         main.addItem(withTitle: "Edit", action: nil, keyEquivalent: "").submenu = editMenu
 
         let viewMenu = NSMenu(title: "View")
-        viewMenu.addItem(withTitle: "Reload Page",
-                         action: #selector(BrowserWindowController.reloadPage(_:)), keyEquivalent: "r")
-        let hardReload = viewMenu.addItem(withTitle: "Reload Ignoring Cache",
-                                          action: #selector(BrowserWindowController.hardReloadPage(_:)), keyEquivalent: "r")
-        hardReload.keyEquivalentModifierMask = [.command, .shift]
-        viewMenu.addItem(.separator())
-        viewMenu.addItem(withTitle: "Zoom In",
-                         action: #selector(BrowserWindowController.zoomInPage(_:)), keyEquivalent: "=")
-        viewMenu.addItem(withTitle: "Zoom Out",
-                         action: #selector(BrowserWindowController.zoomOutPage(_:)), keyEquivalent: "-")
-        viewMenu.addItem(withTitle: "Actual Size",
-                         action: #selector(BrowserWindowController.resetZoom(_:)), keyEquivalent: "0")
-        viewMenu.addItem(.separator())
-        let fullScreen = viewMenu.addItem(withTitle: "Enter Full Screen",
-                                          action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
-        fullScreen.keyEquivalentModifierMask = [.command, .control]
+        appendShortcuts(to: viewMenu, named: "View")
         main.addItem(withTitle: "View", action: nil, keyEquivalent: "").submenu = viewMenu
 
         let historyMenu = NSMenu(title: "History")
-        historyMenu.addItem(withTitle: "Back",
-                            action: #selector(BrowserWindowController.goBackAction(_:)), keyEquivalent: "[")
-        historyMenu.addItem(withTitle: "Forward",
-                            action: #selector(BrowserWindowController.goForwardAction(_:)), keyEquivalent: "]")
+        appendShortcuts(to: historyMenu, named: "History")
         main.addItem(withTitle: "History", action: nil, keyEquivalent: "").submenu = historyMenu
 
         let windowMenu = NSMenu(title: "Window")
-        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
-        windowMenu.addItem(.separator())
-        windowMenu.addItem(withTitle: "Pin on Top",
-                           action: #selector(BrowserWindowController.togglePin(_:)), keyEquivalent: "p")
+        appendShortcuts(to: windowMenu, named: "Window")
+        let zoom = NSMenuItem(
+            title: "Zoom",
+            action: #selector(NSWindow.performZoom(_:)),
+            keyEquivalent: ""
+        )
+        if let minimize = windowMenu.items.firstIndex(where: { $0.title == "Minimize" }) {
+            windowMenu.insertItem(zoom, at: minimize + 1)
+        } else {
+            windowMenu.insertItem(zoom, at: 0)
+        }
         main.addItem(withTitle: "Window", action: nil, keyEquivalent: "").submenu = windowMenu
         NSApp.windowsMenu = windowMenu
 
         let helpMenu = NSMenu(title: "Help")
-        helpMenu.addItem(withTitle: "Headless Help",
-                         action: #selector(BrowserWindowController.showHelpPage(_:)), keyEquivalent: "?")
+        appendShortcuts(to: helpMenu, named: "Help")
         main.addItem(withTitle: "Help", action: nil, keyEquivalent: "").submenu = helpMenu
         NSApp.helpMenu = helpMenu
 
