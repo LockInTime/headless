@@ -80,6 +80,20 @@ frontmost_pid() {
     -e 'ObjC.import("AppKit"); Number($.NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier)'
 }
 
+activate_pid() {
+  local pid="$1"
+  osascript_with_timeout - "$pid" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Previous frontmost process was not found"
+    tell item 1 of targetProcesses to set frontmost to true
+  end tell
+end run
+APPLESCRIPT
+}
+
 osascript_with_timeout() {
   perl -e '
     my $seconds = shift @ARGV;
@@ -557,6 +571,7 @@ if lsof -nP -a -p "$HOST_PID" -iTCP -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; t
   echo "Headless host opened an unexpected TCP listener" >&2
   fail
 fi
+BACKGROUND_FRONTMOST_PID="$(frontmost_pid)"
 STEP="menu-shortcut-inventory"
 # AX encodes Shift, Option, and Control as bits 1, 2, and 4. Command is
 # implicit unless the NoCommand bit (8) is present.
@@ -788,6 +803,19 @@ ax_press_menu_item "$HOST_PID" Window "Pin on Top"
 UNPINNED_MARK="$(ax_menu_attribute "$HOST_PID" Window "Pin on Top" AXMenuItemMarkChar)"
 if [[ "$UNPINNED_MARK" != "__MISSING__" && -n "$UNPINNED_MARK" ]]; then
   echo "Pin on Top did not return to its unchecked state" >&2
+  fail
+fi
+activate_pid "$BACKGROUND_FRONTMOST_PID"
+BACKGROUND_FOCUS_RESTORED=0
+for _ in {1..100}; do
+  if [[ "$(frontmost_pid)" == "$BACKGROUND_FRONTMOST_PID" ]]; then
+    BACKGROUND_FOCUS_RESTORED=1
+    break
+  fi
+  sleep 0.05
+done
+if [[ "$BACKGROUND_FOCUS_RESTORED" != 1 ]]; then
+  echo "menu checks did not restore the previously frontmost process" >&2
   fail
 fi
 echo "▸ menu shortcut inventory and actions passed"
