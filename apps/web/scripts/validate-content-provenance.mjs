@@ -3,9 +3,9 @@ import { validateRepositoryContent } from "../lib/repository-content.mjs";
 const result = validateRepositoryContent();
 if (
   result.benchmarkCases !== 4 ||
-  result.commandGroups !== 4 ||
+  result.commandGroups < 5 ||
   result.securityRules < 3 ||
-  result.productDocRoutes !== 6 ||
+  result.productDocRoutes !== 7 ||
   result.commandForms < 30 ||
   result.installMethods !== 4 ||
   result.securityBoundaries < 5 ||

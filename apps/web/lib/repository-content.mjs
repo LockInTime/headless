@@ -23,13 +23,19 @@ let benchmarkCache;
 let documentationCache;
 let productDocsCache;
 
+export const PRODUCT_DOC_CATEGORIES = [
+  { id: "documentation", label: "Documentation" },
+  { id: "trust", label: "Trust & support" },
+];
+
 export const PRODUCT_DOC_ROUTES = [
-  { href: "/docs/install", label: "Install" },
-  { href: "/docs/mcp", label: "MCP setup" },
-  { href: "/docs/commands", label: "Commands" },
-  { href: "/docs/security", label: "Security" },
-  { href: "/docs/platforms", label: "Platforms" },
-  { href: "/docs/changelog", label: "Changelog" },
+  { href: "/docs", label: "Overview", category: "documentation" },
+  { href: "/docs/install", label: "Install", category: "documentation" },
+  { href: "/docs/mcp", label: "MCP setup", category: "documentation" },
+  { href: "/docs/commands", label: "Commands", category: "documentation" },
+  { href: "/docs/security", label: "Security", category: "trust" },
+  { href: "/docs/platforms", label: "Platforms", category: "trust" },
+  { href: "/docs/changelog", label: "Changelog", category: "trust" },
 ];
 
 function fail(message) {
@@ -383,9 +389,58 @@ function commandNames(usage) {
 function commandGroup(commandReference, title) {
   const section = extractSection(commandReference, title);
   const usage = fencedCode(section);
-  const description = bulletItems(section)[0];
+  if (!usage) fail(`missing command usage fence: ${title}`);
+  const description = bulletItems(section)[0] || paragraphs(section)[0];
   if (!description) fail(`missing command description: ${title}`);
-  return { title, commands: commandNames(usage), description, usage };
+  return {
+    title,
+    id: title.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+    commands: commandNames(usage),
+    description,
+    usage,
+  };
+}
+
+function commandGroupsFromReference(commandReference) {
+  const titles = [...commandReference.matchAll(/^## (.+)$/gm)].map(
+    (match) => match[1],
+  );
+  return titles.flatMap((title) => {
+    if (title === "Where to go next") return [];
+    const usage = fencedCodeBlocks(extractSection(commandReference, title))[0];
+    return usage ? [commandGroup(commandReference, title)] : [];
+  });
+}
+
+export function sessionModelFromCommands(commandReference) {
+  const lifecycle = extractSection(commandReference, "Host lifecycle");
+  const shared = bulletItems(lifecycle).find((item) =>
+    /one browser profile/i.test(item),
+  );
+  if (!shared) {
+    fail("COMMANDS.md is missing the shared-profile session contract");
+  }
+  if (/stays isolated until you close it/i.test(shared)) {
+    fail("session contract must not claim sessions stay isolated");
+  }
+  return shared;
+}
+
+function listCommandForms(groups) {
+  return groups.flatMap((group) =>
+    group.usage
+      .split("\n")
+      .filter((line) => line && !/^\s/.test(line))
+      .flatMap((line) => line.split(" | "))
+      .map((form) => form.trim())
+      .filter((form) => form && form !== "--version")
+      .map((form) => ({
+        group: group.title,
+        groupId: group.id,
+        form,
+        description: group.description,
+      })),
+  );
 }
 
 function markdownForDocumentation(content) {
@@ -404,6 +459,8 @@ ${content.introduction}
 \`\`\`sh
 ${content.firstRunCommands}
 \`\`\`
+
+${content.sessionModel}
 
 ${content.startupPresentation}
 
@@ -438,6 +495,7 @@ export function loadDocumentationContent() {
   if (documentationCache) return documentationCache;
   const readme = readRepositoryFile("README.md");
   const commandReference = readRepositoryFile("apps/headless/docs/COMMANDS.md");
+  const sessionModel = sessionModelFromCommands(commandReference);
   const workflowSection = extractSection(readme, "Agent workflow");
   const workflowCommands = fencedCode(workflowSection)
     .split("\n")
@@ -469,6 +527,7 @@ export function loadDocumentationContent() {
   const content = {
     introduction: paragraphStarting(readme, "Persistent browser control"),
     firstRunCommands,
+    sessionModel,
     qaWorkflowCommands,
     startupPresentation: paragraphStarting(workflowSection, "On macOS"),
     contextPruning: paragraphStarting(
@@ -479,12 +538,7 @@ export function loadDocumentationContent() {
       workflowSection,
       "For scrollable-page QA",
     ),
-    commandGroups: [
-      commandGroup(commandReference, "Host lifecycle"),
-      commandGroup(commandReference, "Navigation and interaction"),
-      commandGroup(commandReference, "Capture and evidence"),
-      commandGroup(commandReference, "Diagnostics"),
-    ],
+    commandGroups: commandGroupsFromReference(commandReference),
     security: bulletItems(extractSection(readme, "Security boundary")),
     platforms: bulletItems(
       readme.slice(0, readme.indexOf("## Computer use comparison")),
@@ -545,12 +599,7 @@ export function loadProductDocsContent() {
     fail("Headless MCP configuration is malformed");
   }
 
-  const commandGroups = [
-    commandGroup(commandReference, "Host lifecycle"),
-    commandGroup(commandReference, "Navigation and interaction"),
-    commandGroup(commandReference, "Capture and evidence"),
-    commandGroup(commandReference, "Diagnostics"),
-  ];
+  const commandGroups = commandGroupsFromReference(commandReference);
   const commandForms = commandFormCount(commandGroups);
   if (commandForms < 30) fail("command reference contains fewer than 30 forms");
 
@@ -641,7 +690,11 @@ export function loadProductDocsContent() {
     version: packageDocument.version,
     protocolVersion: protocolMatch[1],
     install,
-    commands: { groups: commandGroups, count: commandForms },
+    commands: {
+      groups: commandGroups,
+      count: commandForms,
+      forms: listCommandForms(commandGroups),
+    },
     mcp: {
       copy: mcpCopy,
       commands: mcpCommands,
@@ -708,11 +761,44 @@ export function validateRepositoryContent() {
       fail(`benchmark method row is stale: ${workflow.label}`);
     }
   }
+  const docsShell = readRepositoryFile("apps/web/components/docs-shell.tsx");
+  const docsOverview = readRepositoryFile("apps/web/app/docs/page.tsx");
+  if (docsShell.includes(".slice(")) {
+    fail("docs navigation must not slice route arrays by position");
+  }
+  if (/stays isolated/i.test(docsOverview)) {
+    fail("docs overview must not describe sessions as isolated");
+  }
+  if (!docsOverview.includes("sessionModel")) {
+    fail("docs overview must render the COMMANDS.md session contract");
+  }
+  const categoryIds = new Set(PRODUCT_DOC_CATEGORIES.map((category) => category.id));
+  if (categoryIds.size !== PRODUCT_DOC_CATEGORIES.length) {
+    fail("documentation categories must have unique ids");
+  }
   for (const route of productDocs.routes) {
+    if (!categoryIds.has(route.category)) {
+      fail(`documentation route is missing a declared category: ${route.href}`);
+    }
     const page = readRepositoryFile(`apps/web/app${route.href}/page.tsx`);
     if (!page.includes("export const metadata")) {
       fail(`product documentation route lacks metadata: ${route.href}`);
     }
+  }
+  if (productDocs.commands.forms.length !== productDocs.commands.count) {
+    fail("command directory forms drifted from the generated command count");
+  }
+  sessionModelFromCommands(readRepositoryFile("apps/headless/docs/COMMANDS.md"));
+  if (
+    !productDocs.commands.groups.some((group) => group.title === "Credential vault")
+  ) {
+    fail("command directory omitted the Credential vault section");
+  }
+  const directory = readRepositoryFile(
+    "apps/web/components/command-directory.tsx",
+  );
+  if (!directory.includes('role="status"')) {
+    fail("command directory must announce filter result counts");
   }
   for (const convention of ["not-found.tsx", "robots.ts", "sitemap.ts"]) {
     readRepositoryFile(`apps/web/app/${convention}`);

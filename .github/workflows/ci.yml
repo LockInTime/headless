@@ -116,6 +116,10 @@ jobs:
       - run: pnpm install --frozen-lockfile --filter @headless/web
       - run: pnpm --filter @headless/web lint
       - run: pnpm --filter @headless/web build
+      - name: Install Chromium for responsive checks
+        run: pnpm --filter @headless/web exec playwright install --with-deps chromium
+      - name: Responsive command directory
+        run: pnpm --filter @headless/web test:browser
 
   linux-e2e:
     name: Linux E2E (Docker)

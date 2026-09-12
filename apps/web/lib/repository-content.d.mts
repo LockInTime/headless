@@ -35,12 +35,14 @@ export type BenchmarkContent = {
 export type DocumentationContent = {
   introduction: string;
   firstRunCommands: string;
+  sessionModel: string;
   qaWorkflowCommands: string;
   startupPresentation: string;
   contextPruning: string;
   scrollableEvidence: string;
   commandGroups: Array<{
     title: string;
+    id: string;
     commands: string;
     description: string;
     usage: string;
@@ -53,13 +55,19 @@ export type DocumentationContent = {
 export type MarkdownTable = { headers: string[]; rows: string[][] };
 
 export type ProductDocsContent = {
-  routes: Array<{ href: string; label: string }>;
+  routes: Array<{ href: string; label: string; category: string }>;
   version: string;
   protocolVersion: string;
   install: Array<{ title: string; copy: string[]; commands: string[] }>;
   commands: {
     count: number;
     groups: DocumentationContent["commandGroups"];
+    forms: Array<{
+      group: string;
+      groupId: string;
+      form: string;
+      description: string;
+    }>;
   };
   mcp: { copy: string[]; commands: string[]; config: string };
   security: {
@@ -81,8 +89,14 @@ export type ProductDocsContent = {
   releases: Array<ProductDocsContent["release"]>;
 };
 
-export const PRODUCT_DOC_ROUTES: Array<{ href: string; label: string }>;
+export const PRODUCT_DOC_CATEGORIES: Array<{ id: string; label: string }>;
+export const PRODUCT_DOC_ROUTES: Array<{
+  href: string;
+  label: string;
+  category: string;
+}>;
 
+export function sessionModelFromCommands(commandReference: string): string;
 export function loadBenchmarkContent(): BenchmarkContent;
 export function loadDocumentationContent(): DocumentationContent;
 export function loadProductDocsContent(): ProductDocsContent;
