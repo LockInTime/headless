@@ -487,22 +487,15 @@ no TCP listener, fail closed, bounded everything.
 
 ---
 
-## 23. File upload is local ingest plus engine attach of store basenames
+## 23. File upload attaches existing store basenames only
 
-**Decision:** ingest of a local file into the private artifact store is a
-local CLI/TTY operator path (`headless artifacts add`), never a protocol
-command and never available over MCP. The agent cannot read outside the
-artifact store. `upload` is a protocol command that names a basename already
-in the store and asks the engine to attach that on-disk file. File bytes
+**Decision:** `upload` is a protocol command that names an existing basename
+in the private artifact store and asks the engine to attach that on-disk file.
+No CLI, protocol, or MCP command ingests an arbitrary local path. File bytes
 never appear on the Unix socket, in protocol parameters, MCP, logs, flows,
 snapshots, diagnostics, or errors. Downloads remain denied. There is no TCP
 fixture server, no home-directory path on `upload`, and no arbitrary-JS verb.
-
-`artifacts add` copies a local regular file into the store in the CLI process
-(same UID as the operator): validated basename, `O_EXCL`, `0600`, 5 MiB
-chunked read that does not trust `st_size` as the read bound, allow-listed
-extensions. `artifacts list` remains a protocol command. `upload` targets a
-file input with the same grammar as `click`.
+`upload` targets a file input with the same grammar as `click`.
 
 Linux Chromium attaches via `DOM.setFileInputFiles` using an isolated-world
 objectId. Attachment success is completion: bounded `{ref, role, name}`
@@ -513,25 +506,30 @@ evaluate page JavaScript or shuttle file bytes through JS. Capabilities
 declare `fileUpload` accordingly; inspect advertises `upload` only when that
 flag is true.
 
-**Status:** revised 2026-09-12 (review of #169: ingest is not an agent/MCP
-primitive). Originally decided 2026-09-10 (owner-approved product contract
-for #168).
+**Status:** partially implemented by #169 and revised 2026-09-12 after security
+review. The operator-file staging criterion in #168 remains open and must not
+be closed by the attach-only implementation.
 
-**Rationale:** resume/import/image QA needs file inputs; the existing store
-already has the safety properties we need. Putting bytes on the wire would
-blow the 1 MiB frame and leak file contents into logs. A protocol
-`artifact.add` would let an agent ingest any readable host file, which
-SECURITY.md classifies as reading outside the store. WebKit has no
-equivalent of `setFileInputFiles` without a JS hole.
+**Rationale:** resume/import/image QA needs file inputs, and the existing store
+has the confinement properties required for engine attachment. Any local-path
+ingest command available to an agent, including a nominally local CLI or a
+scriptable TTY confirmation, would let it copy arbitrary readable host files
+into an uploadable location. That violates SECURITY.md. Putting bytes on the
+wire would also exceed the frame boundary and leak contents into logs. WebKit
+has no equivalent of `setFileInputFiles` without a JS hole.
 
-**Consequences:** MCP and the Unix socket cannot ingest. Operators copy
-fixtures with the local CLI, then agents attach by basename. WebKit clients
-must skip upload or fail closed. Replay of `upload` requires the same
-artifact basename still in the store. `artifacts add` cannot be
-flow-recorded because it is not a protocol command.
+**Consequences:** agent-facing surfaces cannot import operator files. Upload
+remains useful for allowed artifacts already created in the store, and test
+harnesses may seed their isolated store directly. Test seeding is not a user
+workflow. #168 must remain open or be split so a trusted human staging surface
+is designed, implemented, and tested separately. WebKit clients must skip
+upload or fail closed. Replay of `upload` requires the same artifact basename
+still in the store.
 
-**Revisit trigger:** a documented WKWebView/native attach API that does not
-execute page JS and does not pass file bytes through the JS bridge.
+**Revisit trigger:** operator-file import requires a trusted native picker or
+broker that proves explicit user approval on both supported platforms. WebKit
+support separately requires a documented native attach API that does not
+execute page JS or pass file bytes through the JS bridge.
 
 ---
 
@@ -782,7 +780,7 @@ rule that durable saved-credential retrieval needs trusted per-use presence.
 | 19  | Keep macOS agent startup behind the current app             | Implemented                                               | 2026-08-12 |
 | 20  | Omit passkeys unless Apple provisions Developer ID release  | Implemented                                               | 2026-08-12 |
 | 21  | Rust port of shared core, protocol layer first              | In progress                                               | 2026-08-22 |
-| 23  | Local CLI ingest + engine attach of store basenames; downloads denied | Decided (revised 2026-09-12)                    | 2026-09-10 |
+| 23  | Upload attaches existing store basenames only; downloads denied | Partially implemented; trusted staging remains #168      | 2026-09-10 |
 | 24  | Credential broker on the unsigned local tier                | Decided                                                   | 2026-09-10 |
 | 25  | Typed local settings registry; security policy stays fixed  | Implemented                                               | 2026-09-12 |
 | 26  | Isolated sessions own one ephemeral browser context         | Implemented                                               | 2026-09-12 |

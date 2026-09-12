@@ -620,9 +620,7 @@ if (!globalThis.__headlessAgent) {
       if (element.disabled || element.getAttribute('aria-disabled') === 'true') {
         fail('NOT_EDITABLE', 'NOT_EDITABLE: file input is disabled');
       }
-      const style = getComputedStyle(element);
-      const rect = element.getBoundingClientRect();
-      if (style.display === 'none' || style.visibility === 'hidden' || rect.width <= 0 || rect.height <= 0) {
+      if (!visible(element)) {
         fail('ELEMENT_NOT_VISIBLE', 'ELEMENT_NOT_VISIBLE: file input is not visible');
       }
       return element;
@@ -633,16 +631,6 @@ if (!globalThis.__headlessAgent) {
         uploaded: refFor(element),
         role: role(element),
         name: name(element),
-      };
-    };
-    const fileInputResult = args => {
-      const element = fileInput(args);
-      const files = Array.from(element.files || []).map(file => String(file && file.name || '').slice(0, 128));
-      return {
-        uploaded: refFor(element),
-        role: role(element),
-        name: name(element),
-        files,
       };
     };
     const fill = args => {
@@ -954,7 +942,7 @@ if (!globalThis.__headlessAgent) {
       return {count: document.getAnimations().length, animations: all, truncated: document.getAnimations().length > all.length};
     };
     return {
-      snapshot, click, fill, credentialFill, finishCredentialFill, press, inputTarget, fileInput, fileInputPrepare, fileInputResult,
+      snapshot, click, fill, credentialFill, finishCredentialFill, press, inputTarget, fileInput, fileInputPrepare,
       authentication, scroll, state, tour, screenshotPlan, scrollToCapturePoint, rectangle, styles, storage,
       performance: performanceSummary, animations
     };

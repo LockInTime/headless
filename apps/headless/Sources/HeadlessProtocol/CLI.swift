@@ -21,7 +21,6 @@ public enum LocalCommand: Equatable, Sendable {
     case start(presentation: AgentStartupPresentation?)
     case config(ConfigCLICommand)
     case credentials(CredentialCLICommand)
-    case artifactsAdd(source: String, name: String)
 }
 
 public struct CLIInvocation: Equatable, Sendable {
@@ -181,7 +180,8 @@ public struct CLIParser {
         case "screenshot":
             return try parseScreenshot(arguments, session: session, jsonOutput: jsonOutput)
         case "artifacts":
-            return try parseArtifacts(arguments, session: session, jsonOutput: jsonOutput)
+            guard arguments == ["list"] else { throw CLIParseError.missingArgument("artifacts list") }
+            return remote(.artifactList, session: session, jsonOutput: jsonOutput)
         case "record":
             return try parseRecord(arguments, session: session, jsonOutput: jsonOutput)
         case "qa":
@@ -378,32 +378,6 @@ public struct CLIParser {
         return number
     }
 
-    private func parseArtifacts(
-        _ arguments: [String], session: String?, jsonOutput: Bool
-    ) throws -> CLIInvocation {
-        guard let subcommand = arguments.first else {
-            throw CLIParseError.missingArgument("artifacts list|add")
-        }
-        var args = Array(arguments.dropFirst())
-        switch subcommand {
-        case "list":
-            try requireEmpty(args)
-            return remote(.artifactList, session: session, jsonOutput: jsonOutput)
-        case "add":
-            let name = try removeOption("--name", from: &args)
-            guard let source = args.first else { throw CLIParseError.missingArgument("SOURCE") }
-            guard args.count == 1 else { throw CLIParseError.invalidOption(args[1]) }
-            guard let name else { throw CLIParseError.missingArgument("--name") }
-            try validateArtifactName(name, expectedExtensions: uploadArtifactExtensions)
-            return CLIInvocation(
-                local: .artifactsAdd(source: try absoluteSourcePath(source), name: name),
-                jsonOutput: jsonOutput
-            )
-        default:
-            throw CLIParseError.unknownCommand("artifacts \(subcommand)")
-        }
-    }
-
     private func parseUpload(
         _ arguments: [String], session: String?, jsonOutput: Bool
     ) throws -> CLIInvocation {
@@ -417,20 +391,6 @@ public struct CLIParser {
         var parameters = invocation.request?.parameters ?? [:]
         parameters["artifact"] = .string(artifact)
         return remote(.upload, session: session, parameters: parameters, jsonOutput: jsonOutput)
-    }
-
-    private func absoluteSourcePath(_ value: String) throws -> String {
-        guard !value.isEmpty else { throw CLIParseError.missingArgument("SOURCE") }
-        let resolved: URL
-        if value.hasPrefix("/") {
-            resolved = URL(fileURLWithPath: value)
-        } else {
-            let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-            resolved = URL(fileURLWithPath: value, relativeTo: cwd)
-        }
-        let path = resolved.standardizedFileURL.path
-        guard path.hasPrefix("/") else { throw CLIParseError.invalidOption(value) }
-        return path
     }
 
     private func parseTargeted(
@@ -858,7 +818,6 @@ Commands:
   screenshot --full-page --format pdf [--output FILE.pdf]
   screenshot --every-viewport|--by-section [--format png|jpg|jpeg] [--output PREFIX]
   artifacts list
-  artifacts add SOURCE --name FILE
   record start [--fps N] [--format mp4|mov|webm|gif] [--quality fast|balanced|high] [--output FILE]
   record status | record stop [--output FILE]
   qa report | qa clear

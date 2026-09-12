@@ -590,7 +590,6 @@ public enum ProtocolBounds {
     public static let networkThroughputKbps = -1.0...1_000_000.0
     public static let screenshotDimension = 16_384.0
     public static let screenshotPixels = 64_000_000.0
-    public static let artifactUploadBytes = 5 * 1_024 * 1_024
 }
 
 public struct BoundedScreenshotRectangle: Equatable, Sendable {

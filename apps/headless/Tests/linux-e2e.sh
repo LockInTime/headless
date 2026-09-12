@@ -304,22 +304,13 @@ echo "$TRUSTED_INPUT" | grep -q 'input:true'
 echo "$TRUSTED_INPUT" | grep -q 'key:Enter:true'
 echo "$TRUSTED_INPUT" | grep -q 'click:true'
 STEP="file-upload"
-printf 'resume-fixture\n' > "$FIXTURE_ROOT/resume.txt"
-ADD="$(headless artifacts add "$FIXTURE_ROOT/resume.txt" --name resume.txt)"
-echo "$ADD" | grep -q '"name":"resume.txt"'
-echo "$ADD" | grep -q '"kind":"txt"'
+printf 'resume-fixture\n' > "$HEADLESS_ARTIFACT_DIR/resume.txt"
+chmod 600 "$HEADLESS_ARTIFACT_DIR/resume.txt"
 test "$(cat "$HEADLESS_ARTIFACT_DIR/resume.txt")" = "resume-fixture"
 test "$(stat -c %a "$HEADLESS_ARTIFACT_DIR/resume.txt")" = "600"
-printf 'cover-letter\n' > "$FIXTURE_ROOT/cover.txt"
-RELATIVE_ADD="$(cd "$FIXTURE_ROOT" && headless artifacts add ./cover.txt --name cover.txt)"
-echo "$RELATIVE_ADD" | grep -q '"name":"cover.txt"'
 headless artifacts list | grep -q '"name":"resume.txt"'
-if headless artifacts add "$FIXTURE_ROOT/resume.txt" --name resume.txt >/dev/null 2>&1; then
-  echo "artifact ingest overwrite was not rejected" >&2
-  exit 1
-fi
-if headless artifacts add "$FIXTURE_ROOT/resume.txt" --name resume.html >/dev/null 2>&1; then
-  echo "html artifact ingest was not rejected" >&2
+if headless artifacts add /etc/passwd --name resume.txt >/dev/null 2>&1; then
+  echo "agent-facing local-file ingest was not rejected" >&2
   exit 1
 fi
 headless --session qa visit http://127.0.0.1:41739/file-upload/ | grep -q 'File upload fixture'

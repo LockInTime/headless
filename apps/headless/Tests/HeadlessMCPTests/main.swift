@@ -194,8 +194,8 @@ func run() throws {
         throw TestFailure(description: "artifact ingest rejection text was absent")
     }
     try expect(
-        ingestText.contains("local operator") && ingestText.contains("unavailable over MCP"),
-        "artifact ingest rejection should require a local operator"
+        ingestText.contains("artifacts list"),
+        "artifact ingest rejection should expose only the supported list command"
     )
 }
 

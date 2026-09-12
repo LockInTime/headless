@@ -1063,9 +1063,6 @@ struct ProtocolTests {
             (["credentials", "list", "--origin", "https://example.com"], .credentials(.list(
                 origin: try CredentialOrigin(rawValue: "https://example.com")
             ))),
-            (["artifacts", "add", "/tmp/resume.pdf", "--name", "resume.pdf"], .artifactsAdd(
-                source: "/tmp/resume.pdf", name: "resume.pdf"
-            )),
             (["help"], .help),
             (["--help"], .help),
             (["version"], .version),
@@ -2168,10 +2165,13 @@ struct ProtocolTests {
         let localCommandNames = Set(localCommands.compactMap(\.stringValue))
         try expect(
             localCommandNames.isSuperset(of: [
-                "artifacts.add",
                 "config.describe", "config.get", "config.list", "config.reset", "config.set",
             ]),
-            "capabilities should advertise every local config and ingest command"
+            "capabilities should advertise every local config command"
+        )
+        try expect(
+            !localCommandNames.contains("artifacts.add"),
+            "capabilities must not advertise local-file ingest"
         )
         try expect(
             settingDefinitions == SettingsRegistry.shared.definitions.compactMap {
@@ -3320,22 +3320,6 @@ struct ProtocolTests {
     }
 
     static func artifactUploadCommands() throws {
-        let add = try CLIParser().parse(["artifacts", "add", "/tmp/resume.pdf", "--name", "resume.pdf"])
-        try expect(add.request == nil, "artifacts add must not become a socket command")
-        try expect(
-            add.local == .artifactsAdd(source: "/tmp/resume.pdf", name: "resume.pdf"),
-            "artifacts add should stay a local CLI ingest"
-        )
-
-        let relative = try CLIParser().parse(["artifacts", "add", "resume.pdf", "--name", "resume.pdf"])
-        guard case .artifactsAdd(let resolved, let relativeName) = relative.local else {
-            throw TestFailure(description: "relative artifacts add should stay local")
-        }
-        try expect(relative.request == nil, "relative artifacts add must not become a socket command")
-        try expect(resolved.hasPrefix("/"), "CLI must resolve cwd-relative sources to absolute paths")
-        try expect(resolved.hasSuffix("/resume.pdf") || resolved.hasSuffix("resume.pdf"), "resolved source should keep the basename")
-        try expect(relativeName == "resume.pdf", "destination name should parse")
-
         let semantic = try CLIParser().parse([
             "upload", "--role", "textbox", "--name", "Resume", "--artifact", "resume.pdf",
         ])
@@ -3354,11 +3338,8 @@ struct ProtocolTests {
         try expectThrows("upload without --artifact should fail in the CLI") {
             _ = try CLIParser().parse(["upload", "@e12"])
         }
-        try expectThrows("artifacts add without --name should fail") {
-            _ = try CLIParser().parse(["artifacts", "add", "/tmp/resume.pdf"])
-        }
-        try expectThrows("CLI should reject html ingest names") {
-            _ = try CLIParser().parse(["artifacts", "add", "/tmp/page.html", "--name", "page.html"])
+        try expectThrows("CLI must not expose local-file ingest") {
+            _ = try CLIParser().parse(["artifacts", "add", "/etc/passwd", "--name", "resume.txt"])
         }
 
         try expectThrows("raw artifact.add protocol requests must be rejected as unknown") {
@@ -3393,31 +3374,26 @@ struct ProtocolTests {
         }
 
         let root = "/tmp/headless-upload-artifact-\(UUID().uuidString)"
-        let sourceDir = root + "-src"
+        let outsideArtifact = root + "-outside.png"
         defer {
             try? FileManager.default.removeItem(atPath: root)
-            try? FileManager.default.removeItem(atPath: sourceDir)
+            try? FileManager.default.removeItem(atPath: outsideArtifact)
         }
-        try FileManager.default.createDirectory(atPath: sourceDir, withIntermediateDirectories: true)
         let store = try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": root])
-        let pngPath = sourceDir + "/tiny.png"
-        try tinyPNG.write(to: URL(fileURLWithPath: pngPath))
-        let added = try store.ingest(sourcePath: pngPath, name: "tiny.png")
-        guard case .object(let addedMetadata) = added else {
-            throw TestFailure(description: "ingest metadata")
-        }
-        try expect(addedMetadata["name"] == .string("tiny.png"), "ingest should return the destination name")
-        try expect(addedMetadata["kind"] == .string("png"), "ingest should report the file kind")
-        try expect(
-            try Data(contentsOf: URL(fileURLWithPath: root + "/tiny.png")) == tinyPNG,
-            "ingest should copy source bytes into a regular store file"
+        let added = try store.write(
+            tinyPNG, requestedName: "tiny.png", extension: "png", prefix: "test"
         )
+        guard case .object(let addedMetadata) = added else {
+            throw TestFailure(description: "artifact metadata")
+        }
+        try expect(addedMetadata["name"] == .string("tiny.png"), "write should return the artifact name")
+        try expect(addedMetadata["kind"] == .string("png"), "write should report the file kind")
         let pngMode = (try FileManager.default.attributesOfItem(atPath: root + "/tiny.png")[.posixPermissions] as? NSNumber)?.intValue
-        try expect(pngMode == 0o600, "ingested artifact should be private")
+        try expect(pngMode == 0o600, "stored upload artifact should be private")
 
-        let txtPath = sourceDir + "/notes.txt"
-        try Data("hello".utf8).write(to: URL(fileURLWithPath: txtPath))
-        _ = try store.ingest(sourcePath: txtPath, name: "notes.txt")
+        _ = try store.write(
+            Data("hello".utf8), requestedName: "notes.txt", extension: "txt", prefix: "test"
+        )
         guard case .object(let listing) = try store.list(),
               case .array(let artifacts)? = listing["artifacts"] else {
             throw TestFailure(description: "upload artifact listing")
@@ -3426,28 +3402,8 @@ struct ProtocolTests {
             guard case .object(let object) = value else { return nil }
             return object["name"]?.stringValue
         }
-        try expect(listedNames.contains("tiny.png"), "listing should include ingested png")
-        try expect(listedNames.contains("notes.txt"), "listing should include ingested txt")
-
-        try expectThrows("ingest overwrite should fail closed") {
-            _ = try store.ingest(sourcePath: pngPath, name: "tiny.png")
-        }
-        let linkPath = sourceDir + "/link.png"
-        try FileManager.default.createSymbolicLink(atPath: linkPath, withDestinationPath: pngPath)
-        try expectThrows("symlink sources should be rejected") {
-            _ = try store.ingest(sourcePath: linkPath, name: "from-link.png")
-        }
-        try expectThrows("directory sources should be rejected") {
-            _ = try store.ingest(sourcePath: sourceDir, name: "folder.png")
-        }
-        let hugePath = sourceDir + "/huge.txt"
-        try Data(count: ProtocolBounds.artifactUploadBytes + 1).write(to: URL(fileURLWithPath: hugePath))
-        try expectThrows("oversized ingest should fail from the chunked reader, not a trusted st_size") {
-            _ = try store.ingest(sourcePath: hugePath, name: "huge.txt")
-        }
-        try expectThrows("missing source should fail closed") {
-            _ = try store.ingest(sourcePath: sourceDir + "/missing.txt", name: "missing.txt")
-        }
+        try expect(listedNames.contains("tiny.png"), "listing should include stored png")
+        try expect(listedNames.contains("notes.txt"), "listing should include stored txt")
         let resolvedURL = try store.urlForExistingArtifact(name: "tiny.png")
         try expect(
             resolvedURL.deletingLastPathComponent().standardizedFileURL.path == URL(fileURLWithPath: root).standardizedFileURL.path,
@@ -3455,6 +3411,13 @@ struct ProtocolTests {
         )
         try expectThrows("missing stored artifact should fail") {
             _ = try store.urlForExistingArtifact(name: "absent.pdf")
+        }
+        try tinyPNG.write(to: URL(fileURLWithPath: outsideArtifact))
+        try FileManager.default.createSymbolicLink(
+            atPath: root + "/linked.png", withDestinationPath: outsideArtifact
+        )
+        try expectThrows("symlinked upload artifacts must not escape the store") {
+            _ = try store.urlForExistingArtifact(name: "linked.png")
         }
 
         let session = TestBrowserSession()
@@ -3467,7 +3430,7 @@ struct ProtocolTests {
         )
         defer { core.stop() }
 
-        try expect(session.agentControlEnableCount == 0, "local ingest must not enable page control")
+        try expect(session.agentControlEnableCount == 0, "artifact resolution must not enable page control")
         let uploaded = core.handle(CommandRequest(
             command: .upload,
             parameters: ["target": .string("@e1"), "artifact": .string("tiny.png")]
@@ -3475,7 +3438,7 @@ struct ProtocolTests {
         try expect(uploaded.ok, "HostCore upload should resolve a stored artifact")
         try expect(session.lastUploadPath == root + "/tiny.png" || session.lastUploadPath == URL(fileURLWithPath: root + "/tiny.png").path, "engine must receive the store path, not the source path")
         let encoded = String(decoding: try ProtocolCodec.encoder.encode(uploaded), as: UTF8.self)
-        try expect(!encoded.contains(pngPath), "upload responses must not include the source path")
+        try expect(!encoded.contains(root), "upload responses must not include the store path")
         try expect(!encoded.contains("\"path\""), "upload responses must not include a filesystem path")
         try expect(encoded.contains("tiny.png"), "upload responses should name the artifact")
 
@@ -3565,7 +3528,7 @@ struct ProtocolTests {
             ("ephemeral authentication broker lifecycle", ephemeralAuthenticationBrokerLifecycle),
             ("host authentication orchestration", hostAuthenticationOrchestration),
             ("docs command reference matches help", docsCommandReferenceMatchesHelp),
-            ("artifact ingest and file upload", artifactUploadCommands),
+            ("artifact file upload boundaries", artifactUploadCommands),
         ]
 
         var failures = 0

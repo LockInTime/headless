@@ -329,9 +329,12 @@ if NETWORK_SIMULATION="$("$CLI" --session qa network emulate --latency 25)"; the
 fi
 echo "$NETWORK_SIMULATION" | grep -q 'UNSUPPORTED_CAPABILITY'
 STEP="file-upload-unsupported"
-UPLOAD_SOURCE="$(mktemp "${TMPDIR:-/tmp}/headless-upload-source.XXXXXX")"
-printf 'resume-fixture\n' > "$UPLOAD_SOURCE"
-"$CLI" artifacts add "$UPLOAD_SOURCE" --name resume.txt | grep -q '"name":"resume.txt"'
+printf 'resume-fixture\n' > "$HEADLESS_ARTIFACT_DIR/resume.txt"
+chmod 600 "$HEADLESS_ARTIFACT_DIR/resume.txt"
+if "$CLI" artifacts add /etc/passwd --name resume.txt >/dev/null 2>&1; then
+  echo "agent-facing local-file ingest was not rejected" >&2
+  fail
+fi
 "$CLI" --session qa visit "http://127.0.0.1:$PORT/file-upload" | grep -q 'File upload fixture'
 UPLOAD_SNAPSHOT="$("$CLI" --session qa inspect --interactive)"
 echo "$UPLOAD_SNAPSHOT" | grep -q '"name":"Resume"'
@@ -344,7 +347,6 @@ if UPLOAD="$("$CLI" --session qa upload --role textbox --name Resume --artifact 
   fail
 fi
 echo "$UPLOAD" | grep -q 'UNSUPPORTED_CAPABILITY'
-rm -f "$UPLOAD_SOURCE"
 STEP="flows-reports"
 "$CLI" --session qa flow start | grep -q '"recording":true'
 "$CLI" --session qa visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'

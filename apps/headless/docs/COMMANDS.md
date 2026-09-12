@@ -194,11 +194,12 @@ back | reload
 - `fill REF -- value` keeps leading dashes in the value. Flow recordings never
   record fill values.
 - `upload` attaches a file that already lives in the private artifact store.
-  `--artifact` is a validated basename only — never a filesystem path. File
+  `--artifact` is a validated basename only, never a filesystem path. File
   bytes never travel on the socket. Linux Chromium attaches through
   `DOM.setFileInputFiles`; macOS WebKit returns `UNSUPPORTED_CAPABILITY`.
-  Downloads stay denied. Ingest the fixture first with the local CLI
-  `artifacts add`; that path is not a protocol or MCP command.
+  Downloads stay denied. Agent-facing surfaces cannot import local files;
+  operator-file import remains deferred until Headless has a trusted native
+  picker or broker that can prove explicit user approval.
 - `wait --timeout` and the tour duration are bounded; unbounded waits are
   rejected at parse time.
 
@@ -210,7 +211,6 @@ screenshot [REF | --role ROLE --name NAME | --full-page] [--format png|jpg|jpeg]
 screenshot --full-page --format pdf [--output FILE.pdf]
 screenshot --every-viewport|--by-section [--format png|jpg|jpeg] [--output PREFIX]
 artifacts list
-artifacts add SOURCE --name FILE
 record start [--fps N] [--format mp4|mov|webm|gif] [--quality fast|balanced|high] [--output FILE]
 record status | record stop [--output FILE]
 qa report | qa clear
@@ -220,13 +220,9 @@ report create [--output REPORT.json]
 - Screenshots and recordings become private artifacts in the per-user store,
   created `O_EXCL` with `0600`. They never overwrite and never leave it unless
   you copy them.
-- `artifacts add` copies a local regular file (absolute or cwd-relative; 5 MiB
-  cap; `pdf`/`png`/`jpg`/`jpeg`/`gif`/`webp`/`txt`/`csv`/`json` only) into that
-  store as a new `0600` name. It runs in the CLI process as a local operator
-  path, like `credentials`; it is not a socket command and MCP rejects it.
-  HTML, SVG, executables, and archives are rejected. The stored object is
-  bytes, not a symlink. `artifacts list` remains a protocol command. `upload`
-  then names that basename; it is not a download manager.
+- `artifacts list` reports the bounded contents of the private store. `upload`
+  can attach an allowed existing basename from that list; it is not a local
+  file reader or a download manager.
 - `--clipboard` capture is macOS only. Linux rejects clipboard capture because
   VM clipboards are not a reliable boundary.
 - PDF screenshots and element-scoped capture follow the engine matrix reported
@@ -260,8 +256,7 @@ flow start | flow stop [--output FLOW.json] | flow run FLOW.json
   paths, and writes its difference image back into the artifact store.
 - Flows replay recorded commands but skip every `fill` value by design; rerun
   fills explicitly when you replay. `upload` may be recorded with the artifact
-  basename only; replay needs that same store name. `artifacts add` is never
-  recorded because it is a local CLI path, not a protocol command.
+  basename only; replay needs that same store name.
 
 ## Where to go next
 

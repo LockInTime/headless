@@ -45,10 +45,9 @@ large pages, request `outline`, select a returned `@rN` region, then use
 bound the result; check `omitted` before assuming it describes the whole page.
 Use `click --role ... --name ...` for unique accessible controls. Use an `@eN`
 ref from the latest inspection when role/name is ambiguous. Inspect again after
-navigation or a large rerender. File inputs advertise `upload`; ingest the
-fixture with `artifacts add` first, then `upload --artifact BASENAME`. Upload
-never takes a home-directory path. Ask before uploading, as in
-[safety.md](safety.md).
+navigation or a large rerender. File inputs advertise `upload` for an existing
+private artifact-store basename. Upload never accepts or imports a filesystem
+path. Ask before uploading, as in [safety.md](safety.md).
 
 Pass fill text as one quoted shell argument so whitespace is preserved. Put
 `--` before a value that contains a literal global flag such as `--json` or
@@ -78,7 +77,6 @@ headless --session NAME record start --fps 10 --format mp4 --quality balanced
 headless --session NAME record status
 headless --session NAME record stop --output flow.mp4
 headless --session NAME capture-info
-headless artifacts add /abs/or/cwd/resume.pdf --name resume.pdf
 headless artifacts list
 ```
 

@@ -222,21 +222,6 @@ public final class ArtifactStore: @unchecked Sendable {
         ])
     }
 
-    /// Copies a local regular file into the store. Called only from the local
-    /// CLI process (same UID as the operator). File bytes never appear on the
-    /// Unix socket, and HostCore cannot reach this path. Symlinks, directories,
-    /// FIFOs, and oversized files fail closed. The stored object is always a
-    /// new `0600` regular file.
-    public func ingest(sourcePath: String, name: String) throws -> JSONValue {
-        do { try validateArtifactName(name, expectedExtensions: uploadArtifactExtensions) }
-        catch { throw ArtifactError.invalidName(name) }
-        let data = try readUploadSource(sourcePath)
-        let fileExtension = URL(fileURLWithPath: name).pathExtension.lowercased()
-        return try write(
-            data, requestedName: name, extension: fileExtension, prefix: "upload"
-        )
-    }
-
     /// Resolves an already-stored upload artifact to its on-disk URL. Callers
     /// receive a path inside this store only, never an agent-supplied path.
     public func urlForExistingArtifact(
@@ -255,59 +240,6 @@ public final class ArtifactStore: @unchecked Sendable {
             throw ArtifactError.writeFailed("Artifact is not a permitted regular file")
         }
         return url
-    }
-
-    private func readUploadSource(_ sourcePath: String) throws -> Data {
-        guard sourcePath.hasPrefix("/") else {
-            throw ArtifactError.writeFailed("Source must be an absolute path")
-        }
-        let sourceURL = URL(fileURLWithPath: sourcePath)
-        guard sourceURL.path.hasPrefix("/") else {
-            throw ArtifactError.writeFailed("Source must be an absolute path")
-        }
-        var info = stat()
-        guard lstat(sourceURL.path, &info) == 0 else {
-            throw ArtifactError.writeFailed("Source file is missing or unreadable")
-        }
-        guard (info.st_mode & S_IFMT) == S_IFREG else {
-            throw ArtifactError.writeFailed("Source must be a regular file")
-        }
-        let descriptor = open(sourceURL.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
-        guard descriptor >= 0 else {
-            throw ArtifactError.writeFailed("Source file is missing or unreadable")
-        }
-        defer { _ = close(descriptor) }
-        var opened = stat()
-        guard fstat(descriptor, &opened) == 0, (opened.st_mode & S_IFMT) == S_IFREG else {
-            throw ArtifactError.writeFailed("Source must be a regular file")
-        }
-        // st_size is not the read bound. A growing or lying regular file is
-        // stopped at the limit without slurping the rest of the file.
-        return try readBounded(
-            descriptor: descriptor, maximumBytes: ProtocolBounds.artifactUploadBytes
-        )
-    }
-
-    private func readBounded(descriptor: Int32, maximumBytes: Int, chunkBytes: Int = 64 * 1_024) throws -> Data {
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: max(1, chunkBytes))
-        while true {
-            #if canImport(Darwin)
-            let count = Darwin.read(descriptor, &buffer, buffer.count)
-            #else
-            let count = Glibc.read(descriptor, &buffer, buffer.count)
-            #endif
-            if count < 0 && errno == EINTR { continue }
-            guard count >= 0 else {
-                throw ArtifactError.writeFailed("Source file is missing or unreadable")
-            }
-            if count == 0 { break }
-            if data.count + count > maximumBytes {
-                throw ArtifactError.writeFailed("Source file exceeds the 5 MiB upload limit")
-            }
-            data.append(buffer, count: count)
-        }
-        return data
     }
 
     /// Reads only a regular artifact owned by this store. Callers never receive
