@@ -2847,6 +2847,22 @@ struct ProtocolTests {
             help?.selector == "showHelpPage:" && help?.target == .firstResponder,
             "Headless Help must keep showHelpPage: on the first responder"
         )
+        let textEditingActions = [
+            "Undo": "undo:", "Redo": "redo:", "Cut": "cut:", "Copy": "copy:",
+            "Paste": "paste:", "Select All": "selectAll:",
+        ]
+        for (title, selector) in textEditingActions {
+            let shortcut = headlessMenuShortcuts.first { $0.title == title }
+            try expect(
+                shortcut?.selector == selector && shortcut?.target == .firstResponder,
+                "\(title) must target the active text responder"
+            )
+        }
+        let fullScreen = headlessMenuShortcuts.first { $0.title == "Enter Full Screen" }
+        try expect(
+            fullScreen?.selector == "toggleFullScreen:" && fullScreen?.target == .firstResponder,
+            "full screen must retain the standard responder-chain action"
+        )
         let newWindow = headlessMenuShortcuts.first { $0.title == "New Window" }
         try expect(
             newWindow?.selector == "newWindow:" && newWindow?.target == .appDelegate,

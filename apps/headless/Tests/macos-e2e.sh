@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "${0:a:h}/.."
 
-for tool in node curl defaults lsof osascript perl pgrep; do
+for tool in node curl defaults lsof osascript perl; do
   command -v "$tool" >/dev/null 2>&1 || { echo "macOS E2E tests require $tool" >&2; exit 69; }
 done
 
@@ -22,11 +22,15 @@ export HEADLESS_E2E_DATA_STORE_ID="$(uuidgen)"
 LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-e2e.XXXXXX")"
 HOST_LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-host.XXXXXX")"
 RESTORE_LOG="$(mktemp "${TMPDIR:-/tmp}/headless-macos-restore.XXXXXX")"
-SNAPSHOT_MARKER="$(mktemp "${TMPDIR:-/tmp}/headless-macos-snapshot.XXXXXX")"
-MENU_SNAPSHOT_PATH=""
+MENU_SNAPSHOT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/headless-macos-snapshot.XXXXXX")"
+MENU_SNAPSHOT_PATH="$MENU_SNAPSHOT_DIR/menu-snapshot.png"
+CLIPBOARD_BACKUP="$(mktemp "${TMPDIR:-/tmp}/headless-macos-clipboard.XXXXXX")"
+CLIPBOARD_SAVED=0
+export HEADLESS_E2E_MENU_SNAPSHOT_PATH="$MENU_SNAPSHOT_PATH"
 export HEADLESS_HOST_LOG="$HOST_LOG"
 STEP="boot"
 RESTORE_PID=""
+HOST_PID=""
 DEFAULTS_DOMAIN="com.headless.app"
 PRESENTATION_KEY="AgentStartupPresentation"
 DEFAULTS_HAD_LAST_URL=0
@@ -236,6 +240,114 @@ end run
 APPLESCRIPT
 }
 
+ax_keystroke() {
+  local pid="$1" key_text="$2" modifiers="$3"
+  osascript_with_timeout - "$pid" "$key_text" "$modifiers" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  set keyText to item 2 of argv
+  set modifierNames to item 3 of argv
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses to set frontmost to true
+    if modifierNames is "none" then
+      keystroke keyText
+    else if modifierNames is "command" then
+      keystroke keyText using {command down}
+    else if modifierNames is "command-shift" then
+      keystroke keyText using {command down, shift down}
+    else
+      error "Unsupported test modifier set"
+    end if
+  end tell
+end run
+APPLESCRIPT
+}
+
+ax_front_window_attribute() {
+  local pid="$1" attribute_name="$2"
+  osascript_with_timeout - "$pid" "$attribute_name" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  set attributeName to item 2 of argv
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      if (count of windows) is 0 then error "Headless has no accessible windows"
+      return value of attribute attributeName of front window
+    end tell
+  end tell
+end run
+APPLESCRIPT
+}
+
+wait_for_focused_value() {
+  local pid="$1" expected="$2" focused_element
+  for _ in {1..100}; do
+    if focused_element="$(ax_focused_element "$pid" 2>/dev/null)" &&
+       [[ "$focused_element" == AXTextField$'\t'"$expected" ]]; then
+      return 0
+    fi
+    sleep 0.05
+  done
+  return 1
+}
+
+save_clipboard() {
+  osascript -l JavaScript - "$CLIPBOARD_BACKUP" <<'JXA'
+ObjC.import('AppKit');
+ObjC.import('Foundation');
+const path = ObjC.unwrap($.NSProcessInfo.processInfo.arguments.objectAtIndex(4));
+const items = $.NSPasteboard.generalPasteboard.pasteboardItems.js.map(item =>
+  item.types.js.map(type => [
+    ObjC.unwrap(type),
+    ObjC.unwrap(item.dataForType(type).base64EncodedStringWithOptions(0)),
+  ])
+);
+if (!$(JSON.stringify(items)).writeToFileAtomicallyEncodingError(
+  path, true, $.NSUTF8StringEncoding, null
+)) throw new Error('Could not save the pasteboard');
+JXA
+  CLIPBOARD_SAVED=1
+}
+
+restore_clipboard() {
+  [[ "$CLIPBOARD_SAVED" == 1 ]] || return 0
+  osascript -l JavaScript - "$CLIPBOARD_BACKUP" <<'JXA'
+ObjC.import('AppKit');
+ObjC.import('Foundation');
+const path = ObjC.unwrap($.NSProcessInfo.processInfo.arguments.objectAtIndex(4));
+const source = ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(
+  path, $.NSUTF8StringEncoding, null
+));
+const restored = $.NSMutableArray.array;
+for (const representations of JSON.parse(source)) {
+  const item = $.NSPasteboardItem.alloc.init;
+  for (const [type, base64] of representations) {
+    const data = $.NSData.alloc.initWithBase64EncodedStringOptions($(base64), 0);
+    if (!item.setDataForType(data, $(type))) throw new Error(`Could not restore ${type}`);
+  }
+  restored.addObject(item);
+}
+const pasteboard = $.NSPasteboard.generalPasteboard;
+pasteboard.clearContents;
+if (restored.count > 0 && !pasteboard.writeObjects(restored)) {
+  throw new Error('Could not restore the pasteboard');
+}
+JXA
+  CLIPBOARD_SAVED=0
+}
+
+fixture_request_count() {
+  local path="$1" count
+  count="$(curl -fsS --get --data-urlencode "path=$path" \
+    "http://127.0.0.1:$PORT/request-count")"
+  [[ "$count" == <-> ]] || return 1
+  print -r -- "$count"
+}
+
 assert_menu_shortcut() {
   local pid="$1" menu_title="$2" item_title="$3" expected_key="$4" expected_modifiers="$5"
   local actual_key actual_modifiers
@@ -257,6 +369,22 @@ assert_menu_shortcut() {
   fi
 }
 
+assert_system_full_screen_shortcut() {
+  local pid="$1" actual_key actual_modifiers
+  actual_key="$(ax_menu_attribute "$pid" View "Enter Full Screen" AXMenuItemCmdChar)"
+  actual_modifiers="$(ax_menu_attribute "$pid" View "Enter Full Screen" AXMenuItemCmdModifiers)"
+  if [[ "${actual_key:l}" != f ]]; then
+    echo "View > Enter Full Screen key was $actual_key, expected F" >&2
+    return 1
+  fi
+  # AppKit exposes Control-Command-F as 4 on older releases and the
+  # system-managed Function-F equivalent as 24 on newer releases.
+  if [[ "$actual_modifiers" != 4 && "$actual_modifiers" != 24 ]]; then
+    echo "View > Enter Full Screen modifiers were $actual_modifiers, expected 4 or 24" >&2
+    return 1
+  fi
+}
+
 node Tests/fixture-server.mjs >"$LOG" 2>&1 &
 FIXTURE_PID=$!
 
@@ -266,8 +394,9 @@ cleanup() {
   local -a host_pids
   host_pid_output="$({
     lsof -t "$HEADLESS_SOCKET" 2>/dev/null || true
-    pgrep -f -x "$HOST" 2>/dev/null || true
-    pgrep -f -x "${HOST#/private}" 2>/dev/null || true
+    if [[ -n "$HOST_PID" ]]; then print -r -- "$HOST_PID"; fi
+    if [[ -n "$RESTORE_PID" ]]; then print -r -- "$RESTORE_PID"; fi
+    true
   } | sort -u)"
   host_pids=("${(@f)host_pid_output}")
   if "$CLI" status >/dev/null 2>&1; then
@@ -312,11 +441,15 @@ cleanup() {
   kill "$FIXTURE_PID" >/dev/null 2>&1 || true
   restore_last_url
   restore_startup_presentation
-  if [[ -n "$MENU_SNAPSHOT_PATH" ]]; then
-    rm -f "$MENU_SNAPSHOT_PATH"
+  if ! restore_clipboard; then
+    print -r -u2 -- "Could not restore the pasteboard; backup retained at $CLIPBOARD_BACKUP"
   fi
   rm -rf "$HEADLESS_ARTIFACT_DIR"
-  rm -f "$HEADLESS_SOCKET" "$LOG" "$HOST_LOG" "$RESTORE_LOG" "$SNAPSHOT_MARKER"
+  rm -rf "$MENU_SNAPSHOT_DIR"
+  rm -f "$HEADLESS_SOCKET" "$LOG" "$HOST_LOG" "$RESTORE_LOG"
+  if [[ "$CLIPBOARD_SAVED" == 0 ]]; then
+    rm -f "$CLIPBOARD_BACKUP"
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -462,13 +595,13 @@ View	Reload Ignoring Cache	r	1
 View	Zoom In	=	0
 View	Zoom Out	-	0
 View	Actual Size	0	0
-View	Enter Full Screen	f	4
 History	Back	[	0
 History	Forward	]	0
 Window	Minimize	m	0
 Window	Pin on Top	p	2
 Help	Headless Help	/	1
 SHORTCUTS
+assert_system_full_screen_shortcut "$HOST_PID"
 KEYED_MENU_COUNT="$(ax_keyed_menu_count "$HOST_PID")"
 if [[ "$KEYED_MENU_COUNT" != 25 ]]; then
   echo "Headless exposed $KEYED_MENU_COUNT keyed menu items, expected the 25-item catalog" >&2
@@ -512,30 +645,52 @@ fi
 
 STEP="menu-open-location"
 ax_press_menu_item "$HOST_PID" File "Open Location…"
-LOCATION_FOCUSED=0
+LOCATION_VALUE=""
 for _ in {1..100}; do
-  FOCUSED_ELEMENT="$(ax_focused_element "$HOST_PID")"
-  if [[ "$FOCUSED_ELEMENT" == AXTextField$'\t'http://* ]]; then
-    LOCATION_FOCUSED=1
+  if FOCUSED_ELEMENT="$(ax_focused_element "$HOST_PID" 2>/dev/null)" &&
+     [[ "$FOCUSED_ELEMENT" == AXTextField$'\t'http://* ]]; then
+    LOCATION_VALUE="${FOCUSED_ELEMENT#*$'\t'}"
     break
   fi
   sleep 0.05
 done
-if [[ "$LOCATION_FOCUSED" != 1 ]]; then
+if [[ -z "$LOCATION_VALUE" ]]; then
   echo "Open Location did not focus the address field with the current URL" >&2
   fail
 fi
+
+STEP="menu-text-responder"
+save_clipboard
+TEXT_SENTINEL="headlessmenualpha"
+ax_keystroke "$HOST_PID" a command
+ax_keystroke "$HOST_PID" "$TEXT_SENTINEL" none
+wait_for_focused_value "$HOST_PID" "$TEXT_SENTINEL"
+ax_keystroke "$HOST_PID" a command
+ax_keystroke "$HOST_PID" c command
+ax_keystroke "$HOST_PID" temporary none
+wait_for_focused_value "$HOST_PID" temporary
+ax_keystroke "$HOST_PID" a command
+ax_keystroke "$HOST_PID" v command
+wait_for_focused_value "$HOST_PID" "$TEXT_SENTINEL"
+ax_keystroke "$HOST_PID" a command
+ax_keystroke "$HOST_PID" x command
+wait_for_focused_value "$HOST_PID" ""
+ax_keystroke "$HOST_PID" v command
+wait_for_focused_value "$HOST_PID" "$TEXT_SENTINEL"
+ax_keystroke "$HOST_PID" z command
+wait_for_focused_value "$HOST_PID" ""
+ax_keystroke "$HOST_PID" z command-shift
+wait_for_focused_value "$HOST_PID" "$TEXT_SENTINEL"
 ax_escape "$HOST_PID"
 
 STEP="menu-reload"
 "$CLI" visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'
-NETWORK_BEFORE="$("$CLI" network list | sed -n 's/.*"available":\([0-9][0-9]*\).*/\1/p')"
-test -n "$NETWORK_BEFORE"
+RELOAD_COUNT_BEFORE="$(fixture_request_count /designers/dashboard)"
 ax_press_menu_item "$HOST_PID" View "Reload Page"
 RELOAD_OBSERVED=0
 for _ in {1..200}; do
-  NETWORK_AFTER="$("$CLI" network list | sed -n 's/.*"available":\([0-9][0-9]*\).*/\1/p')"
-  if [[ -n "$NETWORK_AFTER" && "$NETWORK_AFTER" -gt "$NETWORK_BEFORE" ]]; then
+  if RELOAD_COUNT_AFTER="$(fixture_request_count /designers/dashboard 2>/dev/null)" &&
+     [[ "$RELOAD_COUNT_AFTER" -gt "$RELOAD_COUNT_BEFORE" ]]; then
     RELOAD_OBSERVED=1
     break
   fi
@@ -548,12 +703,9 @@ fi
 "$CLI" wait --text 'Designers dashboard' --settled --timeout 10000 | grep -q 'Designers Dashboard'
 
 STEP="menu-snapshot"
-touch "$SNAPSHOT_MARKER"
-sleep 1
 ax_press_menu_item "$HOST_PID" File "Save Snapshot to Desktop"
 for _ in {1..200}; do
-  MENU_SNAPSHOT_PATH="$(find "$HOME/Desktop" -maxdepth 1 -type f -name 'headless *.png' -newer "$SNAPSHOT_MARKER" -print -quit)"
-  [[ -n "$MENU_SNAPSHOT_PATH" && -s "$MENU_SNAPSHOT_PATH" ]] && break
+  [[ -s "$MENU_SNAPSHOT_PATH" ]] && break
   sleep 0.05
 done
 if [[ -z "$MENU_SNAPSHOT_PATH" || ! -s "$MENU_SNAPSHOT_PATH" ]]; then
@@ -580,6 +732,48 @@ if cmp -s "$HEADLESS_ARTIFACT_DIR/menu-zoom-baseline.png" "$HEADLESS_ARTIFACT_DI
   fail
 fi
 ax_press_menu_item "$HOST_PID" View "Actual Size"
+
+STEP="menu-full-screen"
+ax_press_menu_item "$HOST_PID" View "Enter Full Screen"
+FULL_SCREEN_ENTERED=0
+for _ in {1..400}; do
+  if FULL_SCREEN_STATE="$(ax_front_window_attribute "$HOST_PID" AXFullScreen 2>/dev/null)" &&
+     [[ "$FULL_SCREEN_STATE" == true ]]; then
+    FULL_SCREEN_ENTERED=1
+    break
+  fi
+  sleep 0.05
+done
+if [[ "$FULL_SCREEN_ENTERED" != 1 ]]; then
+  echo "Enter Full Screen did not put the front window into full-screen mode" >&2
+  fail
+fi
+EXIT_FULL_SCREEN_AVAILABLE=0
+for _ in {1..100}; do
+  if [[ "$(ax_menu_exists "$HOST_PID" View "Exit Full Screen" 2>/dev/null || true)" == true ]]; then
+    EXIT_FULL_SCREEN_AVAILABLE=1
+    break
+  fi
+  sleep 0.05
+done
+if [[ "$EXIT_FULL_SCREEN_AVAILABLE" != 1 ]]; then
+  echo "Enter Full Screen did not expose the standard Exit Full Screen action" >&2
+  fail
+fi
+ax_press_menu_item "$HOST_PID" View "Exit Full Screen"
+FULL_SCREEN_EXITED=0
+for _ in {1..400}; do
+  if FULL_SCREEN_STATE="$(ax_front_window_attribute "$HOST_PID" AXFullScreen 2>/dev/null)" &&
+     [[ "$FULL_SCREEN_STATE" == false ]]; then
+    FULL_SCREEN_EXITED=1
+    break
+  fi
+  sleep 0.05
+done
+if [[ "$FULL_SCREEN_EXITED" != 1 ]]; then
+  echo "Exit Full Screen did not restore the front window" >&2
+  fail
+fi
 
 STEP="menu-history"
 "$CLI" visit "http://127.0.0.1:$PORT/next" | grep -q 'Designer Details'

@@ -696,12 +696,37 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
         let name = "headless \(formatter.string(from: Date())).png"
-        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
-        let path = desktop.appendingPathComponent(name).path
+        let environment = ProcessInfo.processInfo.environment
+        let path: String
+        let successMessage: String
+        if let testPath = environment["HEADLESS_E2E_MENU_SNAPSHOT_PATH"] {
+            let temporaryRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+                .resolvingSymlinksInPath().standardizedFileURL.path
+            let candidate = URL(fileURLWithPath: testPath).standardizedFileURL
+            let parent = candidate.deletingLastPathComponent().resolvingSymlinksInPath()
+            var isDirectory: ObjCBool = false
+            guard environment["HEADLESS_E2E_DATA_STORE_ID"] != nil,
+                  testPath.hasPrefix("/"),
+                  parent.path.hasPrefix(temporaryRoot + "/"),
+                  FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue,
+                  !FileManager.default.fileExists(
+                      atPath: parent.appendingPathComponent(candidate.lastPathComponent).path
+                  ) else {
+                showToast("Snapshot failed")
+                return
+            }
+            path = parent.appendingPathComponent(candidate.lastPathComponent).path
+            successMessage = "Saved test snapshot"
+        } else {
+            let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+            path = desktop.appendingPathComponent(name).path
+            successMessage = "Saved “\(name)” to Desktop"
+        }
         webView.takeSnapshot(with: nil) { [weak self] image, _ in
             guard let self else { return }
             if let image, self.writePNG(from: image, to: path) != nil {
-                self.showToast("Saved “\(name)” to Desktop")
+                self.showToast(successMessage)
             } else {
                 self.showToast("Snapshot failed")
             }

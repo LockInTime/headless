@@ -12,9 +12,28 @@ const routes = new Map([
   ['/auth-state', 'auth-state.html'],
   ['/auth-login', 'auth-login.html'],
 ]);
+const requestCounts = new Map();
 
 const server = createServer(async (request, response) => {
-  const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+  const requestURL = new URL(request.url ?? '/', 'http://127.0.0.1');
+  const pathname = requestURL.pathname;
+  if (pathname === '/request-count') {
+    const target = requestURL.searchParams.get('path');
+    if (!target?.startsWith('/')) {
+      response.writeHead(400, {'content-type': 'text/plain; charset=utf-8'});
+      response.end('A rooted path is required');
+      return;
+    }
+    const body = Buffer.from(String(requestCounts.get(target) ?? 0));
+    response.writeHead(200, {
+      'content-type': 'text/plain; charset=utf-8',
+      'content-length': body.length,
+      'cache-control': 'no-store',
+    });
+    response.end(body);
+    return;
+  }
+  requestCounts.set(pathname, (requestCounts.get(pathname) ?? 0) + 1);
   if (pathname === '/api/diagnostic') {
     const body = Buffer.from(JSON.stringify({ok: true}));
     response.writeHead(200, {
