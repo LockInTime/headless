@@ -568,11 +568,12 @@ headless click --role button --name 'Leave via script' >/dev/null 2>&1 || true
 sleep 0.5
 assert_page_stays_on_loopback "script navigation left the allowlist"
 ALLOWLIST_SESSIONS_BEFORE="$(headless session list)"
+echo "$ALLOWLIST_SESSIONS_BEFORE" | grep -q '"sessions":\["default"\]'
 headless click --role button --name 'Leave via window' >/dev/null 2>&1 || true
 sleep 0.5
 assert_page_stays_on_loopback "window.open left the allowlist"
 ALLOWLIST_SESSIONS_AFTER="$(headless session list)"
-test "$ALLOWLIST_SESSIONS_BEFORE" = "$ALLOWLIST_SESSIONS_AFTER"
+echo "$ALLOWLIST_SESSIONS_AFTER" | grep -q '"sessions":\["default"\]'
 headless visit http://127.0.0.1:41739/allowlist-redirect/ >/dev/null 2>&1 || true
 sleep 0.5
 assert_page_stays_on_loopback "redirect left the allowlist"

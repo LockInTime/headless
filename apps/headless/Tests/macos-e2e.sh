@@ -603,11 +603,12 @@ assert_page_stays_on_loopback "form submit left the allowlist"
 sleep 0.5
 assert_page_stays_on_loopback "script navigation left the allowlist"
 ALLOWLIST_SESSIONS_BEFORE="$("$CLI" session list)"
+print -r -- "$ALLOWLIST_SESSIONS_BEFORE" | grep -q '"sessions":\["default"\]'
 "$CLI" click --role button --name 'Leave via window' >/dev/null 2>&1 || true
 sleep 0.5
 assert_page_stays_on_loopback "window.open left the allowlist"
 ALLOWLIST_SESSIONS_AFTER="$("$CLI" session list)"
-[[ "$ALLOWLIST_SESSIONS_BEFORE" == "$ALLOWLIST_SESSIONS_AFTER" ]]
+print -r -- "$ALLOWLIST_SESSIONS_AFTER" | grep -q '"sessions":\["default"\]'
 "$CLI" visit "http://127.0.0.1:$PORT/allowlist-redirect" >/dev/null 2>&1 || true
 sleep 0.5
 assert_page_stays_on_loopback "redirect left the allowlist"
