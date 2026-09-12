@@ -113,6 +113,37 @@ for _ in {1..100}; do
   sleep 0.05
 done
 "$CLI" status | grep -q '"ready":true'
+STEP="menu-shortcuts"
+grep -F '&#8997;&#8984; P' main.swift >/dev/null
+if grep -F '<kbd>&#8984; P</kbd>' main.swift >/dev/null; then
+  echo "start page still advertises Command-P for pin" >&2
+  fail
+fi
+grep -F 'NSSelectorFromString(spec.selector)' main.swift >/dev/null
+PIN_CHAR="$(osascript <<'APPLESCRIPT' || true
+tell application "System Events"
+  tell process "Headless"
+    get value of attribute "AXMenuItemCmdChar" of menu item "Pin on Top" of menu "Window" of menu bar item "Window" of menu bar 1
+  end tell
+end tell
+APPLESCRIPT
+)"
+if [[ -n "$PIN_CHAR" && "$PIN_CHAR" != "P" ]]; then
+  echo "Pin on Top menu chord character was $PIN_CHAR, expected P" >&2
+  fail
+fi
+HELP_CHAR="$(osascript <<'APPLESCRIPT' || true
+tell application "System Events"
+  tell process "Headless"
+    get value of attribute "AXMenuItemCmdChar" of menu item "Headless Help" of menu "Help" of menu bar item "Help" of menu bar 1
+  end tell
+end tell
+APPLESCRIPT
+)"
+if [[ -n "$HELP_CHAR" && "$HELP_CHAR" != "/" ]]; then
+  echo "Headless Help menu chord character was $HELP_CHAR, expected /" >&2
+  fail
+fi
 RESTORED_URL_CLEARED=0
 for _ in {1..300}; do
   if ! defaults read "$DEFAULTS_DOMAIN" LastURL >/dev/null 2>&1; then
