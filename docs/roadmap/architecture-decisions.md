@@ -817,7 +817,8 @@ rule that durable saved-credential retrieval needs trusted per-use presence.
 **Decision:** SDK generation starts from a deterministic machine-readable
 contract emitted by `headless schema`. The Swift descriptors define every wire
 command's parameter names, primitive types, required fields, byte and numeric
-bounds, enum values, and array limits, and those descriptors execute before
+bounds, enum values, array limits, API scope, and transport timeout policy.
+Those descriptors execute before
 command-specific semantic validation. `sdk/protocol-schema.json` is a golden
 artifact checked against the executable in tests, not a second hand-maintained
 validator.

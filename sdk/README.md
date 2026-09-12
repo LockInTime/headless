@@ -19,6 +19,10 @@ parameters present in that schema. A newer client must reject an older host
 before decoding a result for an unsupported wire version, and must use the
 host capability document before issuing an engine-specific command.
 
+Each command declares whether it is host-scoped or session-scoped and carries
+the timeout policy used by the CLI and MCP adapter. Generated clients consume
+those fields rather than maintaining their own command lists or deadlines.
+
 Compatible additions retain the current wire version. Removing or changing a
 field, command, constraint, error meaning, framing rule, or security guarantee
 requires a protocol-version change and migration notes. The schema format has

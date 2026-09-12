@@ -2570,7 +2570,31 @@ struct ProtocolTests {
                 !result.name.isEmpty && Set(result.fields.map(\.name)).count == result.fields.count,
                 "the SDK schema must define one coherent result shape per command"
             )
+            try expect(
+                definition.timeout.defaultMilliseconds > 0,
+                "every SDK command must declare a positive transport timeout"
+            )
         }
+        let hostCommands: Set<CommandName> = [
+            .ping, .shutdown, .profileClear, .sessionCreate, .sessionList, .artifactList,
+        ]
+        try expect(
+            Set(protocolCommandDefinitions.values.filter { $0.scope == .host }.map(\.command))
+                == hostCommands,
+            "SDK host and session command scopes must match HostCore dispatch"
+        )
+        try expect(
+            protocolCommandDefinition(for: .wait).timeout.milliseconds(
+                for: ["timeoutMs": .number(90_000)]
+            ) == 95_000,
+            "SDK timeout metadata must preserve parameter-based wait deadlines"
+        )
+        try expect(
+            protocolCommandDefinition(for: .screenshot).timeout.milliseconds(
+                for: ["series": .string("viewport")]
+            ) == 125_000,
+            "SDK timeout metadata must preserve screenshot series deadlines"
+        )
         try expect(
             protocolCommandDefinition(for: .visit).resultContainsUntrustedContent
                 && protocolCommandDefinition(for: .captureInfo).resultContainsUntrustedContent,

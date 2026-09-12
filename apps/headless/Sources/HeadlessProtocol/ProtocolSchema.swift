@@ -20,6 +20,100 @@ public enum ProtocolResultValueKind: String, Sendable {
     case json
 }
 
+public enum ProtocolCommandScope: String, Sendable {
+    case host
+    case session
+}
+
+public struct ProtocolTimeoutPolicy: Sendable {
+    public let defaultMilliseconds: Int
+    public let parameterName: String?
+    public let parameterGraceMilliseconds: Int?
+    public let minimumMilliseconds: Int?
+    public let maximumMilliseconds: Int?
+    public let parameterPresentOverrides: [String: Int]
+
+    public func milliseconds(for parameters: [String: JSONValue]) -> Int {
+        if let parameterName,
+           let value = parameters[parameterName]?.numberValue,
+           let grace = parameterGraceMilliseconds,
+           let minimum = minimumMilliseconds,
+           let maximum = maximumMilliseconds {
+            return min(maximum, max(minimum, Int(value.rounded(.up)) + grace))
+        }
+        for name in parameterPresentOverrides.keys.sorted()
+        where parameters[name] != nil {
+            return parameterPresentOverrides[name] ?? defaultMilliseconds
+        }
+        return defaultMilliseconds
+    }
+
+    fileprivate var document: JSONValue {
+        var fields: [String: JSONValue] = [
+            "defaultMilliseconds": .number(Double(defaultMilliseconds)),
+            "parameterPresentOverrides": .object(
+                parameterPresentOverrides.mapValues { .number(Double($0)) }
+            ),
+        ]
+        if let parameterName { fields["parameterName"] = .string(parameterName) }
+        if let parameterGraceMilliseconds {
+            fields["parameterGraceMilliseconds"] = .number(Double(parameterGraceMilliseconds))
+        }
+        if let minimumMilliseconds {
+            fields["minimumMilliseconds"] = .number(Double(minimumMilliseconds))
+        }
+        if let maximumMilliseconds {
+            fields["maximumMilliseconds"] = .number(Double(maximumMilliseconds))
+        }
+        return .object(fields)
+    }
+}
+
+private func commandScope(for command: CommandName) -> ProtocolCommandScope {
+    switch command {
+    case .ping, .shutdown, .profileClear, .sessionCreate, .sessionList, .artifactList:
+        return .host
+    default:
+        return .session
+    }
+}
+
+private func timeoutPolicy(for command: CommandName) -> ProtocolTimeoutPolicy {
+    switch command {
+    case .wait:
+        return ProtocolTimeoutPolicy(
+            defaultMilliseconds: 15_000,
+            parameterName: "timeoutMs", parameterGraceMilliseconds: 5_000,
+            minimumMilliseconds: 10_000, maximumMilliseconds: 125_000,
+            parameterPresentOverrides: [:]
+        )
+    case .tour, .flowRun:
+        return ProtocolTimeoutPolicy(
+            defaultMilliseconds: 125_000, parameterName: nil,
+            parameterGraceMilliseconds: nil, minimumMilliseconds: nil,
+            maximumMilliseconds: nil, parameterPresentOverrides: [:]
+        )
+    case .recordStop:
+        return ProtocolTimeoutPolicy(
+            defaultMilliseconds: 30_000, parameterName: nil,
+            parameterGraceMilliseconds: nil, minimumMilliseconds: nil,
+            maximumMilliseconds: nil, parameterPresentOverrides: [:]
+        )
+    case .screenshot:
+        return ProtocolTimeoutPolicy(
+            defaultMilliseconds: 30_000, parameterName: nil,
+            parameterGraceMilliseconds: nil, minimumMilliseconds: nil,
+            maximumMilliseconds: nil, parameterPresentOverrides: ["series": 125_000]
+        )
+    default:
+        return ProtocolTimeoutPolicy(
+            defaultMilliseconds: 15_000, parameterName: nil,
+            parameterGraceMilliseconds: nil, minimumMilliseconds: nil,
+            maximumMilliseconds: nil, parameterPresentOverrides: [:]
+        )
+    }
+}
+
 public enum AuthenticationProtocolErrorCode: String, CaseIterable, Sendable {
     case challengeNotFound = "AUTH_CHALLENGE_NOT_FOUND"
     case challengeExpired = "AUTH_CHALLENGE_EXPIRED"
@@ -391,6 +485,8 @@ public struct ProtocolParameterDefinition: Sendable {
 
 public struct ProtocolCommandDefinition: Sendable {
     public let command: CommandName
+    public let scope: ProtocolCommandScope
+    public let timeout: ProtocolTimeoutPolicy
     public let parameters: [ProtocolParameterDefinition]
     public let capabilityNegotiated: Bool
     public let resultContainsUntrustedContent: Bool
@@ -404,6 +500,8 @@ public struct ProtocolCommandDefinition: Sendable {
         constraints: [String] = []
     ) {
         self.command = command
+        self.scope = commandScope(for: command)
+        self.timeout = timeoutPolicy(for: command)
         self.parameters = parameters
         self.capabilityNegotiated = capabilityNegotiated
         self.resultContainsUntrustedContent = resultContainsUntrustedContent
@@ -425,6 +523,8 @@ public struct ProtocolCommandDefinition: Sendable {
     fileprivate var document: JSONValue {
         .object([
             "name": .string(command.rawValue),
+            "scope": .string(scope.rawValue),
+            "timeout": timeout.document,
             "parameters": .array(parameters.map(\.document)),
             "capabilityNegotiated": .bool(capabilityNegotiated),
             "result": .object([
