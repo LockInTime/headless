@@ -40,14 +40,15 @@ An SDK may terminate and reap only a host process that it launched and owns.
 It must not stop an already-running shared host during cancellation, timeout,
 or client shutdown.
 
-Use `headless start --background --supervised` for an owned host. The command
-fails if a shared host already exists, prints the normal startup response, and
-then remains attached to the host. The launcher owns a private pipe to the host,
-so the host still stops if the launcher is killed while another process retains
-the launcher's input stream. The startup response PID must match the launched
-host before ownership is granted. Closing the launcher input makes the host stop
-and lets the launcher be awaited. A plain `headless start` remains detached and
-shared.
+Use `headless start --supervised` for an owned host. Omitting a presentation
+option preserves the platform default; macOS callers may explicitly request
+`--background` or `--foreground`. The command fails if a shared host already
+exists, prints the normal startup response, and then remains attached to the
+host. The launcher owns a private pipe to the host, so the host still stops if
+the launcher is killed while another process retains the launcher's input
+stream. The startup response PID must match the launched host before ownership
+is granted. Closing the launcher input makes the host stop and lets the launcher
+be awaited. A plain `headless start` remains detached and shared.
 
 ## Release policy
 

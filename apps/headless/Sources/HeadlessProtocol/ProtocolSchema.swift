@@ -829,7 +829,7 @@ public let protocolSchemaDocument: JSONValue = {
             ]),
             "launch": .object([
                 "command": .string("start"),
-                "argv": .array(["start", "--background", "--supervised"].map(JSONValue.string)),
+                "argv": .array(["start", "--supervised"].map(JSONValue.string)),
                 "options": .array([
                     .object([
                         "name": .string("presentation"), "type": .string("string"),
@@ -862,8 +862,8 @@ public let protocolSchemaDocument: JSONValue = {
         ].map(JSONValue.string)),
         "hostLifecycle": .object([
             "connect": .string("attach to an existing host and never assume ownership"),
-            "sharedStart": .string("headless start --background"),
-            "supervisedStart": .string("headless start --background --supervised"),
+            "sharedStart": .string("headless start"),
+            "supervisedStart": .string("headless start --supervised"),
             "supervisedOwnerChannel": .string("open standard-input pipe"),
             "ownerExit": .string("host shuts down when the owner pipe closes"),
             "existingHost": .string("supervised start fails rather than attaching"),
