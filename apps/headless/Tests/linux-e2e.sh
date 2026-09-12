@@ -9,7 +9,7 @@ STEP="setup"
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
-mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/api" "$FIXTURE_ROOT/allowlist-exits" "$FIXTURE_ROOT/allowlist-redirect"
+mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/file-upload" "$FIXTURE_ROOT/api" "$FIXTURE_ROOT/allowlist-exits" "$FIXTURE_ROOT/allowlist-redirect"
 cp /opt/headless/fixtures/dashboard.html "$FIXTURE_ROOT/designers/dashboard/index.html"
 cp /opt/headless/fixtures/next.html "$FIXTURE_ROOT/next/index.html"
 cp /opt/headless/fixtures/hostile.html "$FIXTURE_ROOT/hostile/index.html"
@@ -17,6 +17,7 @@ cp /opt/headless/fixtures/large-document.html "$FIXTURE_ROOT/large-document/inde
 cp /opt/headless/fixtures/trusted-input.html "$FIXTURE_ROOT/trusted-input/index.html"
 cp /opt/headless/fixtures/auth-state.html "$FIXTURE_ROOT/auth-state/index.html"
 cp /opt/headless/fixtures/auth-login.html "$FIXTURE_ROOT/auth-login/index.html"
+cp /opt/headless/fixtures/file-upload.html "$FIXTURE_ROOT/file-upload/index.html"
 cp /opt/headless/fixtures/allowlist-exits.html "$FIXTURE_ROOT/allowlist-exits/index.html"
 cp /opt/headless/fixtures/allowlist-redirect.html "$FIXTURE_ROOT/allowlist-redirect/index.html"
 cp /opt/headless/fixtures/api-diagnostic.json "$FIXTURE_ROOT/api/diagnostic"
@@ -304,6 +305,63 @@ TRUSTED_INPUT="$(headless --session qa inspect --text)"
 echo "$TRUSTED_INPUT" | grep -q 'input:true'
 echo "$TRUSTED_INPUT" | grep -q 'key:Enter:true'
 echo "$TRUSTED_INPUT" | grep -q 'click:true'
+STEP="file-upload"
+printf 'resume-fixture\n' > "$HEADLESS_ARTIFACT_DIR/resume.txt"
+chmod 600 "$HEADLESS_ARTIFACT_DIR/resume.txt"
+test "$(cat "$HEADLESS_ARTIFACT_DIR/resume.txt")" = "resume-fixture"
+test "$(stat -c %a "$HEADLESS_ARTIFACT_DIR/resume.txt")" = "600"
+headless artifacts list | grep -q '"name":"resume.txt"'
+if headless artifacts add /etc/passwd --name resume.txt >/dev/null 2>&1; then
+  echo "agent-facing local-file ingest was not rejected" >&2
+  exit 1
+fi
+headless --session qa visit http://127.0.0.1:41739/file-upload/ | grep -q 'File upload fixture'
+UPLOAD_SNAPSHOT="$(headless --session qa inspect --interactive)"
+echo "$UPLOAD_SNAPSHOT" | grep -q '"name":"Resume"'
+echo "$UPLOAD_SNAPSHOT" | grep -q '"actions":\["upload"\]'
+echo "$UPLOAD_SNAPSHOT" | grep -q '"inputType":"file"'
+UPLOAD="$(headless --session qa upload --role textbox --name Resume --artifact resume.txt)"
+echo "$UPLOAD" | grep -q '"artifact":"resume.txt"'
+echo "$UPLOAD" | grep -q '"uploaded"'
+! echo "$UPLOAD" | grep -q "$HEADLESS_ARTIFACT_DIR"
+! echo "$UPLOAD" | grep -q "$FIXTURE_ROOT"
+UPLOAD_PAGE="$(headless --session qa inspect --text)"
+echo "$UPLOAD_PAGE" | grep -q 'resume.txt'
+if MISSING_UPLOAD="$(headless --session qa upload --role textbox --name Resume --artifact missing.txt)"; then
+  echo "missing artifact upload was not rejected" >&2
+  exit 1
+fi
+echo "$MISSING_UPLOAD" | grep -q 'ARTIFACT_ERROR'
+if BUTTON_UPLOAD="$(headless --session qa upload --role button --name 'Not a file' --artifact resume.txt)"; then
+  echo "upload to a non-file control was not rejected" >&2
+  exit 1
+fi
+echo "$BUTTON_UPLOAD" | grep -q 'ELEMENT_NOT_FOUND'
+EPHEMERAL="$(headless --session qa upload --role textbox --name Ephemeral --artifact resume.txt)"
+echo "$EPHEMERAL" | grep -q '"artifact":"resume.txt"'
+echo "$EPHEMERAL" | grep -q '"uploaded"'
+if DISABLED_UPLOAD="$(headless --session qa upload --role textbox --name 'Disabled resume' --artifact resume.txt)"; then
+  echo "disabled file input upload was not rejected" >&2
+  exit 1
+fi
+echo "$DISABLED_UPLOAD" | grep -E -q 'NOT_EDITABLE|ELEMENT_NOT_FOUND|OPERATION_FAILED'
+if HIDDEN_NAME_UPLOAD="$(headless --session qa upload --role textbox --name 'Already hidden' --artifact resume.txt)"; then
+  echo "hidden file input upload was not rejected" >&2
+  exit 1
+fi
+echo "$HIDDEN_NAME_UPLOAD" | grep -E -q 'ELEMENT_NOT_FOUND|ELEMENT_NOT_VISIBLE|OPERATION_FAILED'
+HIDE_SNAP="$(headless --session qa inspect --interactive --limit 50)"
+HIDEABLE_REF="$(printf '%s' "$HIDE_SNAP" | grep -o '"name":"Hideable","ref":"@e[0-9]*"' | head -n1 | grep -o '@e[0-9]*')"
+test -n "$HIDEABLE_REF"
+headless --session qa click --role button --name 'Hide file input' | grep -q '"clicked"'
+if HIDDEN_REF_UPLOAD="$(headless --session qa upload "$HIDEABLE_REF" --artifact resume.txt)"; then
+  echo "previously issued ref to a hidden file input was accepted" >&2
+  exit 1
+fi
+echo "$HIDDEN_REF_UPLOAD" | grep -E -q 'ELEMENT_NOT_VISIBLE|ELEMENT_NOT_FOUND|OPERATION_FAILED'
+LEAVE="$(headless --session qa upload --role textbox --name Leave --artifact resume.txt)"
+echo "$LEAVE" | grep -q '"artifact":"resume.txt"'
+echo "$LEAVE" | grep -q '"uploaded"'
 headless --session qa visit http://127.0.0.1:41739/designers/dashboard/ | grep -q 'Designers Dashboard'
 if EXTERNAL_RESULT="$(headless --session qa click --role link --name 'External application')"; then
   echo "external application link was not blocked" >&2

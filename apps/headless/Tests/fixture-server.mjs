@@ -11,6 +11,7 @@ const routes = new Map([
   ['/large-document', 'large-document.html'],
   ['/auth-state', 'auth-state.html'],
   ['/auth-login', 'auth-login.html'],
+  ['/file-upload', 'file-upload.html'],
   ['/allowlist-exits', 'allowlist-exits.html'],
   ['/allowlist-exits/', 'allowlist-exits.html'],
   ['/allowlist-redirect', 'allowlist-redirect.html'],

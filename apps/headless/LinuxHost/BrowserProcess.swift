@@ -6,6 +6,8 @@ import Darwin
 import Glibc
 #endif
 
+private let linuxAgentRuntimeJavaScript = "globalThis.__headlessFileUpload = true;\n" + agentRuntimeJavaScript
+
 private final class ChromiumChildProcess {
     let processIdentifier: Int32
     private let lock = NSLock()
@@ -629,9 +631,10 @@ final class LinuxBrowserSession: @unchecked Sendable {
         self.connection = connection
         _ = try command("Page.enable")
         _ = try command("Runtime.enable")
+        _ = try command("DOM.enable")
         _ = try command("Log.enable")
         _ = try command("Page.addScriptToEvaluateOnNewDocument", parameters: [
-            "source": agentRuntimeJavaScript,
+            "source": linuxAgentRuntimeJavaScript,
             "worldName": "HeadlessAgent",
             "runImmediately": true,
         ])
@@ -748,6 +751,24 @@ final class LinuxBrowserSession: @unchecked Sendable {
             "role": .string(target.role),
             "name": .string(target.name),
         ])
+    }
+
+    func upload(parameters: [String: JSONValue], artifactURL: URL) throws -> JSONValue {
+        let args = try browserTargetArguments(parameters)
+        let objectId = try evaluateNode(
+            "return globalThis.__headlessAgent.fileInput(args);",
+            input: ["args": args]
+        )
+        defer { _ = try? command("Runtime.releaseObject", parameters: ["objectId": objectId]) }
+        guard case .object(var metadata) = try fileInputMetadata(objectId: objectId) else {
+            throw CDPError.invalidResponse("file input metadata")
+        }
+        _ = try command("DOM.setFileInputFiles", parameters: [
+            "objectId": objectId,
+            "files": [artifactURL.path],
+        ])
+        metadata["artifact"] = .string(artifactURL.lastPathComponent)
+        return .object(metadata)
     }
 
     func fill(parameters: [String: JSONValue]) throws -> JSONValue {
@@ -1205,6 +1226,74 @@ final class LinuxBrowserSession: @unchecked Sendable {
         ]
     }
 
+    /// Runtime.evaluate with returnByValue false so a DOM node keeps its
+    /// objectId for `DOM.setFileInputFiles`. The existing `evaluate` helper
+    /// always returns JSON and cannot yield a node handle.
+    private func evaluateNode(_ body: String, input: [String: Any] = [:]) throws -> String {
+        let inputData = try JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])
+        guard let inputJSON = String(data: inputData, encoding: .utf8) else {
+            throw CDPError.invalidResponse("input encoding")
+        }
+        let expression = """
+        (() => {
+          const __input = \(inputJSON);
+          const args = __input.args;
+          \(body)
+        })()
+        """
+        func evaluateParameters() throws -> [String: Any] {
+            [
+                "expression": expression,
+                "returnByValue": false,
+                "userGesture": true,
+                "contextId": try isolatedExecutionContextID(),
+            ]
+        }
+        let response: [String: Any]
+        do {
+            response = try command("Runtime.evaluate", parameters: try evaluateParameters())
+        } catch let error as CDPError where isTransientNavigationContext(error) {
+            clearIsolatedContext()
+            response = try command("Runtime.evaluate", parameters: try evaluateParameters())
+        }
+        if let exception = response["exceptionDetails"] as? [String: Any] {
+            throw hostError(fromCDPException: exception)
+        }
+        guard let result = response["result"] as? [String: Any],
+              result["subtype"] as? String == "node",
+              let objectId = result["objectId"] as? String, !objectId.isEmpty else {
+            throw CDPError.invalidResponse("file input objectId")
+        }
+        return objectId
+    }
+
+    private func fileInputMetadata(objectId: String) throws -> JSONValue {
+        let response = try command("Runtime.callFunctionOn", parameters: [
+            "objectId": objectId,
+            "functionDeclaration": "function() { return globalThis.__headlessAgent.fileInputMetadata(this); }",
+            "returnByValue": true,
+        ])
+        if let exception = response["exceptionDetails"] as? [String: Any] {
+            throw hostError(fromCDPException: exception)
+        }
+        guard let result = response["result"] as? [String: Any], let value = result["value"] else {
+            throw CDPError.invalidResponse("file input metadata")
+        }
+        return try JSONValue.foundationValue(value)
+    }
+
+    private func hostError(fromCDPException exception: [String: Any]) -> HostError {
+        let description = ((exception["exception"] as? [String: Any])?["description"] as? String)
+            ?? (exception["text"] as? String)
+            ?? "Browser operation failed"
+        let firstLine = description.split(whereSeparator: \.isNewline).first.map(String.init) ?? description
+        let trimmed = firstLine.hasPrefix("Error: ") ? String(firstLine.dropFirst(7)) : firstLine
+        let codeText = trimmed.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            .first.map(String.init) ?? ""
+        let code = HostErrorCode(rawValue: codeText) ?? .operationFailed
+        return HostError(code: code, message: String(decoding: trimmed.utf8.prefix(4_096), as: UTF8.self))
+    }
+
     private func evaluate(_ body: String, input: [String: Any] = [:], timeout: TimeInterval = 10) throws -> JSONValue {
         let timeoutMilliseconds = Int32(min(125_000, max(1, ceil(timeout * 1_000))))
         let inputData = try JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])
@@ -1291,7 +1380,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
         let installedValue = (installed["result"] as? [String: Any])?["value"] as? Bool ?? false
         if !installedValue {
             _ = try command("Runtime.evaluate", parameters: [
-                "expression": agentRuntimeJavaScript,
+                "expression": linuxAgentRuntimeJavaScript,
                 "returnByValue": true,
                 "contextId": identifier,
             ])

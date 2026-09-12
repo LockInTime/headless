@@ -143,6 +143,8 @@ public struct CLIParser {
             return try parseInspect(arguments, session: session, jsonOutput: jsonOutput)
         case "click":
             return try parseTargeted(.click, arguments: arguments, session: session, jsonOutput: jsonOutput)
+        case "upload":
+            return try parseUpload(arguments, session: session, jsonOutput: jsonOutput)
         case "fill":
             guard arguments.count == 2 else { throw CLIParseError.missingArgument("TARGET TEXT") }
             return remote(.fill, session: session, parameters: [
@@ -365,6 +367,21 @@ public struct CLIParser {
             throw CLIParseError.invalidOption(option)
         }
         return number
+    }
+
+    private func parseUpload(
+        _ arguments: [String], session: String?, jsonOutput: Bool
+    ) throws -> CLIInvocation {
+        var args = arguments
+        let artifact = try removeOption("--artifact", from: &args)
+        guard let artifact else { throw CLIParseError.missingArgument("--artifact") }
+        try validateArtifactName(artifact, expectedExtensions: uploadArtifactExtensions)
+        let invocation = try parseTargeted(
+            .upload, arguments: args, session: session, jsonOutput: jsonOutput
+        )
+        var parameters = invocation.request?.parameters ?? [:]
+        parameters["artifact"] = .string(artifact)
+        return remote(.upload, session: session, parameters: parameters, jsonOutput: jsonOutput)
     }
 
     private func parseTargeted(
@@ -808,6 +825,7 @@ Commands:
           [--within @rN] [--limit N] [--budget TOKENS] [--depth N] [--text]
   click REF | click --role ROLE [--name NAME]
   fill REF TEXT | fill REF -- TEXT_WITH_LITERAL_FLAGS | press KEY
+  upload REF --artifact FILE | upload --role ROLE [--name NAME] --artifact FILE
   scroll [up|down|top|bottom] [--amount PX]
   back | reload
   wait [--settled] [--url PATTERN] [--text TEXT] [--timeout MS]

@@ -25,6 +25,7 @@ public struct BrowserEngineCapabilities: Sendable {
     public let screenshotClipboard: Bool
     public let inputDispatch: String
     public let normalProfileStorage: String
+    public let fileUpload: Bool
 
     public var supportedCommands: [CommandName] {
         CommandName.allCases.filter { !unsupportedCommands.contains($0) }
@@ -67,6 +68,7 @@ public struct BrowserEngineCapabilities: Sendable {
                 "screenshotClipboard": .bool(screenshotClipboard),
                 "tourTimeoutMs": .number(65_000),
                 "inputDispatch": .string(inputDispatch),
+                "fileUpload": .bool(fileUpload),
                 "normalProfile": .object([
                     "persistent": .bool(true),
                     "sharedAcrossSessions": .bool(true),
@@ -98,7 +100,7 @@ public struct BrowserEngineCapabilities: Sendable {
     public static let webkit = BrowserEngineCapabilities(
         engine: .webkit,
         platforms: ["macos"],
-        unsupportedCommands: [.networkEmulate, .networkMockSet, .networkMockClear],
+        unsupportedCommands: [.networkEmulate, .networkMockSet, .networkMockClear, .upload],
         pdfOutput: "rasterized-page-image",
         elementScreenshotCoordinates: "viewport",
         elementScreenshotBeyondViewport: false,
@@ -111,7 +113,8 @@ public struct BrowserEngineCapabilities: Sendable {
         qaDiagnosticSynchronization: "best-effort-page-world-observer",
         screenshotClipboard: true,
         inputDispatch: "synthetic-dom",
-        normalProfileStorage: "persistent-wkwebsite-data-store"
+        normalProfileStorage: "persistent-wkwebsite-data-store",
+        fileUpload: false
     )
 
     public static let chromium = BrowserEngineCapabilities(
@@ -133,7 +136,8 @@ public struct BrowserEngineCapabilities: Sendable {
         qaDiagnosticSynchronization: "runtime-round-trip-flush",
         screenshotClipboard: false,
         inputDispatch: "trusted-cdp",
-        normalProfileStorage: "private-xdg-data-directory"
+        normalProfileStorage: "private-xdg-data-directory",
+        fileUpload: true
     )
 
     public static func profile(for engine: BrowserEngineName) -> BrowserEngineCapabilities {
@@ -175,13 +179,17 @@ public let capabilitiesDocument: JSONValue = {
     let credentialBackend = "linux-secret-service"
     let credentialSecurityTier = "os-secure-store"
     #endif
+    let artifactExtensions = ScreenshotFormat.artifactExtensions
+        .union(RecordingFormat.artifactExtensions)
+        .union(uploadArtifactExtensions)
+        .sorted()
     return .object([
         "protocolVersion": .string(headlessProtocolVersion),
         "transport": stringArray(["local-unix-socket"]),
         "currentEngine": .string(currentBrowserEngineCapabilities.engine.rawValue),
         "commands": .array(CommandName.allCases.map { .string($0.rawValue) }),
         "engines": .object(engines),
-        "artifacts": stringArray((screenshotExtensions + recordingExtensions + ["json"]).sorted()),
+        "artifacts": stringArray(artifactExtensions),
         "screenshotFormats": stringArray(screenshotExtensions),
         "pdfScreenshots": .string("full-page only"),
         "screenshotClipboard": .string("macOS image screenshots only"),
