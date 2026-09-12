@@ -316,8 +316,8 @@ JXA
 }
 
 fixture_request_count() {
-  local path="$1" count
-  count="$(curl -fsS --get --data-urlencode "path=$path" \
+  local request_path="$1" count
+  count="$(curl -fsS --get --data-urlencode "path=$request_path" \
     "http://127.0.0.1:$PORT/request-count")"
   [[ "$count" == <-> ]] || return 1
   print -r -- "$count"
