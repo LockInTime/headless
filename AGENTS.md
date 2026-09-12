@@ -83,8 +83,9 @@ Anything that changes the agent-facing contract needs an entry in
 ## Hard rules (host-enforced contracts — never weaken)
 
 1. No arbitrary-JS execution verb; no TCP listener; no Chromium debug port.
-2. HTTP/HTTPS navigation only; downloads denied; dangerous extensions
-   blocked. All page-derived text stays marked `untrustedContent`.
+2. HTTP/HTTPS navigation only; optional `start --allow` host allowlist;
+   downloads denied; dangerous extensions blocked. All page-derived text
+   stays marked `untrustedContent`.
 3. Artifacts: validated bare names, `O_EXCL` create `0600` in the `0700`
    per-user store, never overwrite, never path-traverse.
 4. Fail closed: unknown params rejected; Snap Chromium rejected; root

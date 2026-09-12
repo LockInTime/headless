@@ -959,6 +959,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
+        let navigationAllowlist: NavigationAllowlist
+        do {
+            navigationAllowlist = try NavigationAllowlist(environment: ProcessInfo.processInfo.environment)
+        } catch {
+            fputs("headless: \(error)\n", stderr)
+            if isAgentHost { exit(64) }
+            NSApp.terminate(nil)
+            return
+        }
         NSApp.setActivationPolicy(.regular)
         buildMenu()
 
@@ -1000,6 +1009,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             artifacts: artifacts,
             defaultSession: primaryController,
             authenticationBroker: authenticationBroker,
+            navigationAllowlist: navigationAllowlist,
             shutdownHandler: { DispatchQueue.main.async { NSApp.terminate(nil) } }
         )
         hostCore = core

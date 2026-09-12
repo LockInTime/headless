@@ -37,7 +37,7 @@ public struct HostError: Error, CustomStringConvertible, Sendable {
         case .regionNotFound:
             return "Run `headless inspect --context outline` to refresh region references."
         case .unsafeNavigation:
-            return "Agent-controlled sessions allow web navigation only."
+            return "Agent-controlled sessions allow web navigation only, and must match the host allowlist when one is set."
         case .unsafeResourceType:
             return "Executable files, installers, scripts, and disk images are blocked."
         case .sensitiveDiagnosticsDisabled:
