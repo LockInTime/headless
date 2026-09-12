@@ -890,7 +890,7 @@ public let protocolSchemaDocument: JSONValue = {
         ]),
         "releasePolicy": .object([
             "schemaVersioning": .string("integer; generators reject unknown versions"),
-            "sdkVersioning": .string("semantic versions independent of product and wire versions"),
+            "sdkVersioning": .string("semantic versions independent of the wire version; combined product distributors track product tags"),
             "preOneDeprecation": .string("at least one minor SDK release"),
             "stableRemoval": .string("major SDK release and migration notes"),
             "provenance": .string("publish from reviewed tags with package attestations"),

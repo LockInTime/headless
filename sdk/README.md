@@ -52,8 +52,10 @@ shared.
 ## Release policy
 
 Generated SDKs pin a schema digest and wire version. Schema and client changes
-are reviewed together. SDK packages are versioned independently from the
-Headless product while declaring their supported wire versions. Before 1.0,
+are reviewed together. SDK package versions are independent of the wire
+version. A package that also distributes Headless tracks product tags so its
+launcher can resolve a matching release; standalone SDK packages may version
+independently while declaring their supported wire versions. Before 1.0,
 deprecations remain for at least one minor SDK release; after 1.0, removals
 require a major SDK release. Security reports use the repository process in
 `SECURITY.md` and must not include credentials, cookies, or private artifacts.

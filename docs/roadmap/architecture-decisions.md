@@ -852,8 +852,10 @@ launcher reap it. SDKs never stop a shared host they discovered.
 **Consequences:** TypeScript and Python clients generate or validate their
 public command types from the golden schema and pin its digest. Schema, SDK,
 shared fixtures, CLI-parser, protocol-validator, and MCP parity are tested
-together. SDK package
-versions may advance independently while declaring the supported wire version.
+together. SDK package versions are independent of the wire version. A package
+that also distributes the Headless product tracks product tags so its launcher
+can resolve a matching release; standalone SDK packages may version
+independently while declaring their supported wire version.
 Deprecation, support-window, provenance, and security-reporting rules live with
 the schema so client packages cannot silently invent a different policy.
 
