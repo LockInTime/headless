@@ -147,6 +147,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
     private let artifacts: ArtifactStore
     private let authenticationBroker: AuthenticationBroker
     private let authenticationChallenges: AuthenticationChallengeStore
+    private let navigationAllowlist: NavigationAllowlist
     private let shutdownHandler: @Sendable () -> Void
     private let lock = NSLock()
     private var sessions: [String: Engine.Session]
@@ -163,12 +164,14 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         defaultSession: Engine.Session,
         authenticationBroker: AuthenticationBroker = UnavailableAuthenticationBroker(),
         authenticationChallenges: AuthenticationChallengeStore = AuthenticationChallengeStore(),
+        navigationAllowlist: NavigationAllowlist = processNavigationAllowlist,
         shutdownHandler: @escaping @Sendable () -> Void
     ) {
         self.engine = engine
         self.artifacts = artifacts
         self.authenticationBroker = authenticationBroker
         self.authenticationChallenges = authenticationChallenges
+        self.navigationAllowlist = navigationAllowlist
         self.sessions = ["default": defaultSession]
         self.privateAuthenticationBrokers = defaultSession.hostIsolated
             ? ["default": EphemeralAuthenticationBroker()] : [:]
@@ -365,6 +368,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             "capabilities": engine.capabilities.document,
             "recordingAvailable": .bool(BrowserRecording.isAvailable()),
             "artifactDirectory": .string(artifacts.rootURL.path),
+            "navigationAllowlist": navigationAllowlist.jsonValue,
         ]
         details.merge(engine.pingDetails()) { _, engineValue in engineValue }
         return .success(id: request.id, result: .object(details))
@@ -440,7 +444,11 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             guard let value = request.parameters["url"]?.stringValue else {
                 throw HostError(code: .missingParameter, message: "URL is required.")
             }
-            return try session.hostVisit(normalizedWebURL(value))
+            let url = try normalizedWebURL(value)
+            guard agentMayNavigate(to: url, allowlist: navigationAllowlist) else {
+                throw HostError(code: .unsafeNavigation, message: "Navigation is not allowed to this host.")
+            }
+            return try session.hostVisit(url)
         case .inspect: return try session.hostInspect(parameters: request.parameters)
         case .click: return try session.hostClick(parameters: request.parameters)
         case .fill: return try session.hostFill(parameters: request.parameters)

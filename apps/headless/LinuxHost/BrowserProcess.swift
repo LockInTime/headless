@@ -159,6 +159,50 @@ private func spawnChromium(executable: URL, arguments: [String]) throws -> Spawn
     }
 }
 
+private final class PendingTargetSession: @unchecked Sendable {
+    private let lock = NSLock()
+    private let ready = DispatchSemaphore(value: 0)
+    private var sessionID: String?
+
+    func complete(_ sessionID: String) {
+        lock.lock()
+        guard self.sessionID == nil else { lock.unlock(); return }
+        self.sessionID = sessionID
+        lock.unlock()
+        ready.signal()
+    }
+
+    func wait(timeout: TimeInterval) -> String? {
+        let nanoseconds = UInt64(max(0, timeout) * 1_000_000_000)
+        guard ready.wait(timeout: .now() + .nanoseconds(Int(nanoseconds))) == .success else {
+            return nil
+        }
+        lock.lock(); defer { lock.unlock() }
+        return sessionID
+    }
+}
+
+private struct UnclaimedTargetAttach {
+    let targetID: String
+    let sessionID: String
+}
+
+private func pausedDocumentNavigationIsAllowed(_ url: String) -> Bool {
+    let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed == "about:blank"
+        || trimmed.hasPrefix("about:blank#")
+        || trimmed.hasPrefix("about:blank?")
+        || trimmed.hasPrefix("about:srcdoc") {
+        return true
+    }
+    guard let parsed = URL(string: trimmed) else { return false }
+    return agentMayNavigate(to: parsed)
+}
+
+private func isCloseablePageTargetType(_ type: String) -> Bool {
+    type == "page" || type == "tab" || type == "webview"
+}
+
 final class ChromiumProcess {
     private let child: ChromiumChildProcess
     let browserConnection: CDPConnection
@@ -168,6 +212,9 @@ final class ChromiumProcess {
     private let sessionsLock = NSLock()
     private let stopLock = NSLock()
     private var sessionsByProtocolID: [String: LinuxBrowserSession] = [:]
+    private var expectedAgentTargets = 0
+    private var pendingAttaches: [String: PendingTargetSession] = [:]
+    private var unclaimedAttaches: [String: UnclaimedTargetAttach] = [:]
     private var stopped = false
 
     init(profileURL: URL) throws {
@@ -201,6 +248,13 @@ final class ChromiumProcess {
         // downloads into the VM. Captures are written only by ArtifactStore.
         _ = try browserConnection.command("Browser.setDownloadBehavior", parameters: ["behavior": "deny"])
         browserConnection.setEventHandler { [weak self] event in self?.routeEvent(event) }
+        if processNavigationAllowlist.isRestricted {
+            _ = try browserConnection.command("Target.setAutoAttach", parameters: [
+                "autoAttach": true,
+                "waitForDebuggerOnStart": true,
+                "flatten": true,
+            ])
+        }
     }
 
     deinit { stop() }
@@ -219,6 +273,13 @@ final class ChromiumProcess {
         }
         var targetParameters: [String: Any] = ["url": "about:blank"]
         if let browserContextID { targetParameters["browserContextId"] = browserContextID }
+        let expectingAgentTarget = processNavigationAllowlist.isRestricted
+        if expectingAgentTarget {
+            sessionsLock.lock(); expectedAgentTargets += 1; sessionsLock.unlock()
+        }
+        defer {
+            if expectingAgentTarget { finishExpectingAgentTarget() }
+        }
         let response: [String: Any]
         do {
             response = try browserConnection.command("Target.createTarget", parameters: targetParameters)
@@ -238,12 +299,20 @@ final class ChromiumProcess {
             }
             throw CDPError.invalidResponse("Target.createTarget did not return targetId")
         }
-        let attached: [String: Any]
+        let sessionID: String
         do {
-            attached = try browserConnection.command("Target.attachToTarget", parameters: [
-                "targetId": targetID,
-                "flatten": true,
-            ])
+            if expectingAgentTarget {
+                sessionID = try claimAutoAttachedSession(targetID: targetID)
+            } else {
+                let attached = try browserConnection.command("Target.attachToTarget", parameters: [
+                    "targetId": targetID,
+                    "flatten": true,
+                ])
+                guard let attachedSessionID = attached["sessionId"] as? String else {
+                    throw CDPError.invalidResponse("Target.attachToTarget did not return sessionId")
+                }
+                sessionID = attachedSessionID
+            }
         } catch {
             _ = try? browserConnection.command("Target.closeTarget", parameters: ["targetId": targetID])
             if let browserContextID {
@@ -252,15 +321,6 @@ final class ChromiumProcess {
                 )
             }
             throw error
-        }
-        guard let sessionID = attached["sessionId"] as? String else {
-            _ = try? browserConnection.command("Target.closeTarget", parameters: ["targetId": targetID])
-            if let browserContextID {
-                _ = try? browserConnection.command(
-                    "Target.disposeBrowserContext", parameters: ["browserContextId": browserContextID]
-                )
-            }
-            throw CDPError.invalidResponse("Target.attachToTarget did not return sessionId")
         }
         let session: LinuxBrowserSession
         do {
@@ -306,6 +366,15 @@ final class ChromiumProcess {
 
     private func routeEvent(_ event: [String: Any]) {
         let method = event["method"] as? String
+        if method == "Target.attachedToTarget" {
+            // Auto-attach is only enabled for a restricted allowlist. Ignoring
+            // this event on an unrestricted host keeps attachToTarget from
+            // closing the agent page it just created.
+            if processNavigationAllowlist.isRestricted {
+                handleAttachedToTarget(event)
+            }
+            return
+        }
         let sessionID = event["sessionId"] as? String
         sessionsLock.lock()
         let session = sessionID.flatMap { sessionsByProtocolID[$0] }
@@ -314,11 +383,131 @@ final class ChromiumProcess {
         if let session {
             session.handleEvent(event)
         } else if method == "Fetch.requestPaused" {
-            // A paused request from an internal target may not carry the
-            // attached page session. Each local session attempts continuation;
-            // only the owning session accepts it and the others are ignored.
-            allSessions.forEach { $0.handleEvent(event) }
+            if processNavigationAllowlist.isRestricted, let sessionID {
+                handleUnclaimedPausedRequest(event, sessionID: sessionID)
+            } else {
+                // A paused request from an internal target may not carry the
+                // attached page session. Each local session attempts continuation;
+                // only the owning session accepts it and the others are ignored.
+                allSessions.forEach { $0.handleEvent(event) }
+            }
         }
+    }
+
+    private func handleUnclaimedPausedRequest(_ event: [String: Any], sessionID: String) {
+        guard let parameters = event["params"] as? [String: Any],
+              let requestID = parameters["requestId"] as? String else { return }
+        let url = (parameters["request"] as? [String: Any])?["url"] as? String ?? ""
+        let resourceType = parameters["resourceType"] as? String
+        if resourceType == "Document", !pausedDocumentNavigationIsAllowed(url) {
+            try? browserConnection.sendWithoutWaiting(
+                "Fetch.failRequest",
+                parameters: ["requestId": requestID, "errorReason": "BlockedByClient"],
+                sessionID: sessionID
+            )
+            return
+        }
+        try? browserConnection.sendWithoutWaiting(
+            "Fetch.continueRequest",
+            parameters: ["requestId": requestID],
+            sessionID: sessionID
+        )
+    }
+
+    private func claimAutoAttachedSession(targetID: String) throws -> String {
+        sessionsLock.lock()
+        if let existing = unclaimedAttaches.removeValue(forKey: targetID) {
+            sessionsLock.unlock()
+            return existing.sessionID
+        }
+        let pending = PendingTargetSession()
+        pendingAttaches[targetID] = pending
+        sessionsLock.unlock()
+        guard let sessionID = pending.wait(timeout: 5) else {
+            sessionsLock.lock(); pendingAttaches.removeValue(forKey: targetID); sessionsLock.unlock()
+            throw CDPError.timedOut
+        }
+        return sessionID
+    }
+
+    private func finishExpectingAgentTarget() {
+        sessionsLock.lock()
+        expectedAgentTargets = max(0, expectedAgentTargets - 1)
+        let leftovers: [UnclaimedTargetAttach]
+        if expectedAgentTargets == 0 {
+            leftovers = Array(unclaimedAttaches.values)
+            unclaimedAttaches.removeAll()
+        } else {
+            leftovers = []
+        }
+        sessionsLock.unlock()
+        leftovers.forEach {
+            closeExtraPageTarget(targetID: $0.targetID, sessionID: $0.sessionID)
+        }
+    }
+
+    private func handleAttachedToTarget(_ event: [String: Any]) {
+        guard processNavigationAllowlist.isRestricted else { return }
+        guard let parameters = event["params"] as? [String: Any],
+              let sessionID = parameters["sessionId"] as? String,
+              let targetInfo = parameters["targetInfo"] as? [String: Any],
+              let targetID = targetInfo["targetId"] as? String else { return }
+        let type = targetInfo["type"] as? String ?? ""
+        let waiting: Bool
+        if let value = parameters["waitingForDebugger"] as? Bool {
+            waiting = value
+        } else if let value = parameters["waitingForDebugger"] as? NSNumber {
+            waiting = value.boolValue
+        } else {
+            waiting = false
+        }
+
+        sessionsLock.lock()
+        let alreadyAgent = sessionsByProtocolID[sessionID] != nil
+            || sessionsByProtocolID.values.contains { $0.targetID == targetID }
+        if alreadyAgent {
+            sessionsLock.unlock()
+            if waiting {
+                try? browserConnection.sendWithoutWaiting(
+                    "Runtime.runIfWaitingForDebugger", sessionID: sessionID
+                )
+            }
+            return
+        }
+        if let pending = pendingAttaches.removeValue(forKey: targetID) {
+            sessionsLock.unlock()
+            pending.complete(sessionID)
+            return
+        }
+        if isCloseablePageTargetType(type) && expectedAgentTargets > 0 {
+            unclaimedAttaches[targetID] = UnclaimedTargetAttach(targetID: targetID, sessionID: sessionID)
+            sessionsLock.unlock()
+            return
+        }
+        sessionsLock.unlock()
+        if isCloseablePageTargetType(type) {
+            closeExtraPageTarget(targetID: targetID, sessionID: sessionID)
+            return
+        }
+        if waiting {
+            try? browserConnection.sendWithoutWaiting(
+                "Runtime.runIfWaitingForDebugger", sessionID: sessionID
+            )
+        }
+    }
+
+    private func closeExtraPageTarget(targetID: String, sessionID: String? = nil) {
+        // A target paused at waitForDebuggerOnStart will not process
+        // Target.closeTarget until resumed. Leaving it paused wedges the
+        // DevTools pipe and the host looks dead to later inspect/click.
+        if let sessionID {
+            try? browserConnection.sendWithoutWaiting(
+                "Runtime.runIfWaitingForDebugger", sessionID: sessionID
+            )
+        }
+        try? browserConnection.sendWithoutWaiting(
+            "Target.closeTarget", parameters: ["targetId": targetID]
+        )
     }
 }
 
@@ -430,6 +619,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
     private var isolatedContextID: Int?
     private let mockLock = NSLock()
     private var networkMocks: [NetworkMock] = []
+    private var fetchInterceptionEnabled = false
 
     init(
         targetID: String, sessionID: String, browserContextID: String? = nil,
@@ -452,6 +642,10 @@ final class LinuxBrowserSession: @unchecked Sendable {
             "maxTotalBufferSize": 10_000_000,
             "maxResourceBufferSize": 1_000_000,
         ])
+        try syncFetchInterception()
+        if processNavigationAllowlist.isRestricted {
+            _ = try command("Runtime.runIfWaitingForDebugger")
+        }
         let frameTree = try command("Page.getFrameTree")
         if let tree = frameTree["frameTree"] as? [String: Any],
            let frame = tree["frame"] as? [String: Any] {
@@ -831,24 +1025,18 @@ final class LinuxBrowserSession: @unchecked Sendable {
         let status = Int(parameters["status"]?.numberValue ?? 200)
         let contentType = parameters["contentType"]?.stringValue ?? "application/json; charset=utf-8"
         mockLock.lock()
-        let hadMocks = !networkMocks.isEmpty
         networkMocks.removeAll { $0.url == url }
         networkMocks.append(NetworkMock(url: url, status: status, body: body, contentType: contentType))
-        let patterns: [[String: Any]] = networkMocks.map {
-            ["urlPattern": $0.url, "requestStage": "Request"]
-        }
         mockLock.unlock()
-        // Pause only explicitly mocked URLs. A wildcard pauses the document and
-        // every asset as well, so one delayed continuation can make a normal
-        // reload appear hung. Reconfigure when the mock set changes.
-        if hadMocks { _ = try command("Fetch.disable") }
-        _ = try command("Fetch.enable", parameters: ["patterns": patterns])
+        // Pause mocked URLs and, when the host allowlist is restricted,
+        // Document navigations. Keep both patterns when the mock set changes.
+        try syncFetchInterception()
         return .object(["url": .string(url), "status": .number(Double(status)), "activeMocks": .number(Double(mockCount()))])
     }
 
     func clearNetworkMocks() throws -> JSONValue {
         mockLock.lock(); let count = networkMocks.count; networkMocks.removeAll(); mockLock.unlock()
-        if count > 0 { _ = try command("Fetch.disable") }
+        try syncFetchInterception()
         return .object(["cleared": .number(Double(count))])
     }
 
@@ -900,6 +1088,18 @@ final class LinuxBrowserSession: @unchecked Sendable {
                     "responseHeaders": [["name": "content-type", "value": mock.contentType],
                                         ["name": "cache-control", "value": "no-store"]],
                     "body": body,
+                ])
+            } else if (parameters["resourceType"] as? String) == "Document",
+                      processNavigationAllowlist.isRestricted,
+                      !pausedDocumentNavigationIsAllowed(url) {
+                diagnostics.append(
+                    kind: "navigation-blocked",
+                    message: "Blocked document navigation that is not allowed",
+                    url: url
+                )
+                try? sendWithoutWaiting("Fetch.failRequest", parameters: [
+                    "requestId": requestID,
+                    "errorReason": "BlockedByClient",
                 ])
             } else {
                 try? sendWithoutWaiting("Fetch.continueRequest", parameters: ["requestId": requestID])
@@ -1209,5 +1409,35 @@ final class LinuxBrowserSession: @unchecked Sendable {
     private func mockCount() -> Int {
         mockLock.lock(); defer { mockLock.unlock() }
         return networkMocks.count
+    }
+
+    private func fetchPatternsLocked() -> [[String: Any]] {
+        var patterns: [[String: Any]] = []
+        if processNavigationAllowlist.isRestricted {
+            patterns.append([
+                "urlPattern": "*",
+                "resourceType": "Document",
+                "requestStage": "Request",
+            ])
+        }
+        for mock in networkMocks {
+            patterns.append(["urlPattern": mock.url, "requestStage": "Request"])
+        }
+        return patterns
+    }
+
+    private func syncFetchInterception() throws {
+        mockLock.lock()
+        let patterns = fetchPatternsLocked()
+        let wasEnabled = fetchInterceptionEnabled
+        mockLock.unlock()
+        if wasEnabled {
+            _ = try command("Fetch.disable")
+            mockLock.lock(); fetchInterceptionEnabled = false; mockLock.unlock()
+        }
+        if !patterns.isEmpty {
+            _ = try command("Fetch.enable", parameters: ["patterns": patterns])
+            mockLock.lock(); fetchInterceptionEnabled = true; mockLock.unlock()
+        }
     }
 }

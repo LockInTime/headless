@@ -9,7 +9,7 @@ STEP="setup"
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
-mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/file-upload" "$FIXTURE_ROOT/api"
+mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/file-upload" "$FIXTURE_ROOT/api" "$FIXTURE_ROOT/allowlist-exits" "$FIXTURE_ROOT/allowlist-redirect"
 cp /opt/headless/fixtures/dashboard.html "$FIXTURE_ROOT/designers/dashboard/index.html"
 cp /opt/headless/fixtures/next.html "$FIXTURE_ROOT/next/index.html"
 cp /opt/headless/fixtures/hostile.html "$FIXTURE_ROOT/hostile/index.html"
@@ -18,6 +18,8 @@ cp /opt/headless/fixtures/trusted-input.html "$FIXTURE_ROOT/trusted-input/index.
 cp /opt/headless/fixtures/auth-state.html "$FIXTURE_ROOT/auth-state/index.html"
 cp /opt/headless/fixtures/auth-login.html "$FIXTURE_ROOT/auth-login/index.html"
 cp /opt/headless/fixtures/file-upload.html "$FIXTURE_ROOT/file-upload/index.html"
+cp /opt/headless/fixtures/allowlist-exits.html "$FIXTURE_ROOT/allowlist-exits/index.html"
+cp /opt/headless/fixtures/allowlist-redirect.html "$FIXTURE_ROOT/allowlist-redirect/index.html"
 cp /opt/headless/fixtures/api-diagnostic.json "$FIXTURE_ROOT/api/diagnostic"
 busybox httpd -f -p 127.0.0.1:41739 -h "$FIXTURE_ROOT" &
 FIXTURE_PID=$!
@@ -563,6 +565,95 @@ fi
 headless start >/dev/null
 headless status | grep -q '"ready":true'
 headless session list | grep -q '"sessions":\["default"\]'
+
+# Navigation allowlist: stop the unrestricted host, start with --allow,
+# deny off-list visit/click/form/script/window/redirect, then restore an
+# unrestricted host for cleanup.
+wait_for_host_exit() {
+  pid="$1"
+  waited=0
+  while [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 50 ]; do
+    waited=$((waited + 1))
+    sleep 0.1
+  done
+}
+assert_page_stays_on_loopback() {
+  reason="$1"
+  waited=0
+  snapshot=""
+  while [ "$waited" -lt 20 ]; do
+    snapshot="$(headless inspect --context summary 2>/dev/null || true)"
+    if echo "$snapshot" | grep -q 'HOST_UNAVAILABLE'; then
+      echo "$reason (host stopped responding)" >&2
+      echo "$snapshot" >&2
+      exit 1
+    fi
+    if echo "$snapshot" | grep -q '"url":"http://127.0.0.1' \
+      && ! echo "$snapshot" | grep -q '"url":"https://example.com'; then
+      return 0
+    fi
+    waited=$((waited + 1))
+    sleep 0.1
+  done
+  echo "$reason" >&2
+  echo "$snapshot" >&2
+  exit 1
+}
+STEP="navigation-allowlist"
+ALLOWLIST_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+headless stop >/dev/null 2>&1 || true
+wait_for_host_exit "$ALLOWLIST_PID"
+headless start --allow 127.0.0.1 | grep -q '"navigationAllowlist":\["127.0.0.1"\]'
+headless visit http://127.0.0.1:41739/designers/dashboard/ | grep -q 'Designers Dashboard'
+if ALLOWLIST_VISIT="$(headless visit https://example.com/)"; then
+  echo "off-allowlist visit was not blocked" >&2
+  exit 1
+fi
+echo "$ALLOWLIST_VISIT" | grep -q 'UNSAFE_NAVIGATION'
+if ALLOWLIST_CLICK="$(headless click --role link --name 'Off-allowlist site')"; then
+  echo "off-allowlist click was not blocked" >&2
+  exit 1
+fi
+echo "$ALLOWLIST_CLICK" | grep -q 'UNSAFE_NAVIGATION'
+headless visit http://127.0.0.1:41739/allowlist-exits/ | grep -q 'Allowlist exits'
+if ALLOWLIST_FORM="$(headless click --role button --name 'Leave via form')"; then
+  echo "off-allowlist form submit was not blocked" >&2
+  exit 1
+fi
+echo "$ALLOWLIST_FORM" | grep -q 'UNSAFE_NAVIGATION'
+assert_page_stays_on_loopback "form submit left the allowlist"
+headless click --role button --name 'Leave via script' >/dev/null 2>&1 || true
+sleep 0.5
+assert_page_stays_on_loopback "script navigation left the allowlist"
+ALLOWLIST_SESSIONS_BEFORE="$(headless session list)"
+echo "$ALLOWLIST_SESSIONS_BEFORE" | grep -q '"sessions":\["default"\]'
+headless click --role button --name 'Leave via window' >/dev/null 2>&1 || true
+sleep 0.5
+assert_page_stays_on_loopback "window.open left the allowlist"
+ALLOWLIST_SESSIONS_AFTER="$(headless session list)"
+echo "$ALLOWLIST_SESSIONS_AFTER" | grep -q '"sessions":\["default"\]'
+headless visit http://127.0.0.1:41739/allowlist-redirect/ >/dev/null 2>&1 || true
+sleep 0.5
+assert_page_stays_on_loopback "redirect left the allowlist"
+headless start --allow 127.0.0.1 | grep -q '"ready":true'
+ALLOWLIST_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+headless stop >/dev/null
+wait_for_host_exit "$ALLOWLIST_PID"
+headless start --allow 127.0.0.1 --allow localhost | grep -q '"navigationAllowlist":\["127.0.0.1","localhost"\]'
+headless start --allow localhost --allow 127.0.0.1 | grep -q '"ready":true'
+headless start --allow localhost --allow 127.0.0.1 | grep -q '"navigationAllowlist":\["127.0.0.1","localhost"\]'
+if ALLOWLIST_MISMATCH="$(headless start --allow example.com)"; then
+  echo "a conflicting --allow list was accepted on a running host" >&2
+  exit 1
+fi
+echo "$ALLOWLIST_MISMATCH" | grep -q 'NAVIGATION_ALLOWLIST_CONFLICT'
+echo "$ALLOWLIST_MISMATCH" | grep -q 'headless stop'
+headless start | grep -q '"ready":true'
+headless status | grep -q '"navigationAllowlist":\["127.0.0.1","localhost"\]'
+ALLOWLIST_PID="$(headless status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+headless stop >/dev/null
+wait_for_host_exit "$ALLOWLIST_PID"
+headless start | grep -q '"navigationAllowlist":\[\]'
 
 if [ -n "${HEADLESS_EVIDENCE_DIR:-}" ]; then
   umask 077

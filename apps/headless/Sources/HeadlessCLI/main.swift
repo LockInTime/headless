@@ -28,11 +28,17 @@ private struct HostLauncher {
         try? client.send(CommandRequest(command: .ping), timeout: 0.5)
     }
 
-    func start(presentation: AgentStartupPresentation? = nil) throws -> CommandResponse {
+    func start(
+        presentation: AgentStartupPresentation? = nil,
+        allowlist: NavigationAllowlist = .unrestricted
+    ) throws -> CommandResponse {
         #if !os(macOS)
         if presentation != nil { throw SettingsError.unsupportedPlatform("startup-presentation") }
         #endif
-        if let response = ping(), response.ok { return response }
+        if let response = ping(), response.ok {
+            try validateRunningAllowlist(response, requested: allowlist)
+            return response
+        }
         #if os(Linux)
         // Report an unsupported browser directly to the operator instead of
         // hiding the host's startup error behind its detached stderr.
@@ -54,6 +60,11 @@ private struct HostLauncher {
         let effectivePresentation = AgentStartupPresentation.background
         #endif
         environment["HEADLESS_START_FOREGROUND"] = effectivePresentation == .foreground ? "1" : "0"
+        if allowlist.isRestricted {
+            environment[headlessNavigationAllowlistEnvironmentKey] = allowlist.environmentValue
+        } else {
+            environment.removeValue(forKey: headlessNavigationAllowlistEnvironmentKey)
+        }
         process.environment = environment
         process.standardInput = FileHandle.nullDevice
         if let hostLog = environment["HEADLESS_HOST_LOG"], hostLog.hasPrefix("/") {
@@ -70,13 +81,39 @@ private struct HostLauncher {
 
         let deadline = Date().addingTimeInterval(8)
         repeat {
-            if let response = ping(), response.ok { return response }
+            if let response = ping(), response.ok {
+                do {
+                    try validateRunningAllowlist(response, requested: allowlist)
+                    return response
+                } catch {
+                    process.terminate()
+                    throw error
+                }
+            }
             if !process.isRunning {
                 throw HostLaunchError.exited(process.terminationStatus)
             }
             Thread.sleep(forTimeInterval: 0.05)
         } while Date() < deadline
         throw HostLaunchError.timedOut
+    }
+
+    private func validateRunningAllowlist(
+        _ response: CommandResponse, requested allowlist: NavigationAllowlist
+    ) throws {
+        guard allowlist.isRestricted else { return }
+        let running = runningAllowlist(from: response)
+        if Set(running) != Set(allowlist.patterns) {
+            throw HostLaunchError.allowlistMismatch(running: running, requested: allowlist.patterns)
+        }
+    }
+
+    private func runningAllowlist(from response: CommandResponse) -> [String] {
+        guard case .object(let result) = response.result,
+              case .array(let values) = result["navigationAllowlist"] else {
+            return []
+        }
+        return values.compactMap(\.stringValue)
     }
 
     private func resolveHostExecutable() throws -> URL {
@@ -109,12 +146,16 @@ private enum HostLaunchError: Error, CustomStringConvertible {
     case notFound
     case timedOut
     case exited(Int32)
+    case allowlistMismatch(running: [String], requested: [String])
 
     var description: String {
         switch self {
         case .notFound: return "Could not find headless-host. Run the Headless build first."
         case .timedOut: return "Headless host did not become ready within 8 seconds."
         case .exited(let status): return "Headless host exited during startup (status \(status))."
+        case .allowlistMismatch(let running, let requested):
+            let runningText = running.isEmpty ? "unrestricted" : running.joined(separator: ", ")
+            return "The running host navigation allowlist (\(runningText)) does not match (\(requested.joined(separator: ", "))). Run `headless stop` first."
         }
     }
 }
@@ -207,8 +248,8 @@ do {
                 "supported": .bool(true), "transport": .string("native-webkit"),
             ]))
             #endif
-        case .start(let presentation):
-            try printResponse(try HostLauncher().start(presentation: presentation))
+        case .start(let presentation, let allowlist):
+            try printResponse(try HostLauncher().start(presentation: presentation, allowlist: allowlist))
         case .config(let command):
             let settings = try SettingsStore.production()
             switch command {
@@ -259,8 +300,22 @@ do {
     )
     try? printResponse(response)
     exit(69)
+} catch let error as NavigationAllowlistError {
+    fputs("headless: \(error.description)\n", stderr)
+    exit(64)
 } catch let error as HostLaunchError {
-    let response = CommandResponse.failure(id: "unknown", code: "HOST_START_FAILED", message: error.description)
+    let code: String
+    let suggestion: String?
+    if case .allowlistMismatch = error {
+        code = "NAVIGATION_ALLOWLIST_CONFLICT"
+        suggestion = "Run `headless stop` first."
+    } else {
+        code = "HOST_START_FAILED"
+        suggestion = nil
+    }
+    let response = CommandResponse.failure(
+        id: "unknown", code: code, message: error.description, suggestion: suggestion
+    )
     try? printResponse(response)
     exit(69)
 } catch let error as ChromiumRuntimeError {

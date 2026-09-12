@@ -12,6 +12,10 @@ const routes = new Map([
   ['/auth-state', 'auth-state.html'],
   ['/auth-login', 'auth-login.html'],
   ['/file-upload', 'file-upload.html'],
+  ['/allowlist-exits', 'allowlist-exits.html'],
+  ['/allowlist-exits/', 'allowlist-exits.html'],
+  ['/allowlist-redirect', 'allowlist-redirect.html'],
+  ['/allowlist-redirect/', 'allowlist-redirect.html'],
 ]);
 
 const server = createServer(async (request, response) => {
