@@ -360,6 +360,18 @@ assert_system_full_screen_shortcut() {
   fi
 }
 
+wait_for_menu_enabled() {
+  local pid="$1" menu_title="$2" item_title="$3" enabled
+  for _ in {1..100}; do
+    if enabled="$(ax_menu_attribute "$pid" "$menu_title" "$item_title" AXEnabled 2>/dev/null)" &&
+       [[ "$enabled" == true ]]; then
+      return 0
+    fi
+    sleep 0.05
+  done
+  return 1
+}
+
 node Tests/fixture-server.mjs >"$LOG" 2>&1 &
 FIXTURE_PID=$!
 
@@ -747,10 +759,23 @@ fi
 
 STEP="menu-history"
 "$CLI" visit "http://127.0.0.1:$PORT/next" | grep -q 'Designer Details'
+if ! wait_for_menu_enabled "$HOST_PID" History Back; then
+  echo "History > Back did not become enabled after visiting the next page" >&2
+  fail
+fi
 ax_press_menu_item "$HOST_PID" History Back
 "$CLI" wait --url /designers/dashboard --text 'Designers dashboard' --settled --timeout 10000 | grep -q 'Designers Dashboard'
+if ! wait_for_menu_enabled "$HOST_PID" History Forward; then
+  echo "History > Forward did not become enabled after navigating back" >&2
+  fail
+fi
 ax_press_menu_item "$HOST_PID" History Forward
-"$CLI" wait --url /next --text 'Designer details' --settled --timeout 10000 | grep -q 'Designer Details'
+if ! HISTORY_FORWARD_RESULT="$("$CLI" wait --url /next --text 'Designer details' --settled --timeout 10000)" ||
+   ! grep -q 'Designer Details' <<<"$HISTORY_FORWARD_RESULT"; then
+  echo "History > Forward did not return to the next page" >&2
+  print -r -u2 -- "$HISTORY_FORWARD_RESULT"
+  fail
+fi
 
 STEP="menu-pin"
 ax_press_menu_item "$HOST_PID" Window "Pin on Top"
