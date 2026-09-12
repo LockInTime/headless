@@ -32,6 +32,13 @@ publishes content, makes a purchase, changes permissions, accepts legal terms,
 uploads a file, or otherwise creates a meaningful external effect not already
 explicitly authorized by the user.
 
+To attach a file after that confirmation, use
+`headless upload --role textbox --name NAME --artifact FILE` (or `upload @eN
+--artifact FILE`) with an existing private artifact-store basename. No
+agent-facing command imports a local filesystem path. Downloads remain denied.
+File bytes never appear on the protocol socket. macOS WebKit returns
+`UNSUPPORTED_CAPABILITY` until a native attach path exists.
+
 Routine mutations inside an explicitly requested disposable/local E2E test are
 in scope. Do not transfer that authorization to a production site.
 

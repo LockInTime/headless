@@ -86,10 +86,38 @@ if (!globalThis.__headlessAgent) {
     };
     const visible = element => {
       if (!(element instanceof Element) || !element.isConnected) return false;
-      const style = getComputedStyle(element);
-      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+      for (let current = element; current instanceof Element; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        const opacity = Number.parseFloat(style.opacity);
+        if (style.display === 'none' || style.visibility === 'hidden' || (Number.isFinite(opacity) && opacity <= 0)) return false;
+      }
       const rect = element.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0;
+    };
+    const uploadVisible = element => {
+      if (!visible(element)) return false;
+      const viewportWidth = document.documentElement.clientWidth || globalThis.innerWidth || 0;
+      const viewportHeight = document.documentElement.clientHeight || globalThis.innerHeight || 0;
+      let rect = element.getBoundingClientRect();
+      let left = Math.max(0, rect.left);
+      let top = Math.max(0, rect.top);
+      let right = Math.min(viewportWidth, rect.right);
+      let bottom = Math.min(viewportHeight, rect.bottom);
+      for (let current = element.parentElement; current instanceof Element; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (!/(hidden|clip)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)) continue;
+        rect = current.getBoundingClientRect();
+        left = Math.max(left, rect.left);
+        top = Math.max(top, rect.top);
+        right = Math.min(right, rect.right);
+        bottom = Math.min(bottom, rect.bottom);
+      }
+      if (right <= left || bottom <= top) return false;
+      if (typeof document.elementFromPoint === 'function') {
+        const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+        if (hit && hit !== element && !element.contains(hit)) return false;
+      }
+      return true;
     };
     const role = element => {
       const explicit = element.getAttribute('role');
@@ -115,21 +143,25 @@ if (!globalThis.__headlessAgent) {
       const hints = [];
       const tag = element.tagName.toLowerCase();
       const elementRole = role(element);
-      if (tag === 'a' && element.hasAttribute('href')) hints.push('click');
-      if (tag === 'button' || elementRole === 'button') hints.push('click');
-      if (tag === 'summary' || elementRole === 'tab' || elementRole === 'menuitem') hints.push('click');
       // Only advertise verbs implemented by the public Headless protocol.
       // Unsupported controls can still appear for context, but must not route
-      // an agent toward nonexistent select/upload/slide commands.
-      if (element instanceof HTMLTextAreaElement || element.isContentEditable) hints.push('fill');
+      // an agent toward nonexistent select/slide commands. File inputs advertise
+      // upload only when the host injected __headlessFileUpload, never fill or
+      // click as the primary verb.
       if (element instanceof HTMLInputElement) {
         const type = (element.getAttribute('type') || 'text').toLowerCase();
-        if (type === 'file') return hints;
-        else if (['checkbox', 'radio'].includes(type)) hints.push('click');
+        if (type === 'file') {
+          if (globalThis.__headlessFileUpload === true) hints.push('upload');
+          return Array.from(new Set(hints));
+        } else if (['checkbox', 'radio'].includes(type)) hints.push('click');
         else if (type === 'range') hints.push('fill');
         else if (['button', 'submit', 'reset', 'image'].includes(type)) hints.push('click');
         else hints.push('fill');
       }
+      if (tag === 'a' && element.hasAttribute('href')) hints.push('click');
+      if (tag === 'button' || elementRole === 'button') hints.push('click');
+      if (tag === 'summary' || elementRole === 'tab' || elementRole === 'menuitem') hints.push('click');
+      if (element instanceof HTMLTextAreaElement || element.isContentEditable) hints.push('fill');
       if (element.tabIndex >= 0 && hints.length === 0) hints.push('click');
       return Array.from(new Set(hints));
     };
@@ -671,6 +703,30 @@ if (!globalThis.__headlessAgent) {
       if (!hit || (hit !== element && !element.contains(hit))) throw new Error('ELEMENT_OBSCURED');
       return {ref: refFor(element), role: role(element), name: name(element), x, y};
     };
+    const checkedFileInput = element => {
+      const type = element instanceof HTMLInputElement
+        ? String(element.getAttribute('type') || '').toLowerCase()
+        : '';
+      if (!(element instanceof HTMLInputElement) || type !== 'file') {
+        fail('ELEMENT_NOT_FOUND', 'ELEMENT_NOT_FOUND: target is not a file input');
+      }
+      if (element.disabled || element.getAttribute('aria-disabled') === 'true') {
+        fail('NOT_EDITABLE', 'NOT_EDITABLE: file input is disabled');
+      }
+      if (!uploadVisible(element)) {
+        fail('ELEMENT_NOT_VISIBLE', 'ELEMENT_NOT_VISIBLE: file input is not visible');
+      }
+      return element;
+    };
+    const fileInput = args => checkedFileInput(target(args));
+    const fileInputMetadata = element => {
+      const checked = checkedFileInput(element);
+      return {
+        uploaded: refFor(checked),
+        role: role(checked),
+        name: name(checked),
+      };
+    };
     const fill = args => {
       const element = target(args);
       if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element.isContentEditable)) {
@@ -980,8 +1036,8 @@ if (!globalThis.__headlessAgent) {
       return {count: document.getAnimations().length, animations: all, truncated: document.getAnimations().length > all.length};
     };
     return {
-      snapshot, click, fill, credentialFill, finishCredentialFill, press, inputTarget, authentication, scroll, state, tour, screenshotPlan,
-      scrollToCapturePoint, rectangle, styles, storage,
+      snapshot, click, fill, credentialFill, finishCredentialFill, press, inputTarget, fileInput, fileInputMetadata,
+      authentication, scroll, state, tour, screenshotPlan, scrollToCapturePoint, rectangle, styles, storage,
       performance: performanceSummary, animations
     };
   })();

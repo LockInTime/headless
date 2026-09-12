@@ -12,6 +12,15 @@ private struct TestFailure: Error, CustomStringConvertible {
     let description: String
 }
 
+private let tinyPNG = Data([
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00,
+    0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8, 0xFF, 0xFF, 0x3F,
+    0x00, 0x05, 0xFE, 0x02, 0xFE, 0xDC, 0xCC, 0x59, 0xE7, 0x00, 0x00, 0x00,
+    0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+])
+
 private func expect(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {
     guard try condition() else { throw TestFailure(description: message) }
 }
@@ -253,6 +262,16 @@ private final class TestBrowserSession: BrowserEngineSession {
     }
     func hostClick(parameters: [String: JSONValue]) throws -> JSONValue { .object(["clicked": .bool(true)]) }
     func hostFill(parameters: [String: JSONValue]) throws -> JSONValue { .object(["filled": .bool(true)]) }
+    private(set) var lastUploadPath: String?
+    func hostUpload(parameters: [String: JSONValue], artifactURL: URL) throws -> JSONValue {
+        lastUploadPath = artifactURL.path
+        return .object([
+            "uploaded": .string(parameters["target"]?.stringValue ?? "@e1"),
+            "artifact": .string(artifactURL.lastPathComponent),
+            "role": .string(parameters["role"]?.stringValue ?? "textbox"),
+            "name": .string(parameters["name"]?.stringValue ?? ""),
+        ])
+    }
     func hostPress(parameters: [String: JSONValue]) throws -> JSONValue { .object(["pressed": .bool(true)]) }
     func hostScroll(parameters: [String: JSONValue]) throws -> JSONValue { .object(["scrolled": .bool(true)]) }
     func hostWait(parameters: [String: JSONValue]) throws -> JSONValue { .object(["waited": .bool(true)]) }
@@ -1232,6 +1251,7 @@ struct ProtocolTests {
             (["tour", "--pace", "750"], .tour),
             (["capture-info"], .captureInfo),
             (["artifacts", "list"], .artifactList),
+            (["upload", "@e12", "--artifact", "resume.pdf"], .upload),
             (["qa", "report"], .qaReport),
             (["qa", "clear"], .qaClear),
             (["performance", "get"], .performanceGet),
@@ -2106,6 +2126,15 @@ struct ProtocolTests {
             parameters: ["target": .string("@e1"), "value": .string(secret)]
         )
         try expect(fill == nil, "fill values must never become replayable flow steps")
+        let uploadStep = flowStepIfSafe(
+            command: .upload,
+            parameters: ["target": .string("@e1"), "artifact": .string("resume.pdf")]
+        )
+        try expect(uploadStep?.command == .upload, "upload may be replayed by artifact basename")
+        try expect(
+            uploadStep?.parameters["artifact"] == .string("resume.pdf"),
+            "recorded upload must keep the artifact basename"
+        )
         for command in [CommandName.shutdown, .sessionClose, .cookiesList, .storageList] {
             try expect(
                 flowStepIfSafe(command: command, parameters: [:]) == nil,
@@ -2373,6 +2402,10 @@ struct ProtocolTests {
             "capabilities should advertise every local config command"
         )
         try expect(
+            !localCommandNames.contains("artifacts.add"),
+            "capabilities must not advertise local-file ingest"
+        )
+        try expect(
             settingDefinitions == SettingsRegistry.shared.definitions.compactMap {
                 $0.access == .userOnly ? nil : $0.document
             },
@@ -2422,7 +2455,7 @@ struct ProtocolTests {
         }
         try expect(
             BrowserEngineCapabilities.webkit.unsupportedCommands
-                == [.networkEmulate, .networkMockSet, .networkMockClear],
+                == [.networkEmulate, .networkMockSet, .networkMockClear, .upload],
             "WebKit unsupported commands should be explicit and exact"
         )
         try expect(
@@ -2442,6 +2475,21 @@ struct ProtocolTests {
         try expect(
             chromiumFeatures["inputDispatch"] == .string("trusted-cdp"),
             "Chromium should declare trusted CDP input"
+        )
+        try expect(
+            webkitFeatures["fileUpload"] == .bool(false),
+            "WebKit should declare file upload unsupported until a native attach path exists"
+        )
+        try expect(
+            chromiumFeatures["fileUpload"] == .bool(true),
+            "Chromium should declare file upload via DOM.setFileInputFiles"
+        )
+        guard case .array(let artifactFormats)? = document["artifacts"] else {
+            throw TestFailure(description: "artifact capability shape")
+        }
+        try expect(
+            Set(artifactFormats.compactMap(\.stringValue)).isSuperset(of: uploadArtifactExtensions),
+            "capabilities artifacts list should include upload extensions"
         )
         try expect(
             document["currentEngine"] == .string(currentBrowserEngineCapabilities.engine.rawValue),
@@ -2584,7 +2632,14 @@ struct ProtocolTests {
         )
         try expect(RecordingFormat.webm.videoCodec == "vp9", "recording metadata should report the codec, not encoder")
         try expect(!agentRuntimeJavaScript.contains("hints.push('select')"), "inspect must not advertise a missing select command")
-        try expect(!agentRuntimeJavaScript.contains("hints.push('upload')"), "inspect must not advertise a missing upload command")
+        try expect(
+            agentRuntimeJavaScript.contains("__headlessFileUpload"),
+            "upload hints must be gated on engine file-upload support"
+        )
+        try expect(
+            agentRuntimeJavaScript.contains("hints.push('upload')"),
+            "inspect must advertise upload on file inputs when the engine supports it"
+        )
         try expect(!agentRuntimeJavaScript.contains("hints.push('slide')"), "inspect must not advertise a missing slide command")
     }
 
@@ -3585,6 +3640,136 @@ struct ProtocolTests {
         try expect(missing.error?.code == "SESSION_NOT_FOUND", "closed sessions should be removed from shared state")
     }
 
+    static func artifactUploadCommands() throws {
+        let semantic = try CLIParser().parse([
+            "upload", "--role", "textbox", "--name", "Resume", "--artifact", "resume.pdf",
+        ])
+        try expect(semantic.request?.command == .upload, "semantic upload should parse")
+        try expect(semantic.request?.parameters["artifact"] == .string("resume.pdf"), "upload artifact should parse")
+        try expect(semantic.request?.parameters["role"] == .string("textbox"), "upload role should parse")
+        try expect(semantic.request?.parameters["name"] == .string("Resume"), "upload name should parse")
+
+        let targeted = try CLIParser().parse(["upload", "@e12", "--artifact", "resume.pdf"])
+        try expect(targeted.request?.parameters["target"] == .string("@e12"), "upload ref should parse")
+        try expect(targeted.request?.parameters["artifact"] == .string("resume.pdf"), "upload artifact with ref should parse")
+
+        try expectThrows("upload without a target should fail in the CLI") {
+            _ = try CLIParser().parse(["upload", "--artifact", "resume.pdf"])
+        }
+        try expectThrows("upload without --artifact should fail in the CLI") {
+            _ = try CLIParser().parse(["upload", "@e12"])
+        }
+        try expectThrows("CLI must not expose local-file ingest") {
+            _ = try CLIParser().parse(["artifacts", "add", "/etc/passwd", "--name", "resume.txt"])
+        }
+
+        try expectThrows("raw artifact.add protocol requests must be rejected as unknown") {
+            _ = try ProtocolCodec.decodeLine(
+                CommandRequest.self,
+                from: Data(#"{"id":"request-1","version":"0.5","command":"artifact.add","parameters":{"source":"/tmp/resume.pdf","name":"resume.pdf"}}"#.utf8)
+            )
+        }
+        try CommandRequest(
+            command: .upload,
+            parameters: ["target": .string("@e12"), "artifact": .string("resume.pdf")]
+        ).validate()
+        for name in ["payload.exe", "page.html", "image.svg", "../escape.pdf"] {
+            try expectThrows("upload should reject \(name)") {
+                try CommandRequest(
+                    command: .upload,
+                    parameters: ["target": .string("@e1"), "artifact": .string(name)]
+                ).validate()
+            }
+        }
+        try expectThrows("upload without a target should fail validation") {
+            try CommandRequest(
+                command: .upload,
+                parameters: ["artifact": .string("resume.pdf")]
+            ).validate()
+        }
+        try expectThrows("unknown upload parameters should be rejected") {
+            try CommandRequest(
+                command: .upload,
+                parameters: ["target": .string("@e1"), "artifact": .string("resume.pdf"), "path": .string("/tmp/resume.pdf")]
+            ).validate()
+        }
+
+        let root = "/tmp/headless-upload-artifact-\(UUID().uuidString)"
+        let outsideArtifact = root + "-outside.png"
+        defer {
+            try? FileManager.default.removeItem(atPath: root)
+            try? FileManager.default.removeItem(atPath: outsideArtifact)
+        }
+        let store = try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": root])
+        let added = try store.write(
+            tinyPNG, requestedName: "tiny.png", extension: "png", prefix: "test"
+        )
+        guard case .object(let addedMetadata) = added else {
+            throw TestFailure(description: "artifact metadata")
+        }
+        try expect(addedMetadata["name"] == .string("tiny.png"), "write should return the artifact name")
+        try expect(addedMetadata["kind"] == .string("png"), "write should report the file kind")
+        let pngMode = (try FileManager.default.attributesOfItem(atPath: root + "/tiny.png")[.posixPermissions] as? NSNumber)?.intValue
+        try expect(pngMode == 0o600, "stored upload artifact should be private")
+
+        _ = try store.write(
+            Data("hello".utf8), requestedName: "notes.txt", extension: "txt", prefix: "test"
+        )
+        guard case .object(let listing) = try store.list(),
+              case .array(let artifacts)? = listing["artifacts"] else {
+            throw TestFailure(description: "upload artifact listing")
+        }
+        let listedNames = artifacts.compactMap { value -> String? in
+            guard case .object(let object) = value else { return nil }
+            return object["name"]?.stringValue
+        }
+        try expect(listedNames.contains("tiny.png"), "listing should include stored png")
+        try expect(listedNames.contains("notes.txt"), "listing should include stored txt")
+        let resolvedURL = try store.urlForExistingArtifact(name: "tiny.png")
+        try expect(
+            resolvedURL.deletingLastPathComponent().standardizedFileURL.path == URL(fileURLWithPath: root).standardizedFileURL.path,
+            "resolved upload artifacts must stay inside the store"
+        )
+        try expectThrows("missing stored artifact should fail") {
+            _ = try store.urlForExistingArtifact(name: "absent.pdf")
+        }
+        try tinyPNG.write(to: URL(fileURLWithPath: outsideArtifact))
+        try FileManager.default.createSymbolicLink(
+            atPath: root + "/linked.png", withDestinationPath: outsideArtifact
+        )
+        try expectThrows("symlinked upload artifacts must not escape the store") {
+            _ = try store.urlForExistingArtifact(name: "linked.png")
+        }
+
+        let session = TestBrowserSession()
+        let engine = TestBrowserEngine()
+        let core = HostCore(
+            engine: engine,
+            artifacts: try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": root]),
+            defaultSession: session,
+            shutdownHandler: {}
+        )
+        defer { core.stop() }
+
+        try expect(session.agentControlEnableCount == 0, "artifact resolution must not enable page control")
+        let uploaded = core.handle(CommandRequest(
+            command: .upload,
+            parameters: ["target": .string("@e1"), "artifact": .string("tiny.png")]
+        ))
+        try expect(uploaded.ok, "HostCore upload should resolve a stored artifact")
+        try expect(session.lastUploadPath == root + "/tiny.png" || session.lastUploadPath == URL(fileURLWithPath: root + "/tiny.png").path, "engine must receive the store path, not the source path")
+        let encoded = String(decoding: try ProtocolCodec.encoder.encode(uploaded), as: UTF8.self)
+        try expect(!encoded.contains(root), "upload responses must not include the store path")
+        try expect(!encoded.contains("\"path\""), "upload responses must not include a filesystem path")
+        try expect(encoded.contains("tiny.png"), "upload responses should name the artifact")
+
+        let missingUpload = core.handle(CommandRequest(
+            command: .upload,
+            parameters: ["target": .string("@e1"), "artifact": .string("absent.pdf")]
+        ))
+        try expect(missingUpload.error?.code == "ARTIFACT_ERROR", "missing upload artifacts should fail specifically")
+    }
+
     static func main() {
         if CommandLine.arguments.count == 3,
            CommandLine.arguments[1] == "--peer-denied-client" {
@@ -3666,6 +3851,7 @@ struct ProtocolTests {
             ("host authentication orchestration", hostAuthenticationOrchestration),
             ("docs command reference matches help", docsCommandReferenceMatchesHelp),
             ("menu shortcuts have unique chords", menuShortcutsHaveUniqueChords),
+            ("artifact file upload boundaries", artifactUploadCommands),
         ]
 
         var failures = 0

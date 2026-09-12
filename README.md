@@ -124,8 +124,8 @@ structural region references such as `@r4`, then inspect only that region with
 `contextStats` make pruning explicit. `--context full --text` remains the
 explicit broad-page escape hatch.
 
-Each control's `actions` list contains only protocol verbs that can run (`click`
-or `fill`); unsupported controls never advertise nonexistent commands. Full
+Each control's `actions` list contains only protocol verbs that can run (`click`,
+`fill`, or `upload`); unsupported controls never advertise nonexistent commands. Full
 inspection retains roles, names, rendered media metadata, safety markers,
 bounds, and element references such as `@e1`.
 `capture-info` returns the browser surface, page state, action trace, and

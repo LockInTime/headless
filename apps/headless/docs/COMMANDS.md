@@ -174,6 +174,7 @@ inspect [--context summary|outline|text|actions|full] [--task TEXT]
         [--within @rN] [--limit N] [--budget TOKENS] [--depth N] [--text]
 click REF | click --role ROLE [--name NAME]
 fill REF TEXT | fill REF -- TEXT_WITH_LITERAL_FLAGS | press KEY
+upload REF --artifact FILE | upload --role ROLE [--name NAME] --artifact FILE
 scroll [up|down|top|bottom] [--amount PX]
 back | reload
 wait [--settled] [--url PATTERN] [--text TEXT] [--timeout MS]
@@ -192,11 +193,18 @@ back | reload
   the most recent inspection and are reissued on every inspect; region
   references (`@rN`) stay resolvable so you can outline first and scope later.
   See "Reference lifetime" in P1.md for the full contract.
-- `click`, `fill`, and `press` accept either a reference or a semantic target
-  (`--role`/`--name`). On Linux these dispatch trusted CDP input events;
+- `click`, `fill`, `upload`, and `press` accept either a reference or a semantic
+  target (`--role`/`--name`). On Linux these dispatch trusted CDP input events;
   WebKit uses synthetic input, and capabilities declare the difference.
 - `fill REF -- value` keeps leading dashes in the value. Flow recordings never
   record fill values.
+- `upload` attaches a file that already lives in the private artifact store.
+  `--artifact` is a validated basename only, never a filesystem path. File
+  bytes never travel on the socket. Linux Chromium attaches through
+  `DOM.setFileInputFiles`; macOS WebKit returns `UNSUPPORTED_CAPABILITY`.
+  Downloads stay denied. Agent-facing surfaces cannot import local files;
+  operator-file import remains deferred until Headless has a trusted native
+  picker or broker that can prove explicit user approval.
 - `wait --timeout` and the tour duration are bounded; unbounded waits are
   rejected at parse time.
 
@@ -217,6 +225,9 @@ report create [--output REPORT.json]
 - Screenshots and recordings become private artifacts in the per-user store,
   created `O_EXCL` with `0600`. They never overwrite and never leave it unless
   you copy them.
+- `artifacts list` reports the bounded contents of the private store. `upload`
+  can attach an allowed existing basename from that list; it is not a local
+  file reader or a download manager.
 - `--clipboard` capture is macOS only. Linux rejects clipboard capture because
   VM clipboards are not a reliable boundary.
 - PDF screenshots and element-scoped capture follow the engine matrix reported
@@ -249,7 +260,8 @@ flow start | flow stop [--output FLOW.json] | flow run FLOW.json
 - `visual compare` accepts only existing private PNG artifacts, not filesystem
   paths, and writes its difference image back into the artifact store.
 - Flows replay recorded commands but skip every `fill` value by design; rerun
-  fills explicitly when you replay.
+  fills explicitly when you replay. `upload` may be recorded with the artifact
+  basename only; replay needs that same store name.
 
 ## Where to go next
 

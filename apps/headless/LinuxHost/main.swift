@@ -87,6 +87,9 @@ final class ChromiumBrowserEngineSession: BrowserEngineSession {
     func hostFill(parameters: [String: JSONValue]) throws -> JSONValue {
         try browserSession.fill(parameters: parameters)
     }
+    func hostUpload(parameters: [String: JSONValue], artifactURL: URL) throws -> JSONValue {
+        try browserSession.upload(parameters: parameters, artifactURL: artifactURL)
+    }
     func hostPress(parameters: [String: JSONValue]) throws -> JSONValue {
         try browserSession.press(parameters: parameters)
     }
