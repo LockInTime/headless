@@ -18,7 +18,7 @@ public enum LocalCommand: Equatable, Sendable {
     case version
     case capabilities
     case runtime
-    case start(presentation: AgentStartupPresentation?)
+    case start(presentation: AgentStartupPresentation?, allowlist: NavigationAllowlist)
     case config(ConfigCLICommand)
     case credentials(CredentialCLICommand)
 }
@@ -100,16 +100,7 @@ public struct CLIParser {
             try requireEmpty(arguments)
             return CLIInvocation(local: .runtime, jsonOutput: true)
         case "start":
-            switch arguments {
-            case []:
-                return CLIInvocation(local: .start(presentation: nil), jsonOutput: jsonOutput)
-            case ["--background"]:
-                return CLIInvocation(local: .start(presentation: .background), jsonOutput: jsonOutput)
-            case ["--foreground"]:
-                return CLIInvocation(local: .start(presentation: .foreground), jsonOutput: jsonOutput)
-            default:
-                throw CLIParseError.invalidOption(arguments.first ?? "start")
-            }
+            return try parseStart(arguments, jsonOutput: jsonOutput)
         case "config":
             guard session == nil else { throw CLIParseError.invalidOption("--session") }
             switch arguments {
@@ -518,6 +509,32 @@ public struct CLIParser {
         return prefix
     }
 
+    private func parseStart(_ arguments: [String], jsonOutput: Bool) throws -> CLIInvocation {
+        var args = arguments
+        var presentation: AgentStartupPresentation?
+        if removeFlag("--background", from: &args) {
+            presentation = .background
+        }
+        if removeFlag("--foreground", from: &args) {
+            if presentation != nil {
+                throw CLIParseError.invalidOption("--foreground")
+            }
+            presentation = .foreground
+        }
+        let rawAllows = try removeOptions("--allow", from: &args)
+        try requireEmpty(args)
+        let allowlist: NavigationAllowlist
+        if rawAllows.isEmpty {
+            allowlist = .unrestricted
+        } else {
+            allowlist = try NavigationAllowlist.parse(rawAllows)
+        }
+        return CLIInvocation(
+            local: .start(presentation: presentation, allowlist: allowlist),
+            jsonOutput: jsonOutput
+        )
+    }
+
     private func parseRecord(
         _ arguments: [String], session: String?, jsonOutput: Bool
     ) throws -> CLIInvocation {
@@ -776,7 +793,7 @@ Core workflow:
 
 Commands:
   version | --version
-  start [--background|--foreground] | status | stop | runtime
+  start [--background|--foreground] [--allow PATTERN]... | status | stop | runtime
   profile clear
   config list | config describe KEY | config get KEY
   config set KEY VALUE | config reset KEY

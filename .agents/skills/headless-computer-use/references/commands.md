@@ -4,6 +4,7 @@
 
 ```sh
 headless start
+headless start --allow localhost --allow 127.0.0.1
 headless status
 headless runtime
 headless capabilities
