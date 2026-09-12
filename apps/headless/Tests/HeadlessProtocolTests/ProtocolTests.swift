@@ -3095,6 +3095,91 @@ struct ProtocolTests {
         try expect(checked >= 30, "expected to check every command line, checked \(checked)")
     }
 
+    static func menuShortcutsHaveUniqueChords() throws {
+        var seen: [String: String] = [:]
+        var titles: [String: String] = [:]
+        for spec in headlessMenuShortcuts {
+            try expect(!spec.selector.isEmpty, "\(spec.title) is missing a selector")
+            try expect(!spec.key.isEmpty, "\(spec.title) should not be in the keyed catalog without a chord")
+            try expect(spec.selector.hasSuffix(":"), "\(spec.title) selector must be an ObjC action")
+            if let previous = seen[spec.chordIdentity] {
+                throw TestFailure(
+                    description: "\(spec.title) collides with \(previous) on \(spec.chordIdentity)"
+                )
+            }
+            seen[spec.chordIdentity] = spec.title
+            if let previous = titles[spec.title] {
+                throw TestFailure(description: "duplicate menu title \(spec.title) also used by \(previous)")
+            }
+            titles[spec.title] = spec.selector
+        }
+        let pin = headlessMenuShortcuts.first { $0.title == "Pin on Top" }
+        try expect(pin?.key == "p" && pin?.command == true && pin?.option == true && pin?.shift == false,
+                   "Pin on Top should be Cmd-Option-P, not Cmd-P")
+        try expect(
+            !headlessMenuShortcuts.contains { $0.key == "," },
+            "Cmd-, is reserved for a future Settings window"
+        )
+        let snapshot = headlessMenuShortcuts.first { $0.title == "Save Snapshot to Desktop" }
+        try expect(snapshot?.key == "s" && snapshot?.shift == true,
+                   "snapshot capture should stay Cmd-Shift-S")
+        let help = headlessMenuShortcuts.first { $0.title == "Headless Help" }
+        try expect(help?.key == "/" && help?.shift == true,
+                   "Headless Help should be Cmd-Shift-/")
+        try expect(
+            pin?.selector == "togglePin:" && pin?.target == .firstResponder,
+            "Pin on Top must keep togglePin: on the first responder"
+        )
+        try expect(
+            help?.selector == "showHelpPage:" && help?.target == .firstResponder,
+            "Headless Help must keep showHelpPage: on the first responder"
+        )
+        let textEditingActions = [
+            "Undo": "undo:", "Redo": "redo:", "Cut": "cut:", "Copy": "copy:",
+            "Paste": "paste:", "Select All": "selectAll:",
+        ]
+        for (title, selector) in textEditingActions {
+            let shortcut = headlessMenuShortcuts.first { $0.title == title }
+            try expect(
+                shortcut?.selector == selector && shortcut?.target == .firstResponder,
+                "\(title) must target the active text responder"
+            )
+        }
+        let fullScreen = headlessMenuShortcuts.first { $0.title == "Enter Full Screen" }
+        try expect(
+            fullScreen?.selector == "toggleFullScreen:" && fullScreen?.target == .firstResponder,
+            "full screen must retain the standard responder-chain action"
+        )
+        let newWindow = headlessMenuShortcuts.first { $0.title == "New Window" }
+        try expect(
+            newWindow?.selector == "newWindow:" && newWindow?.target == .appDelegate,
+            "New Window must target the app delegate"
+        )
+        let quit = headlessMenuShortcuts.first { $0.title == "Quit Headless" }
+        try expect(
+            quit?.selector == "terminate:" && quit?.target == .application,
+            "Quit Headless must target NSApp"
+        )
+        let p0 = try String(contentsOfFile: "docs/P0.md", encoding: .utf8)
+        try expect(
+            p0.contains("Cmd-Option-P") && p0.contains("Cmd-Shift-S"),
+            "P0 should document the Pin and snapshot chords"
+        )
+        let host = try String(contentsOfFile: "main.swift", encoding: .utf8)
+        try expect(
+            host.contains("&#8997;&#8984; P"),
+            "start page should advertise Option-Command-P for pin"
+        )
+        try expect(
+            !host.contains("<kbd>&#8984; P</kbd>"),
+            "start page must not advertise Command-P for pin"
+        )
+        try expect(
+            host.contains("NSSelectorFromString(spec.selector)"),
+            "menu items must take their actions from the catalog"
+        )
+    }
+
     static func authenticationProtocolAndChallengeLifecycle() throws {
         let login = try CLIParser().parse([
             "--session", "work", "auth", "login", "--challenge",
@@ -3765,6 +3850,7 @@ struct ProtocolTests {
             ("ephemeral authentication broker lifecycle", ephemeralAuthenticationBrokerLifecycle),
             ("host authentication orchestration", hostAuthenticationOrchestration),
             ("docs command reference matches help", docsCommandReferenceMatchesHelp),
+            ("menu shortcuts have unique chords", menuShortcutsHaveUniqueChords),
             ("artifact file upload boundaries", artifactUploadCommands),
         ]
 
