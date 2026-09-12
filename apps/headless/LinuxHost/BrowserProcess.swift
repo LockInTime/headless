@@ -1279,7 +1279,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
         guard let result = response["result"] as? [String: Any], let value = result["value"] else {
             throw CDPError.invalidResponse("file input metadata")
         }
-        return JSONValue.foundationValue(value)
+        return try JSONValue.foundationValue(value)
     }
 
     private func hostError(fromCDPException exception: [String: Any]) -> HostError {
