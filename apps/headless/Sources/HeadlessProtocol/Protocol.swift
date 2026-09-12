@@ -64,6 +64,7 @@ public enum CommandName: String, Codable, CaseIterable, Sendable {
     case inspect
     case click
     case fill
+    case upload
     case press
     case scroll
     case back
@@ -271,6 +272,12 @@ public struct CommandRequest: Codable, Equatable, Sendable {
             try target(allowValue: false)
         case .fill:
             try target(allowValue: true)
+        case .upload:
+            try target(allowValue: false, validateAllowedKeys: false)
+            try allow(["target", "role", "name", "artifact"])
+            if let artifact = try string("artifact", required: true, maximumBytes: 128) {
+                try validateArtifactName(artifact, expectedExtensions: uploadArtifactExtensions)
+            }
         case .press:
             try allow(["key"])
             _ = try string("key", required: true, maximumBytes: 32)
@@ -533,6 +540,10 @@ public func validateIdentifier(_ value: String, field: String) throws {
         throw ProtocolValidationError.invalidIdentifier(field: field)
     }
 }
+
+public let uploadArtifactExtensions: Set<String> = [
+    "csv", "gif", "jpeg", "jpg", "json", "pdf", "png", "txt", "webp",
+]
 
 public func validateArtifactName(_ value: String, expectedExtension: String) throws {
     try validateArtifactName(value, expectedExtensions: [expectedExtension])

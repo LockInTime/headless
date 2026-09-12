@@ -23,7 +23,7 @@ public struct RecordedFlowStep: Codable, Sendable {
 }
 
 public let replayableFlowCommands: Set<CommandName> = [
-    .visit, .click, .press, .scroll, .back, .reload, .wait, .tour,
+    .visit, .click, .press, .scroll, .back, .reload, .wait, .tour, .upload,
 ]
 
 public func flowStepIfSafe(command: CommandName, parameters: [String: JSONValue]) -> RecordedFlowStep? {

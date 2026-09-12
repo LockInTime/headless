@@ -328,6 +328,25 @@ if NETWORK_SIMULATION="$("$CLI" --session qa network emulate --latency 25)"; the
   fail
 fi
 echo "$NETWORK_SIMULATION" | grep -q 'UNSUPPORTED_CAPABILITY'
+STEP="file-upload-unsupported"
+printf 'resume-fixture\n' > "$HEADLESS_ARTIFACT_DIR/resume.txt"
+chmod 600 "$HEADLESS_ARTIFACT_DIR/resume.txt"
+if "$CLI" artifacts add /etc/passwd --name resume.txt >/dev/null 2>&1; then
+  echo "agent-facing local-file ingest was not rejected" >&2
+  fail
+fi
+"$CLI" --session qa visit "http://127.0.0.1:$PORT/file-upload" | grep -q 'File upload fixture'
+UPLOAD_SNAPSHOT="$("$CLI" --session qa inspect --interactive)"
+echo "$UPLOAD_SNAPSHOT" | grep -q '"name":"Resume"'
+if echo "$UPLOAD_SNAPSHOT" | grep -q '"actions":\["upload"\]'; then
+  echo "WebKit inspect advertised upload despite missing fileUpload support" >&2
+  fail
+fi
+if UPLOAD="$("$CLI" --session qa upload --role textbox --name Resume --artifact resume.txt)"; then
+  echo "WebKit file upload was unexpectedly exposed" >&2
+  fail
+fi
+echo "$UPLOAD" | grep -q 'UNSUPPORTED_CAPABILITY'
 STEP="flows-reports"
 "$CLI" --session qa flow start | grep -q '"recording":true'
 "$CLI" --session qa visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'
@@ -466,9 +485,11 @@ fi
 
 STEP="durable-authentication-profile"
 "$CLI" start --background | grep -q '"ready":true'
+STEP="durable-authentication-login"
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=login" | grep -q 'Authentication State'
 "$CLI" inspect --text | grep -q 'Cookie state: signed-in'
 "$CLI" inspect --text | grep -q 'Storage state: signed-in'
+STEP="durable-authentication-first-stop"
 PROFILE_RESTART_PID="$("$CLI" status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$PROFILE_RESTART_PID"
 "$CLI" stop >/dev/null
@@ -480,13 +501,16 @@ if kill -0 "$PROFILE_RESTART_PID" >/dev/null 2>&1; then
   echo "host did not exit during durable profile restart" >&2
   fail
 fi
+STEP="durable-authentication-persisted-state"
 "$CLI" start --background | grep -q '"ready":true'
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" | grep -q 'Authentication State'
 "$CLI" inspect --text | grep -q 'Cookie state: signed-in'
 "$CLI" inspect --text | grep -q 'Storage state: signed-in'
+STEP="durable-authentication-logout"
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=logout" >/dev/null
 "$CLI" inspect --text | grep -q 'Cookie state: missing'
 "$CLI" inspect --text | grep -q 'Storage state: missing'
+STEP="durable-authentication-second-stop"
 LOGOUT_RESTART_PID="$("$CLI" status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$LOGOUT_RESTART_PID"
 "$CLI" stop >/dev/null
@@ -498,10 +522,12 @@ if kill -0 "$LOGOUT_RESTART_PID" >/dev/null 2>&1; then
   echo "host did not exit while verifying durable logout" >&2
   fail
 fi
+STEP="durable-authentication-persisted-logout"
 "$CLI" start --background >/dev/null
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" >/dev/null
 "$CLI" inspect --text | grep -q 'Cookie state: missing'
 "$CLI" inspect --text | grep -q 'Storage state: missing'
+STEP="durable-authentication-profile-clear"
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=login" >/dev/null
 "$CLI" profile clear | grep -q '"cleared":true'
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" | grep -q 'Authentication State'

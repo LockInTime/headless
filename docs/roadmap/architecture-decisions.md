@@ -532,6 +532,57 @@ and credentials.
 
 ---
 
+## 23. File upload attaches existing store basenames only
+
+**Decision:** `upload` is a protocol command that names an existing basename
+in the private artifact store and asks the engine to attach that on-disk file.
+No CLI, protocol, or MCP command ingests an arbitrary local path. File bytes
+never appear on the Unix socket, in protocol parameters, MCP, logs, flows,
+snapshots, diagnostics, or errors. Downloads remain denied. There is no TCP
+fixture server, no home-directory path on `upload`, and no arbitrary-JS verb.
+`upload` targets a file input with the same grammar as `click`.
+
+Artifact pathname integrity relies on the private per-user store. A malicious
+same-UID process can inspect or replace files there, which is the documented
+same-user limitation in `SECURITY.md`; operators must isolate untrusted agents
+under a separate OS account when that boundary matters.
+
+Linux Chromium attaches via `DOM.setFileInputFiles` using an isolated-world
+objectId. Attachment success is completion: bounded `{ref, role, name}`
+metadata is captured before attach, and a successful CDP response is not
+followed by a second node lookup. macOS WKWebView returns
+`UNSUPPORTED_CAPABILITY` until a native attach path exists that does not
+evaluate page JavaScript or shuttle file bytes through JS. Capabilities
+declare `fileUpload` accordingly; inspect advertises `upload` only when that
+flag is true.
+
+**Status:** partially implemented by #169 and revised 2026-09-12 after security
+review. The operator-file staging criterion in #168 remains open and must not
+be closed by the attach-only implementation.
+
+**Rationale:** resume/import/image QA needs file inputs, and the existing store
+has the confinement properties required for engine attachment. Any local-path
+ingest command available to an agent, including a nominally local CLI or a
+scriptable TTY confirmation, would let it copy arbitrary readable host files
+into an uploadable location. That violates SECURITY.md. Putting bytes on the
+wire would also exceed the frame boundary and leak contents into logs. WebKit
+has no equivalent of `setFileInputFiles` without a JS hole.
+
+**Consequences:** agent-facing surfaces cannot import operator files. Upload
+remains useful for allowed artifacts already created in the store, and test
+harnesses may seed their isolated store directly. Test seeding is not a user
+workflow. #168 must remain open or be split so a trusted human staging surface
+is designed, implemented, and tested separately. WebKit clients must skip
+upload or fail closed. Replay of `upload` requires the same artifact basename
+still in the store.
+
+**Revisit trigger:** operator-file import requires a trusted native picker or
+broker that proves explicit user approval on both supported platforms. WebKit
+support separately requires a documented native attach API that does not
+execute page JS or pass file bytes through the JS bridge.
+
+---
+
 ## 24. Credential broker on the unsigned local tier
 
 Numbered 24 because 22 and 23 are claimed by in-review PRs
@@ -780,6 +831,7 @@ rule that durable saved-credential retrieval needs trusted per-use presence.
 | 20  | Omit passkeys unless Apple provisions Developer ID release  | Implemented                                               | 2026-08-12 |
 | 21  | Rust port of shared core, protocol layer first              | In progress                                               | 2026-08-22 |
 | 22  | Optional host origin allowlist on `headless start`          | Implemented                                               | 2026-09-10 |
+| 23  | Upload attaches existing store basenames only; downloads denied | Partially implemented; trusted staging remains #168      | 2026-09-10 |
 | 24  | Credential broker on the unsigned local tier                | Decided                                                   | 2026-09-10 |
 | 25  | Typed local settings registry; security policy stays fixed  | Implemented                                               | 2026-09-12 |
 | 26  | Isolated sessions own one ephemeral browser context         | Implemented                                               | 2026-09-12 |

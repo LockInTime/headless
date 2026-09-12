@@ -67,6 +67,7 @@ func run() throws {
         #"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["credentials","list"]}}}"#,
         #"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["start"]}}}"#,
         #"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["config","list"]}}}"#,
+        #"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"headless","arguments":{"argv":["artifacts","add","/tmp/resume.txt","--name","resume.txt"]}}}"#,
     ]
 
     try process.run()
@@ -82,7 +83,7 @@ func run() throws {
         let value = try JSONSerialization.jsonObject(with: Data(line.utf8))
         return try object(value, "MCP response was not a JSON object")
     }
-    try expect(responses.count == 12, "expected twelve MCP responses, received \(responses.count)")
+    try expect(responses.count == 13, "expected thirteen MCP responses, received \(responses.count)")
 
     let initialize = try object(responses[0]["result"], "initialize result was absent")
     try expect(initialize["protocolVersion"] as? String == "2025-06-18", "initialize protocol version changed")
@@ -185,6 +186,17 @@ func run() throws {
         throw TestFailure(description: "config rejection text was absent")
     }
     try expect(configText.contains("browser commands only"), "config rejection guidance changed")
+
+    let ingestCall = try object(responses[12]["result"], "artifact ingest rejection result was absent")
+    try expect(ingestCall["isError"] as? Bool == true, "artifact ingest was accepted over MCP")
+    guard let ingestContent = ingestCall["content"] as? [[String: Any]],
+          let ingestText = ingestContent.first?["text"] as? String else {
+        throw TestFailure(description: "artifact ingest rejection text was absent")
+    }
+    try expect(
+        ingestText.contains("artifacts list"),
+        "artifact ingest rejection should expose only the supported list command"
+    )
 }
 
 do {

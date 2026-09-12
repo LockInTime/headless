@@ -207,7 +207,7 @@ public final class ArtifactStore: @unchecked Sendable {
     private static let listedExtensions: Set<String> =
         ScreenshotFormat.artifactExtensions
         .union(RecordingFormat.artifactExtensions)
-        .union(["json"])
+        .union(uploadArtifactExtensions)
 
     private func metadata(for url: URL) throws -> JSONValue {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
@@ -220,6 +220,26 @@ public final class ArtifactStore: @unchecked Sendable {
             "bytes": .number(bytes),
             "createdAt": .number(created),
         ])
+    }
+
+    /// Resolves an already-stored upload artifact to its on-disk URL. Callers
+    /// receive a path inside this store only, never an agent-supplied path.
+    public func urlForExistingArtifact(
+        name: String, allowedExtensions: Set<String> = uploadArtifactExtensions
+    ) throws -> URL {
+        lock.lock(); defer { lock.unlock() }
+        do { try validateArtifactName(name, expectedExtensions: allowedExtensions) }
+        catch { throw ArtifactError.invalidName(name) }
+        let url = rootURL.appendingPathComponent(name, isDirectory: false)
+        guard url.deletingLastPathComponent().standardizedFileURL == rootURL.standardizedFileURL else {
+            throw ArtifactError.invalidName(name)
+        }
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else { throw ArtifactError.missing(name) }
+        guard (info.st_mode & S_IFMT) == S_IFREG else {
+            throw ArtifactError.writeFailed("Artifact is not a permitted regular file")
+        }
+        return url
     }
 
     /// Reads only a regular artifact owned by this store. Callers never receive
