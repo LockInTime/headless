@@ -50,10 +50,38 @@ if (!globalThis.__headlessAgent) {
     };
     const visible = element => {
       if (!(element instanceof Element) || !element.isConnected) return false;
-      const style = getComputedStyle(element);
-      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+      for (let current = element; current instanceof Element; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        const opacity = Number.parseFloat(style.opacity);
+        if (style.display === 'none' || style.visibility === 'hidden' || (Number.isFinite(opacity) && opacity <= 0)) return false;
+      }
       const rect = element.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0;
+    };
+    const uploadVisible = element => {
+      if (!visible(element)) return false;
+      const viewportWidth = document.documentElement.clientWidth || globalThis.innerWidth || 0;
+      const viewportHeight = document.documentElement.clientHeight || globalThis.innerHeight || 0;
+      let rect = element.getBoundingClientRect();
+      let left = Math.max(0, rect.left);
+      let top = Math.max(0, rect.top);
+      let right = Math.min(viewportWidth, rect.right);
+      let bottom = Math.min(viewportHeight, rect.bottom);
+      for (let current = element.parentElement; current instanceof Element; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (!/(hidden|clip)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)) continue;
+        rect = current.getBoundingClientRect();
+        left = Math.max(left, rect.left);
+        top = Math.max(top, rect.top);
+        right = Math.min(right, rect.right);
+        bottom = Math.min(bottom, rect.bottom);
+      }
+      if (right <= left || bottom <= top) return false;
+      if (typeof document.elementFromPoint === 'function') {
+        const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+        if (hit && hit !== element && !element.contains(hit)) return false;
+      }
+      return true;
     };
     const role = element => {
       const explicit = element.getAttribute('role');
@@ -609,8 +637,7 @@ if (!globalThis.__headlessAgent) {
       if (!hit || (hit !== element && !element.contains(hit))) throw new Error('ELEMENT_OBSCURED');
       return {ref: refFor(element), role: role(element), name: name(element), x, y};
     };
-    const fileInput = args => {
-      const element = target(args);
+    const checkedFileInput = element => {
       const type = element instanceof HTMLInputElement
         ? String(element.getAttribute('type') || '').toLowerCase()
         : '';
@@ -620,17 +647,18 @@ if (!globalThis.__headlessAgent) {
       if (element.disabled || element.getAttribute('aria-disabled') === 'true') {
         fail('NOT_EDITABLE', 'NOT_EDITABLE: file input is disabled');
       }
-      if (!visible(element)) {
+      if (!uploadVisible(element)) {
         fail('ELEMENT_NOT_VISIBLE', 'ELEMENT_NOT_VISIBLE: file input is not visible');
       }
       return element;
     };
-    const fileInputPrepare = args => {
-      const element = fileInput(args);
+    const fileInput = args => checkedFileInput(target(args));
+    const fileInputMetadata = element => {
+      const checked = checkedFileInput(element);
       return {
-        uploaded: refFor(element),
-        role: role(element),
-        name: name(element),
+        uploaded: refFor(checked),
+        role: role(checked),
+        name: name(checked),
       };
     };
     const fill = args => {
@@ -942,7 +970,7 @@ if (!globalThis.__headlessAgent) {
       return {count: document.getAnimations().length, animations: all, truncated: document.getAnimations().length > all.length};
     };
     return {
-      snapshot, click, fill, credentialFill, finishCredentialFill, press, inputTarget, fileInput, fileInputPrepare,
+      snapshot, click, fill, credentialFill, finishCredentialFill, press, inputTarget, fileInput, fileInputMetadata,
       authentication, scroll, state, tour, screenshotPlan, scrollToCapturePoint, rectangle, styles, storage,
       performance: performanceSummary, animations
     };

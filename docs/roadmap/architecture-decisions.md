@@ -497,6 +497,11 @@ snapshots, diagnostics, or errors. Downloads remain denied. There is no TCP
 fixture server, no home-directory path on `upload`, and no arbitrary-JS verb.
 `upload` targets a file input with the same grammar as `click`.
 
+Artifact pathname integrity relies on the private per-user store. A malicious
+same-UID process can inspect or replace files there, which is the documented
+same-user limitation in `SECURITY.md`; operators must isolate untrusted agents
+under a separate OS account when that boundary matters.
+
 Linux Chromium attaches via `DOM.setFileInputFiles` using an isolated-world
 objectId. Attachment success is completion: bounded `{ref, role, name}`
 metadata is captured before attach, and a successful CDP response is not

@@ -561,18 +561,14 @@ final class LinuxBrowserSession: @unchecked Sendable {
 
     func upload(parameters: [String: JSONValue], artifactURL: URL) throws -> JSONValue {
         let args = try browserTargetArguments(parameters)
-        let prepared = try evaluate(
-            "return globalThis.__headlessAgent.fileInputPrepare(args);",
-            input: ["args": args]
-        )
-        guard case .object(var metadata) = prepared else {
-            throw CDPError.invalidResponse("file input metadata")
-        }
         let objectId = try evaluateNode(
             "return globalThis.__headlessAgent.fileInput(args);",
             input: ["args": args]
         )
         defer { _ = try? command("Runtime.releaseObject", parameters: ["objectId": objectId]) }
+        guard case .object(var metadata) = try fileInputMetadata(objectId: objectId) else {
+            throw CDPError.invalidResponse("file input metadata")
+        }
         _ = try command("DOM.setFileInputFiles", parameters: [
             "objectId": objectId,
             "files": [artifactURL.path],
@@ -1069,6 +1065,21 @@ final class LinuxBrowserSession: @unchecked Sendable {
             throw CDPError.invalidResponse("file input objectId")
         }
         return objectId
+    }
+
+    private func fileInputMetadata(objectId: String) throws -> JSONValue {
+        let response = try command("Runtime.callFunctionOn", parameters: [
+            "objectId": objectId,
+            "functionDeclaration": "function() { return globalThis.__headlessAgent.fileInputMetadata(this); }",
+            "returnByValue": true,
+        ])
+        if let exception = response["exceptionDetails"] as? [String: Any] {
+            throw hostError(fromCDPException: exception)
+        }
+        guard let result = response["result"] as? [String: Any], let value = result["value"] else {
+            throw CDPError.invalidResponse("file input metadata")
+        }
+        return JSONValue.foundationValue(value)
     }
 
     private func hostError(fromCDPException exception: [String: Any]) -> HostError {
