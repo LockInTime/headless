@@ -2,7 +2,7 @@
 
 import { CommandBlock } from "@/components/docs-copy-controls";
 import { plainText } from "@/lib/markdown";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 type CommandGroup = {
   title: string;
@@ -14,14 +14,13 @@ type CommandGroup = {
 export function CommandDirectory({ groups }: { groups: CommandGroup[] }) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLowerCase();
-  const visible = useMemo(() => {
-    if (!normalized) return groups;
-    return groups.filter((group) =>
-      `${group.title} ${group.description} ${group.usage}`
-        .toLowerCase()
-        .includes(normalized),
-    );
-  }, [groups, normalized]);
+  const visible = normalized
+    ? groups.filter((group) =>
+        `${group.title} ${group.description} ${group.usage}`
+          .toLowerCase()
+          .includes(normalized),
+      )
+    : groups;
 
   const countLabel =
     visible.length === 0
