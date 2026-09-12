@@ -537,6 +537,21 @@ struct ProtocolTests {
             "comma-separated --allow values should parse"
         )
 
+        let ordered = try NavigationAllowlist.parse(["127.0.0.1", "localhost"])
+        let swapped = try NavigationAllowlist.parse(["localhost", "127.0.0.1"])
+        try expect(
+            Set(ordered.patterns) == Set(swapped.patterns),
+            "swapped --allow order should compare equal as a set"
+        )
+        try expect(
+            ordered.patterns == ["127.0.0.1", "localhost"],
+            "canonical patterns should keep first-seen order"
+        )
+        try expect(
+            swapped.patterns == ["localhost", "127.0.0.1"],
+            "a later start with swapped --allow flags still preserves its own first-seen order"
+        )
+
         let withBackground = try CLIParser().parse([
             "start", "--allow", "localhost", "--background",
         ])

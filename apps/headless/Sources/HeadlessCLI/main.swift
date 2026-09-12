@@ -36,12 +36,7 @@ private struct HostLauncher {
         if presentation != nil { throw SettingsError.unsupportedPlatform("startup-presentation") }
         #endif
         if let response = ping(), response.ok {
-            if allowlist.isRestricted {
-                let running = runningAllowlist(from: response)
-                if running != allowlist.patterns {
-                    throw HostLaunchError.allowlistMismatch(running: running, requested: allowlist.patterns)
-                }
-            }
+            try validateRunningAllowlist(response, requested: allowlist)
             return response
         }
         #if os(Linux)
@@ -86,13 +81,31 @@ private struct HostLauncher {
 
         let deadline = Date().addingTimeInterval(8)
         repeat {
-            if let response = ping(), response.ok { return response }
+            if let response = ping(), response.ok {
+                do {
+                    try validateRunningAllowlist(response, requested: allowlist)
+                    return response
+                } catch {
+                    process.terminate()
+                    throw error
+                }
+            }
             if !process.isRunning {
                 throw HostLaunchError.exited(process.terminationStatus)
             }
             Thread.sleep(forTimeInterval: 0.05)
         } while Date() < deadline
         throw HostLaunchError.timedOut
+    }
+
+    private func validateRunningAllowlist(
+        _ response: CommandResponse, requested allowlist: NavigationAllowlist
+    ) throws {
+        guard allowlist.isRestricted else { return }
+        let running = runningAllowlist(from: response)
+        if Set(running) != Set(allowlist.patterns) {
+            throw HostLaunchError.allowlistMismatch(running: running, requested: allowlist.patterns)
+        }
     }
 
     private func runningAllowlist(from response: CommandResponse) -> [String] {

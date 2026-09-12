@@ -33,7 +33,8 @@ capabilities
   `--allow PATTERN` (comma-separated values also accepted) restricts agent
   navigation to matching hosts; omit it to keep unrestricted HTTP(S). `status`
   reports the active `navigationAllowlist` (empty means unrestricted). Changing
-  the list on a running host is rejected — `headless stop` first. `stop`
+  the list on a running host is rejected (`headless stop` first); a later
+  `start --allow` with the same hosts in any order is a no-op. `stop`
   controls the host afterwards. `runtime` reports which engine is active and
   where it came from.
 - `config list` discovers agent-visible settings. `config describe KEY` reports

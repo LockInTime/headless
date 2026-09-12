@@ -242,8 +242,41 @@ onAllowlist.href = 'http://127.0.0.1:41739/next';
 onAllowlist.setAttribute('aria-label', 'On allowlist link');
 window.document.body.prepend(onAllowlist);
 assert.equal(agent.click({role: 'link', name: 'On allowlist link'}).role, 'link');
+
+const offAllowlistForm = window.document.createElement('form');
+offAllowlistForm.action = 'https://example.com/';
+offAllowlistForm.method = 'get';
+offAllowlistForm.addEventListener('submit', event => event.preventDefault());
+const offAllowlistSubmit = window.document.createElement('button');
+offAllowlistSubmit.type = 'submit';
+offAllowlistSubmit.textContent = 'Leave via form';
+offAllowlistForm.append(offAllowlistSubmit);
+window.document.body.prepend(offAllowlistForm);
+assert.throws(
+  () => agent.click({role: 'button', name: 'Leave via form'}),
+  error => error.headlessCode === 'UNSAFE_NAVIGATION',
+);
+const formactionSubmit = window.document.createElement('button');
+formactionSubmit.type = 'submit';
+formactionSubmit.setAttribute('formaction', 'https://example.com/leave');
+formactionSubmit.textContent = 'Leave via formaction';
+const localForm = window.document.createElement('form');
+localForm.action = 'http://127.0.0.1:41739/next';
+localForm.addEventListener('submit', event => event.preventDefault());
+localForm.append(formactionSubmit);
+window.document.body.prepend(localForm);
+assert.throws(
+  () => agent.click({role: 'button', name: 'Leave via formaction'}),
+  error => error.headlessCode === 'UNSAFE_NAVIGATION',
+);
+const localSubmit = window.document.createElement('button');
+localSubmit.type = 'submit';
+localSubmit.textContent = 'Stay via form';
+localForm.append(localSubmit);
+assert.equal(agent.click({role: 'button', name: 'Stay via form'}).role, 'button');
 window.__headlessNavigationAllowlist = [];
 assert.equal(agent.click({role: 'link', name: 'Off allowlist link'}).role, 'link');
+assert.equal(agent.click({role: 'button', name: 'Leave via form'}).role, 'button');
 
 window.scrollY = 0;
 const downward = agent.scroll({direction: 'down', amount: 300});

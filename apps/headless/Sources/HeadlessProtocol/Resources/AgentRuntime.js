@@ -598,19 +598,46 @@ if (!globalThis.__headlessAgent) {
       }
       return {origin: String(location.origin).slice(0, 2048), stores};
     };
+    const requireSafeNavigationURL = value => {
+      let destination;
+      try {
+        destination = value instanceof URL ? value : new URL(String(value || ''), document.baseURI);
+      } catch (_) {
+        fail('UNSAFE_NAVIGATION', 'UNSAFE_NAVIGATION:invalid');
+      }
+      const scheme = destination.protocol.toLowerCase();
+      if (!['http:', 'https:'].includes(scheme) || destination.username || destination.password) {
+        fail('UNSAFE_NAVIGATION', `UNSAFE_NAVIGATION:${scheme}`);
+      }
+      if (!navigationAllowlistAllows(destination)) {
+        fail('UNSAFE_NAVIGATION', `UNSAFE_NAVIGATION:${destination.hostname || destination.host}`);
+      }
+      const safety = resourceSafety(destination.href);
+      if (safety.level === 'blocked') fail('UNSAFE_RESOURCE_TYPE', `UNSAFE_RESOURCE_TYPE:${safety.extension}`);
+    };
+    const submitControlForm = element => {
+      if (element instanceof HTMLFormElement) return element;
+      if (element instanceof HTMLButtonElement) {
+        const type = String(element.getAttribute('type') || 'submit').toLowerCase();
+        if (type !== 'submit' && type !== 'image') return null;
+        return element.form;
+      }
+      if (element instanceof HTMLInputElement) {
+        const type = String(element.type || '').toLowerCase();
+        if (type !== 'submit' && type !== 'image') return null;
+        return element.form;
+      }
+      return null;
+    };
     const requireSafeClickTarget = element => {
       if (element instanceof HTMLAnchorElement && element.href) {
-        const destination = new URL(element.href, document.baseURI);
-        const scheme = destination.protocol.toLowerCase();
-        if (!['http:', 'https:'].includes(scheme) || destination.username || destination.password) {
-          fail('UNSAFE_NAVIGATION', `UNSAFE_NAVIGATION:${scheme}`);
-        }
-        if (!navigationAllowlistAllows(destination)) {
-          fail('UNSAFE_NAVIGATION', `UNSAFE_NAVIGATION:${destination.hostname || destination.host}`);
-        }
-        const safety = resourceSafety(destination.href);
-        if (safety.level === 'blocked') fail('UNSAFE_RESOURCE_TYPE', `UNSAFE_RESOURCE_TYPE:${safety.extension}`);
+        requireSafeNavigationURL(element.href);
+        return;
       }
+      const form = submitControlForm(element);
+      if (!form) return;
+      const formaction = element.getAttribute && element.getAttribute('formaction');
+      requireSafeNavigationURL((formaction && formaction.trim()) || form.action || document.URL);
     };
     const click = args => {
       const element = target(args);

@@ -499,8 +499,10 @@ as an extra conjunct in `agentMayNavigate`. It cannot add `file:`,
 unchanged. When the list is set, visit, top-frame navigation, and in-page
 clicks to a non-matching host fail with `UNSAFE_NAVIGATION`. `status` / ping
 report `navigationAllowlist` (empty array means unrestricted). Changing the
-list on an already-running host is rejected; matching list or `start` without
-`--allow` against a running host remains a no-op success.
+list on an already-running host is rejected; matching list (set equality,
+order-independent) or `start` without `--allow` against a running host
+remains a no-op success. Every successful `start` ping is revalidated against
+the requested list, including the post-spawn ready loop.
 
 **Status:** implemented 2026-09-10.
 
@@ -508,15 +510,25 @@ list on an already-running host is rejected; matching list or `start` without
 under test and open an arbitrary site. Scheme/credential/extension checks are
 not an origin policy. The allowlist is a host-enforced boundary, not a prompt
 rule, so it must live in the same function already consulted by CLI visit,
-WKWebView `decidePolicyFor`, Linux frame-event enforcement, and the isolated
-click guard.
+WKWebView `decidePolicyFor`, Linux Fetch Document pause / extra-target close,
+and the isolated click guard. Linux does not treat
+`Page.frameRequestedNavigation` recovery as the boundary: that event can run
+after an off-list request or popup has already started.
 
 **Consequences:** CLI `start --allow` sets `HEADLESS_NAVIGATION_ALLOWLIST` on
 the spawned host. The injected agent runtime receives a JSON-encoded copy as
-defense in depth; page JS cannot widen the host-trusted policy. Protocol
-version stays 0.5 (additive ping field). Patterns are hosts with optional
-`:port` and optional leading `*.`, capped at 32, case-insensitive, fail
-closed on `*` alone, non-ASCII, paths, schemes, and credentials.
+defense in depth and preflights `<a href>` plus submit controls (`formaction`,
+then `form.action`, then the document URL). Page JS cannot widen the
+host-trusted policy, and `onclick` that assigns `location` or calls
+`window.open` is not a JS-visible target, so Linux fails those Document
+requests at `Fetch.requestPaused` and closes extra page targets that
+auto-attach off the list. Subresource requests (XHR, images, scripts) are
+not filtered; the allowlist is a navigation policy, not a network firewall.
+macOS continues to cancel in `decidePolicyFor` and ignore disallowed
+`createWebViewWith` URLs. Protocol version stays 0.5 (additive ping field).
+Patterns are hosts with optional `:port` and optional leading `*.`, capped at
+32, case-insensitive, fail closed on `*` alone, non-ASCII, paths, schemes,
+and credentials.
 
 ---
 
