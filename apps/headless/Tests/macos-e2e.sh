@@ -462,6 +462,17 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+STEP="settings-window-source"
+grep -q 'func showSettings' main.swift
+grep -q 'orderFrontShared' Host/SettingsWindow.swift
+grep -q 'title: "Settings…"' Sources/HeadlessProtocol/MenuShortcuts.swift
+grep -q 'selector: "showSettings:"' Sources/HeadlessProtocol/MenuShortcuts.swift
+grep -q 'key: ","' Sources/HeadlessProtocol/MenuShortcuts.swift
+if grep -q 'showSettings' LinuxHost/main.swift || grep -q 'SettingsWindow' LinuxHost/main.swift; then
+  echo "Linux host must not ship a Settings GUI" >&2
+  exit 1
+fi
+
 STEP="fixture-server"
 for _ in {1..100}; do
   curl -fsS "http://127.0.0.1:$PORT/designers/dashboard" >/dev/null 2>&1 && break
@@ -621,6 +632,7 @@ STEP="menu-shortcut-inventory"
 while IFS=$'\t' read -r menu_title item_title expected_key expected_modifiers; do
   assert_menu_shortcut "$HOST_PID" "$menu_title" "$item_title" "$expected_key" "$expected_modifiers"
 done <<'SHORTCUTS'
+Headless	Settings…	,	0
 Headless	Hide Headless	h	0
 Headless	Hide Others	h	2
 Headless	Quit Headless	q	0
@@ -647,9 +659,13 @@ Window	Pin on Top	p	2
 Help	Headless Help	/	1
 SHORTCUTS
 assert_system_full_screen_shortcut "$HOST_PID"
-for settings_title in "Settings" "Settings…" "Preferences" "Preferences…"; do
+if [[ "$(ax_menu_exists "$HOST_PID" Headless "Settings…")" != true ]]; then
+  echo "Headless > Settings… was not exposed through Accessibility" >&2
+  fail
+fi
+for settings_title in "Settings" "Preferences" "Preferences…"; do
   if [[ "$(ax_menu_exists "$HOST_PID" Headless "$settings_title")" == true ]]; then
-    echo "$settings_title is shipped but has no Cmd-, coverage" >&2
+    echo "$settings_title should not duplicate Settings…" >&2
     fail
   fi
 done

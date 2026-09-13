@@ -58,8 +58,12 @@ public struct MenuShortcutSpec: Equatable, Sendable {
 
 public let headlessMenuShortcuts: [MenuShortcutSpec] = [
     .init(
+        menu: "Headless", title: "Settings…", key: ",", selector: "showSettings:",
+        target: .appDelegate
+    ),
+    .init(
         menu: "Headless", title: "Hide Headless", key: "h", selector: "hide:",
-        target: .application
+        target: .application, separatorBefore: true
     ),
     .init(
         menu: "Headless", title: "Hide Others", key: "h", option: true,

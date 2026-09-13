@@ -18,7 +18,11 @@ Two versions travel independently, on purpose:
 
 ## [Unreleased]
 
-No changes yet.
+### Added
+
+- macOS Command-, opens one Settings window built from the typed registry and
+  writing through the same backend as `headless config`. Linux has no Settings
+  GUI.
 
 ## [1.1.0] — 2026-08-21
 

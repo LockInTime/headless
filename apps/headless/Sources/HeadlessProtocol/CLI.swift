@@ -865,5 +865,6 @@ Global options:
   --               stop parsing global options; quote multi-word fill values
 
 Settings:
+  macOS Command-, opens Settings; `config` is the portable path on every platform.
 \(SettingsRegistry.shared.helpLines.joined(separator: "\n"))
 """

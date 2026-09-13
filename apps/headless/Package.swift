@@ -84,7 +84,10 @@ let package = Package(
                 "LinuxHost", "Dockerfile.linux", "Headless.app", "build-linux.sh", "install.sh", "install-linux.sh", "benchmark.sh", ".dockerignore",
                 "MCP", "CredentialBroker", "CredentialBrokerCore", "SecurePrompt", "node_modules",
             ],
-            sources: ["main.swift", "Host/AgentBridge.swift", "Host/QADiagnosticsBridge.swift"],
+            sources: [
+                "main.swift", "Host/AgentBridge.swift", "Host/QADiagnosticsBridge.swift",
+                "Host/SettingsWindow.swift",
+            ],
             linkerSettings: [
                 .linkedFramework("Cocoa", .when(platforms: [.macOS])),
                 .linkedFramework("WebKit", .when(platforms: [.macOS])),

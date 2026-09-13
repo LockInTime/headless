@@ -1783,6 +1783,123 @@ struct ProtocolTests {
         }
     }
 
+    static func settingsControllerUsesSharedBackend() throws {
+        let root = URL(fileURLWithPath: "/tmp/headless-settings-ui-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let ui = SettingsController(
+            store: SettingsStore(platform: .macOS, backend: try FileSettingsBackend(rootURL: root))
+        )
+        let cli = SettingsStore(platform: .macOS, backend: try FileSettingsBackend(rootURL: root))
+        let rows = try ui.snapshots()
+        try expect(
+            rows.map(\.definition.key) == SettingsRegistry.shared.definitions.map(\.key),
+            "the settings window must render registry definitions, not a second key list"
+        )
+        let startup = rows.first { $0.definition.key == "startup-presentation" }
+        try expect(startup?.value == "background", "snapshots should start at the registry default")
+        try expect(startup?.definition.summary.isEmpty == false, "snapshots should carry the registry summary")
+        try expect(startup?.agentsMayModify == true, "startup-presentation is agent-writable")
+        try expect(startup?.platformSummary == "macos", "snapshots should expose platform scope")
+        try expect(
+            startup?.definition.restartBehavior == .nextHostStart,
+            "snapshots should expose restart behavior"
+        )
+        try expect(startup?.selectableValues == ["background", "foreground"], "enum values should come from the registry")
+
+        _ = try ui.set("startup-presentation", rawValue: "foreground")
+        try expect(
+            try cli.effectiveRawValue("startup-presentation") == "foreground",
+            "CLI get should observe Settings window writes"
+        )
+        _ = try cli.set("startup-presentation", rawValue: "background")
+        try expect(
+            try ui.snapshots().first { $0.definition.key == "startup-presentation" }?.value == "background",
+            "Settings window should observe CLI writes through the same backend"
+        )
+        _ = try ui.reset("startup-presentation")
+        try expect(
+            try cli.effectiveRawValue("startup-presentation") == "background",
+            "reset from the window should restore the registry default"
+        )
+        try expectSettingsError(.invalidValue("automatic"), "the window must use store validation") {
+            _ = try ui.set("startup-presentation", rawValue: "automatic")
+        }
+
+        let linux = SettingsController(
+            store: SettingsStore(platform: .linux, backend: TestSettingsBackend())
+        )
+        let unsupported = try linux.snapshots().first { $0.definition.key == "startup-presentation" }
+        try expect(
+            unsupported?.supportedOnCurrentPlatform == false,
+            "Linux snapshots must not pretend startup-presentation is writable"
+        )
+        try expectSettingsError(
+            .unsupportedPlatform("startup-presentation"),
+            "Linux must reject settings-window writes for macOS-only keys"
+        ) {
+            _ = try linux.set("startup-presentation", rawValue: "foreground")
+        }
+
+        let suite = "com.headless.tests.settings.ui.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            throw TestFailure(description: "isolated UserDefaults suite should be available")
+        }
+        defaults.removePersistentDomain(forName: suite)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            _ = defaults.synchronize()
+        }
+        let defaultsBackend = try UserDefaultsSettingsBackend(suiteName: suite)
+        let defaultsUI = SettingsController(
+            store: SettingsStore(platform: .macOS, backend: defaultsBackend)
+        )
+        let defaultsCLI = SettingsStore(
+            platform: .macOS, backend: try UserDefaultsSettingsBackend(suiteName: suite)
+        )
+        _ = try defaultsUI.set("startup-presentation", rawValue: "foreground")
+        try expect(
+            try defaultsCLI.effectiveRawValue("startup-presentation") == "foreground",
+            "UserDefaults-backed window writes should match CLI config set"
+        )
+        _ = try defaultsCLI.reset("startup-presentation")
+        try expect(
+            try defaultsUI.snapshots().first { $0.definition.key == "startup-presentation" }?.configured == false,
+            "UserDefaults-backed reset should match CLI config reset"
+        )
+
+        let definitions = [
+            SettingDefinition(
+                key: "private-policy", valueType: .boolean, defaultValue: "false",
+                platforms: [.macOS, .linux], restartBehavior: .immediate, access: .userOnly,
+                summary: "User-only policy"
+            ),
+            SettingDefinition(
+                key: "shared-flag", valueType: .boolean, defaultValue: "false",
+                platforms: [.macOS, .linux], restartBehavior: .immediate, access: .agentWritable,
+                summary: "Shared flag"
+            ),
+        ]
+        let registry = SettingsRegistry(definitions: definitions)
+        let trusted = SettingsController(
+            store: SettingsStore(registry: registry, platform: .macOS, backend: TestSettingsBackend())
+        )
+        try expect(
+            try trusted.snapshots().map(\.definition.key) == ["private-policy", "shared-flag"],
+            "the native surface should include user-only definitions"
+        )
+        _ = try trusted.set("private-policy", rawValue: "true")
+        try expectSettingsError(
+            .unknownKey("private-policy"),
+            "agent callers must still not see user-only keys"
+        ) {
+            _ = try trusted.store.get("private-policy", caller: .agent)
+        }
+        try expect(
+            try trusted.store.effectiveRawValue("private-policy", caller: .user) == "true",
+            "the native surface should write user-only keys as the user"
+        )
+    }
+
     static func credentialCommandSecurity() throws {
         try expect(
             try CredentialOrigin(rawValue: "HTTPS://EXAMPLE.COM:443/").rawValue == "https://example.com",
@@ -3362,10 +3479,24 @@ struct ProtocolTests {
         let pin = headlessMenuShortcuts.first { $0.title == "Pin on Top" }
         try expect(pin?.key == "p" && pin?.command == true && pin?.option == true && pin?.shift == false,
                    "Pin on Top should be Cmd-Option-P, not Cmd-P")
+        let settings = headlessMenuShortcuts.first { $0.title == "Settings…" }
         try expect(
-            !headlessMenuShortcuts.contains { $0.key == "," },
-            "Cmd-, is reserved for a future Settings window"
+            settings?.key == "," && settings?.command == true && settings?.shift == false
+                && settings?.option == false && settings?.control == false,
+            "Settings should be Command-, with no shift or option"
         )
+        try expect(
+            settings?.selector == "showSettings:" && settings?.target == .appDelegate
+                && settings?.menu == "Headless",
+            "Settings must live in the Headless menu and target the app delegate"
+        )
+        let appMenuTitles = headlessMenuShortcuts.filter { $0.menu == "Headless" }.map(\.title)
+        if let settingsIndex = appMenuTitles.firstIndex(of: "Settings…"),
+           let hideIndex = appMenuTitles.firstIndex(of: "Hide Headless") {
+            try expect(settingsIndex < hideIndex, "Settings should sit above Hide Headless")
+        } else {
+            throw TestFailure(description: "Headless menu is missing Settings… or Hide Headless")
+        }
         let snapshot = headlessMenuShortcuts.first { $0.title == "Save Snapshot to Desktop" }
         try expect(snapshot?.key == "s" && snapshot?.shift == true,
                    "snapshot capture should stay Cmd-Shift-S")
@@ -3408,10 +3539,16 @@ struct ProtocolTests {
         )
         let p0 = try String(contentsOfFile: "docs/P0.md", encoding: .utf8)
         try expect(
-            p0.contains("Cmd-Option-P") && p0.contains("Cmd-Shift-S"),
-            "P0 should document the Pin and snapshot chords"
+            p0.contains("Cmd-Option-P") && p0.contains("Cmd-Shift-S") && p0.contains("Cmd-,"),
+            "P0 should document the Pin, snapshot, and Settings chords"
+        )
+        try expect(
+            !p0.contains("reserved for a future Settings window"),
+            "P0 should document that Cmd-, opens Settings"
         )
         let host = try String(contentsOfFile: "main.swift", encoding: .utf8)
+        let settingsWindow = try String(contentsOfFile: "Host/SettingsWindow.swift", encoding: .utf8)
+        let hostSource = host + "\n" + settingsWindow
         try expect(
             host.contains("&#8997;&#8984; P"),
             "start page should advertise Option-Command-P for pin"
@@ -3423,6 +3560,23 @@ struct ProtocolTests {
         try expect(
             host.contains("NSSelectorFromString(spec.selector)"),
             "menu items must take their actions from the catalog"
+        )
+        try expect(
+            hostSource.contains("func showSettings("),
+            "host must implement the Settings catalog selector"
+        )
+        let linuxHost = try String(contentsOfFile: "LinuxHost/main.swift", encoding: .utf8)
+        try expect(
+            !linuxHost.contains("showSettings") && !linuxHost.contains("SettingsWindow"),
+            "Linux must not ship a Settings GUI"
+        )
+        try expect(
+            agentHelp.contains("macOS Command-,"),
+            "agent help should mention the macOS Settings shortcut"
+        )
+        try expect(
+            !agentHelp.lowercased().contains("linux command-,"),
+            "agent help must not claim a Linux Settings shortcut"
         )
     }
 
@@ -4077,6 +4231,7 @@ struct ProtocolTests {
             ("UserDefaults settings compatibility", userDefaultsSettingsCompatibility),
             ("file settings backend security and persistence", fileSettingsBackendSecurityAndPersistence),
             ("file settings backend concurrent writers", fileSettingsBackendConcurrentWriters),
+            ("settings controller uses shared backend", settingsControllerUsesSharedBackend),
             ("credential command security", credentialCommandSecurity),
             ("credential vault lifecycle", credentialVaultLifecycle),
             ("credential confirmation", credentialVaultRejectsMismatchedConfirmation),
