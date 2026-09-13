@@ -459,6 +459,20 @@ fixture_request_count() {
   print -r -- "$count"
 }
 
+wait_for_auth_state() {
+  local expected_cookie="$1" expected_storage="$2" snapshot=""
+  for _ in {1..100}; do
+    if snapshot="$("$CLI" inspect --text 2>/dev/null)" &&
+       echo "$snapshot" | grep -q "Cookie state: $expected_cookie" &&
+       echo "$snapshot" | grep -q "Storage state: $expected_storage"; then
+      return 0
+    fi
+    sleep 0.05
+  done
+  print -r -u2 -- "Authentication state did not settle: $snapshot"
+  return 1
+}
+
 assert_menu_shortcut() {
   local pid="$1" menu_title="$2" item_title="$3" expected_key="$4" expected_modifiers="$5"
   local actual_key actual_modifiers
@@ -1394,8 +1408,7 @@ STEP="durable-authentication-profile"
 "$CLI" start --background | grep -q '"ready":true'
 STEP="durable-authentication-login"
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=login" | grep -q 'Authentication State'
-"$CLI" inspect --text | grep -q 'Cookie state: signed-in'
-"$CLI" inspect --text | grep -q 'Storage state: signed-in'
+wait_for_auth_state signed-in signed-in
 STEP="durable-authentication-first-stop"
 PROFILE_RESTART_PID="$("$CLI" status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$PROFILE_RESTART_PID"
@@ -1411,12 +1424,10 @@ fi
 STEP="durable-authentication-persisted-state"
 "$CLI" start --background | grep -q '"ready":true'
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" | grep -q 'Authentication State'
-"$CLI" inspect --text | grep -q 'Cookie state: signed-in'
-"$CLI" inspect --text | grep -q 'Storage state: signed-in'
+wait_for_auth_state signed-in signed-in
 STEP="durable-authentication-logout"
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=logout" >/dev/null
-"$CLI" inspect --text | grep -q 'Cookie state: missing'
-"$CLI" inspect --text | grep -q 'Storage state: missing'
+wait_for_auth_state missing missing
 STEP="durable-authentication-second-stop"
 LOGOUT_RESTART_PID="$("$CLI" status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$LOGOUT_RESTART_PID"
@@ -1432,8 +1443,7 @@ fi
 STEP="durable-authentication-persisted-logout"
 "$CLI" start --background >/dev/null
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" >/dev/null
-"$CLI" inspect --text | grep -q 'Cookie state: missing'
-"$CLI" inspect --text | grep -q 'Storage state: missing'
+wait_for_auth_state missing missing
 STEP="durable-authentication-profile-clear"
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=login" >/dev/null
 "$CLI" profile clear | grep -q '"cleared":true'
