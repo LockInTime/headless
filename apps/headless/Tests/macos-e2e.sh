@@ -197,6 +197,125 @@ end run
 APPLESCRIPT
 }
 
+ax_named_window_count() {
+  local pid="$1" window_title="$2"
+  osascript_with_timeout - "$pid" "$window_title" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  set windowTitle to item 2 of argv
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      return count of (every window whose name is windowTitle)
+    end tell
+  end tell
+end run
+APPLESCRIPT
+}
+
+ax_settings_value() {
+  local pid="$1"
+  osascript_with_timeout - "$pid" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      tell window "Settings"
+        if (count of scroll areas) is not 1 then error "Settings scroll area was not found"
+        tell first scroll area
+          if (count of pop up buttons) is not 1 then error "Settings value control was not found"
+          return value of first pop up button as text
+        end tell
+      end tell
+    end tell
+  end tell
+end run
+APPLESCRIPT
+}
+
+ax_select_settings_value() {
+  local pid="$1" selected_value="$2"
+  osascript_with_timeout - "$pid" "$selected_value" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  set selectedValue to item 2 of argv
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      tell window "Settings"
+        tell first pop up button of first scroll area
+          perform action "AXPress"
+          delay 0.1
+          perform action "AXPress" of menu item selectedValue of menu 1
+        end tell
+      end tell
+    end tell
+  end tell
+end run
+APPLESCRIPT
+}
+
+ax_reset_settings() {
+  local pid="$1"
+  osascript_with_timeout - "$pid" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      perform action "AXPress" of button "Reset to Default" of first scroll area of window "Settings"
+    end tell
+  end tell
+end run
+APPLESCRIPT
+}
+
+ax_settings_layout() {
+  local pid="$1"
+  osascript_with_timeout - "$pid" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      tell window "Settings"
+        set size to {400, 240}
+        set scrollCount to count of scroll areas
+        if scrollCount is not 1 then return "0" & tab & "0" & tab & (scrollCount as text)
+        tell first scroll area
+          set popupCount to count of pop up buttons
+          set resetCount to count of buttons
+        end tell
+        return (popupCount as text) & tab & (resetCount as text) & tab & (scrollCount as text)
+      end tell
+    end tell
+  end tell
+end run
+APPLESCRIPT
+}
+
+ax_settings_reset_enabled() {
+  local pid="$1"
+  osascript_with_timeout - "$pid" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      return enabled of button "Reset to Default" of first scroll area of window "Settings"
+    end tell
+  end tell
+end run
+APPLESCRIPT
+}
+
 ax_focused_element() {
   local pid="$1"
   osascript_with_timeout - "$pid" <<'APPLESCRIPT'
@@ -340,6 +459,20 @@ fixture_request_count() {
   print -r -- "$count"
 }
 
+wait_for_auth_state() {
+  local expected_cookie="$1" expected_storage="$2" snapshot=""
+  for _ in {1..100}; do
+    if snapshot="$("$CLI" inspect --text 2>/dev/null)" &&
+       echo "$snapshot" | grep -q "Cookie state: $expected_cookie" &&
+       echo "$snapshot" | grep -q "Storage state: $expected_storage"; then
+      return 0
+    fi
+    sleep 0.05
+  done
+  print -r -u2 -- "Authentication state did not settle: $snapshot"
+  return 1
+}
+
 assert_menu_shortcut() {
   local pid="$1" menu_title="$2" item_title="$3" expected_key="$4" expected_modifiers="$5"
   local actual_key actual_modifiers
@@ -462,6 +595,17 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+STEP="settings-window-source"
+grep -q 'func showSettings' main.swift
+grep -q 'orderFrontShared' Host/SettingsWindow.swift
+grep -q 'title: "Settings…"' Sources/HeadlessProtocol/MenuShortcuts.swift
+grep -q 'selector: "showSettings:"' Sources/HeadlessProtocol/MenuShortcuts.swift
+grep -q 'key: ","' Sources/HeadlessProtocol/MenuShortcuts.swift
+if grep -q 'showSettings' LinuxHost/main.swift || grep -q 'SettingsWindow' LinuxHost/main.swift; then
+  echo "Linux host must not ship a Settings GUI" >&2
+  exit 1
+fi
+
 STEP="fixture-server"
 for _ in {1..100}; do
   curl -fsS "http://127.0.0.1:$PORT/designers/dashboard" >/dev/null 2>&1 && break
@@ -573,6 +717,7 @@ SUPERVISED_FIFO=""
 SUPERVISED_OUTPUT=""
 
 STEP="start-host"
+SETTINGS_PREVIOUS_FRONTMOST_PID="$(frontmost_pid)"
 START_RESULT="$("$CLI" start)" || {
   print -r -u2 -- "headless start failed:"
   print -r -u2 -- "$START_RESULT"
@@ -583,6 +728,124 @@ echo "$START_RESULT" | grep -q '"ready":true' || {
   fail
 }
 echo "▸ host ready"
+HOST_PID="$(echo "$START_RESULT" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+test -n "$HOST_PID"
+if [[ "$(frontmost_pid)" == "$HOST_PID" ]]; then
+  echo "default agent startup stole focus" >&2
+  fail
+fi
+
+STEP="settings-window-workflow"
+ax_press_menu_item "$HOST_PID" Headless "Settings…"
+for _ in {1..100}; do
+  [[ "$(ax_named_window_count "$HOST_PID" Settings 2>/dev/null)" == 1 ]] && break
+  sleep 0.05
+done
+if [[ "$(ax_named_window_count "$HOST_PID" Settings)" != 1 ]]; then
+  echo "Settings menu did not open exactly one Settings window" >&2
+  fail
+fi
+if [[ "$(ax_front_window_attribute "$HOST_PID" AXTitle)" != Settings ]]; then
+  echo "Settings window did not become the front window" >&2
+  fail
+fi
+if [[ "$(ax_settings_value "$HOST_PID")" != background ]]; then
+  echo "Settings window did not load the configured background value" >&2
+  fail
+fi
+if [[ "$(ax_focused_element "$HOST_PID")" != AXPopUpButton$'\t'background ]]; then
+  echo "Settings window did not focus its first editor for keyboard navigation" >&2
+  fail
+fi
+SETTINGS_LAYOUT="$(ax_settings_layout "$HOST_PID")"
+if [[ "$SETTINGS_LAYOUT" != $'1\t1\t1' ]]; then
+  echo "Settings controls were not reachable in the minimum-size scrolling layout: $SETTINGS_LAYOUT" >&2
+  fail
+fi
+ax_press_menu_item "$HOST_PID" Headless "Settings…"
+if [[ "$(ax_named_window_count "$HOST_PID" Settings)" != 1 ]]; then
+  echo "reopening Settings created a duplicate window" >&2
+  fail
+fi
+ax_select_settings_value "$HOST_PID" foreground
+for _ in {1..100}; do
+  UI_PRESENTATION="$("$CLI" config get startup-presentation)"
+  echo "$UI_PRESENTATION" | grep -q '"configured":"foreground"' && break
+  sleep 0.05
+done
+echo "$UI_PRESENTATION" | grep -q '"configured":"foreground"'
+test "$(defaults read "$DEFAULTS_DOMAIN" "$PRESENTATION_KEY")" = "foreground"
+ax_keystroke "$HOST_PID" w command
+for _ in {1..100}; do
+  [[ "$(ax_named_window_count "$HOST_PID" Settings 2>/dev/null)" == 0 ]] && break
+  sleep 0.05
+done
+if [[ "$(ax_named_window_count "$HOST_PID" Settings)" != 0 ]]; then
+  echo "Settings window did not close" >&2
+  fail
+fi
+
+"$CLI" stop >/dev/null
+for _ in {1..100}; do
+  ! kill -0 "$HOST_PID" >/dev/null 2>&1 && break
+  sleep 0.05
+done
+if kill -0 "$HOST_PID" >/dev/null 2>&1; then
+  echo "host did not stop for Settings persistence check" >&2
+  fail
+fi
+activate_pid "$SETTINGS_PREVIOUS_FRONTMOST_PID"
+START_RESULT="$("$CLI" start)"
+HOST_PID="$(echo "$START_RESULT" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+test -n "$HOST_PID"
+for _ in {1..100}; do
+  [[ "$(frontmost_pid)" == "$HOST_PID" ]] && break
+  sleep 0.05
+done
+if [[ "$(frontmost_pid)" != "$HOST_PID" ]]; then
+  echo "foreground Settings value did not take effect on the next host start" >&2
+  fail
+fi
+ax_press_menu_item "$HOST_PID" Headless "Settings…"
+if [[ "$(ax_settings_value "$HOST_PID")" != foreground ]]; then
+  echo "Settings value did not persist across host restart" >&2
+  fail
+fi
+ax_reset_settings "$HOST_PID"
+for _ in {1..100}; do
+  UI_PRESENTATION="$("$CLI" config get startup-presentation)"
+  echo "$UI_PRESENTATION" | grep -q '"configured":null' && break
+  sleep 0.05
+done
+echo "$UI_PRESENTATION" | grep -q '"configured":null'
+echo "$UI_PRESENTATION" | grep -q '"startupPresentation":"background"'
+if [[ "$(ax_settings_value "$HOST_PID")" != background ]]; then
+  echo "Settings reset did not restore the default value" >&2
+  fail
+fi
+if [[ "$(ax_settings_reset_enabled "$HOST_PID")" != false ]]; then
+  echo "Settings reset remained enabled after restoring the default" >&2
+  fail
+fi
+ax_keystroke "$HOST_PID" w command
+
+"$CLI" stop >/dev/null
+for _ in {1..100}; do
+  ! kill -0 "$HOST_PID" >/dev/null 2>&1 && break
+  sleep 0.05
+done
+if kill -0 "$HOST_PID" >/dev/null 2>&1; then
+  echo "foreground host did not stop after Settings reset" >&2
+  fail
+fi
+activate_pid "$SETTINGS_PREVIOUS_FRONTMOST_PID"
+START_RESULT="$("$CLI" start)"
+HOST_PID="$(echo "$START_RESULT" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
+test -n "$HOST_PID"
+if [[ "$(frontmost_pid)" == "$HOST_PID" ]]; then
+  echo "reset startup presentation did not restore background launch" >&2
+  fail
+fi
 
 if AUTH_REQUIRED="$("$CLI" visit "http://127.0.0.1:$PORT/auth-login" 2>&1)"; then
   print -r -u2 -- "confirmed login form did not require authentication"
@@ -598,8 +861,6 @@ echo "$AUTH_REQUIRED" | grep -q '"credentialUseAvailable":true'
 "$CLI" click @e3 | grep -q '"clicked"'
 "$CLI" wait --text 'Signed in' | grep -q 'Signed in'
 STEP="tcp-check"
-HOST_PID="$(echo "$START_RESULT" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
-test -n "$HOST_PID"
 if [[ "$(frontmost_pid)" == "$HOST_PID" ]]; then
   echo "default agent startup stole focus" >&2
   fail
@@ -621,6 +882,7 @@ STEP="menu-shortcut-inventory"
 while IFS=$'\t' read -r menu_title item_title expected_key expected_modifiers; do
   assert_menu_shortcut "$HOST_PID" "$menu_title" "$item_title" "$expected_key" "$expected_modifiers"
 done <<'SHORTCUTS'
+Headless	Settings…	,	0
 Headless	Hide Headless	h	0
 Headless	Hide Others	h	2
 Headless	Quit Headless	q	0
@@ -647,9 +909,13 @@ Window	Pin on Top	p	2
 Help	Headless Help	/	1
 SHORTCUTS
 assert_system_full_screen_shortcut "$HOST_PID"
-for settings_title in "Settings" "Settings…" "Preferences" "Preferences…"; do
+if [[ "$(ax_menu_exists "$HOST_PID" Headless "Settings…")" != true ]]; then
+  echo "Headless > Settings… was not exposed through Accessibility" >&2
+  fail
+fi
+for settings_title in "Settings" "Preferences" "Preferences…"; do
   if [[ "$(ax_menu_exists "$HOST_PID" Headless "$settings_title")" == true ]]; then
-    echo "$settings_title is shipped but has no Cmd-, coverage" >&2
+    echo "$settings_title should not duplicate Settings…" >&2
     fail
   fi
 done
@@ -1142,8 +1408,7 @@ STEP="durable-authentication-profile"
 "$CLI" start --background | grep -q '"ready":true'
 STEP="durable-authentication-login"
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=login" | grep -q 'Authentication State'
-"$CLI" inspect --text | grep -q 'Cookie state: signed-in'
-"$CLI" inspect --text | grep -q 'Storage state: signed-in'
+wait_for_auth_state signed-in signed-in
 STEP="durable-authentication-first-stop"
 PROFILE_RESTART_PID="$("$CLI" status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$PROFILE_RESTART_PID"
@@ -1159,12 +1424,10 @@ fi
 STEP="durable-authentication-persisted-state"
 "$CLI" start --background | grep -q '"ready":true'
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" | grep -q 'Authentication State'
-"$CLI" inspect --text | grep -q 'Cookie state: signed-in'
-"$CLI" inspect --text | grep -q 'Storage state: signed-in'
+wait_for_auth_state signed-in signed-in
 STEP="durable-authentication-logout"
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=logout" >/dev/null
-"$CLI" inspect --text | grep -q 'Cookie state: missing'
-"$CLI" inspect --text | grep -q 'Storage state: missing'
+wait_for_auth_state missing missing
 STEP="durable-authentication-second-stop"
 LOGOUT_RESTART_PID="$("$CLI" status | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$LOGOUT_RESTART_PID"
@@ -1180,8 +1443,7 @@ fi
 STEP="durable-authentication-persisted-logout"
 "$CLI" start --background >/dev/null
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=check" >/dev/null
-"$CLI" inspect --text | grep -q 'Cookie state: missing'
-"$CLI" inspect --text | grep -q 'Storage state: missing'
+wait_for_auth_state missing missing
 STEP="durable-authentication-profile-clear"
 "$CLI" visit "http://127.0.0.1:$PORT/auth-state?action=login" >/dev/null
 "$CLI" profile clear | grep -q '"cleared":true'

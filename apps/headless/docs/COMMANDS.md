@@ -76,8 +76,15 @@ effect timing, and one access class:
 - `agent-readable` is visible to agent callers but cannot be changed by them.
 - `agent-writable` is visible and mutable by agent callers.
 - `user-only` is omitted from `list` and rejected as unknown by `describe`,
-  `get`, `set`, and `reset` through the agent CLI. A future trusted native or
-  OS-authenticated surface is required to access it.
+  `get`, `set`, and `reset` through the agent CLI. The macOS Settings window
+  (Command-,) operates as the user against the same registry. Linux has no
+  Settings GUI.
+
+On macOS, Command-, opens or focuses one Settings window built from the
+registry. It shows each setting's current value, default, platform, restart
+behavior, and whether agents may modify it, and it writes through the same
+backend as `headless config set`. `headless config` remains the portable path
+on every platform.
 
 On macOS, the registry uses the `com.headless.app` preferences domain and keeps
 the existing `AgentStartupPresentation` storage key, avoiding migration or

@@ -100,7 +100,9 @@ startup-presentation foreground` or restore background startup with `headless
 config set startup-presentation background`; inspect it with `headless config
 get startup-presentation`. Use `config list` to discover settings, `config
 describe KEY` for type and policy metadata, and `config reset KEY` to restore a
-built-in default. `headless start --foreground` and `headless start
+built-in default. On macOS, Command-, opens Settings for the same registry;
+`headless config` remains the portable path, and Linux has no Settings GUI.
+`headless start --foreground` and `headless start
 --background` are one-launch overrides. Settings and overrides apply only when
 launching a new host and do not reorder an already-running host.
 

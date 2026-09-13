@@ -1073,6 +1073,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func newWindow(_ sender: Any?) { openWindow(url: nil) }
 
+    @objc func showSettings(_ sender: Any?) {
+        SettingsWindowController.orderFrontShared(sender)
+    }
+
     // Agent hosts must stay alive when the last session window closes; the CLI
     // owns process lifetime via `headless stop` / shutdown.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { !isAgentHost }
@@ -1128,6 +1132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         for spec in headlessMenuShortcuts where spec.menu == "Headless" && spec.title != "Quit Headless" {
+            if spec.separatorBefore { appMenu.addItem(.separator()) }
             appMenu.addItem(menuItem(from: spec))
         }
         appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")

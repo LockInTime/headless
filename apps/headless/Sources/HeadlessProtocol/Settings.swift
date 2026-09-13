@@ -285,6 +285,27 @@ public final class SettingsStore: @unchecked Sendable {
         return mutationDocument(definition, value: definition.defaultValue, configured: false)
     }
 
+    public func snapshots(caller: SettingsCaller = .agent) throws -> [SettingSnapshot] {
+        try registry.definitions.compactMap { definition in
+            guard canRead(definition, caller: caller) else { return nil }
+            return try snapshot(of: definition)
+        }
+    }
+
+    public func snapshot(_ key: String, caller: SettingsCaller = .agent) throws -> SettingSnapshot {
+        try snapshot(of: try visibleDefinition(key, caller: caller))
+    }
+
+    private func snapshot(of definition: SettingDefinition) throws -> SettingSnapshot {
+        let configured = try configuredRawValue(definition)
+        return SettingSnapshot(
+            definition: definition,
+            value: configured ?? definition.defaultValue,
+            configured: configured != nil,
+            supportedOnCurrentPlatform: definition.platforms.contains(platform)
+        )
+    }
+
     private func accessibleDefinition(
         _ key: String, caller: SettingsCaller, write: Bool
     ) throws -> SettingDefinition {
@@ -364,19 +385,91 @@ public final class SettingsStore: @unchecked Sendable {
     }
 }
 
+public struct SettingSnapshot: Equatable, Sendable {
+    public let definition: SettingDefinition
+    public let value: String
+    public let configured: Bool
+    public let supportedOnCurrentPlatform: Bool
+
+    public var agentsMayModify: Bool { definition.access == .agentWritable }
+
+    /// User-only strings are rendered conservatively because the settings
+    /// registry has no secret-bearing value type. Credential values remain
+    /// outside this store, but an accidentally added user-only string must not
+    /// become plain, Accessibility-readable text.
+    public var usesSecureTextEntry: Bool {
+        guard definition.access == .userOnly else { return false }
+        if case .string = definition.valueType { return true }
+        return false
+    }
+
+    public var displayedDefaultValue: String {
+        usesSecureTextEntry ? "Hidden" : definition.defaultValue
+    }
+
+    public var selectableValues: [String]? {
+        switch definition.valueType {
+        case .boolean:
+            return ["false", "true"]
+        case .enumeration(let values):
+            return values
+        case .integer, .string:
+            return nil
+        }
+    }
+
+    public var platformSummary: String {
+        definition.platforms.sorted { $0.rawValue < $1.rawValue }.map(\.rawValue).joined(separator: ", ")
+    }
+}
+
+/// Trusted native surface over `SettingsStore`. Always acts as the user so
+/// CLI `config` and the macOS Settings window share validation and storage.
+public final class SettingsController: @unchecked Sendable {
+    public let store: SettingsStore
+
+    public init(store: SettingsStore) {
+        self.store = store
+    }
+
+    public func snapshots() throws -> [SettingSnapshot] {
+        try store.snapshots(caller: .user)
+    }
+
+    @discardableResult
+    public func set(_ key: String, rawValue: String) throws -> SettingSnapshot {
+        _ = try store.set(key, rawValue: rawValue, caller: .user)
+        return try store.snapshot(key, caller: .user)
+    }
+
+    @discardableResult
+    public func reset(_ key: String) throws -> SettingSnapshot {
+        _ = try store.reset(key, caller: .user)
+        return try store.snapshot(key, caller: .user)
+    }
+}
+
 public final class UserDefaultsSettingsBackend: @unchecked Sendable, SettingsBackend {
     private static let domain = "com.headless.app"
     private static let canonicalPrefix = "HeadlessSetting."
     private let defaults: UserDefaults
 
     public convenience init() throws {
-        try self.init(suiteName: Self.domain)
+        if Bundle.main.bundleIdentifier == Self.domain {
+            self.init(defaults: .standard)
+        } else {
+            try self.init(suiteName: Self.domain)
+        }
     }
 
-    public init(suiteName: String) throws {
+    public convenience init(suiteName: String) throws {
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             throw SettingsError.operationFailed("preferences access")
         }
+        self.init(defaults: defaults)
+    }
+
+    public init(defaults: UserDefaults) {
         self.defaults = defaults
     }
 
