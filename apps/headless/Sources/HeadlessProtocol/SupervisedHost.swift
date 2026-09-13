@@ -6,6 +6,14 @@ import Darwin
 import Glibc
 #endif
 
+/// Owner-pipe reads that mean the SDK/CLI is gone. EOF and unexpected data
+/// close the host. `EINTR` / `EAGAIN` / `EWOULDBLOCK` must not, or a
+/// spurious DispatchSource wakeup kills a live supervised session.
+public func supervisedOwnerChannelClosed(readCount: Int, errnoValue: Int32) -> Bool {
+    if readCount >= 0 { return true }
+    return errnoValue != EINTR && errnoValue != EAGAIN && errnoValue != EWOULDBLOCK
+}
+
 public final class SupervisedHostOwnerMonitor: @unchecked Sendable {
     private let source: DispatchSourceRead
     private let lock = NSLock()
@@ -28,7 +36,7 @@ public final class SupervisedHostOwnerMonitor: @unchecked Sendable {
             let count = withUnsafeMutableBytes(of: &byte) { buffer in
                 read(STDIN_FILENO, buffer.baseAddress, 1)
             }
-            if count >= 0 || errno != EINTR {
+            if supervisedOwnerChannelClosed(readCount: count, errnoValue: errno) {
                 self.stop()
                 onOwnerExit()
             }

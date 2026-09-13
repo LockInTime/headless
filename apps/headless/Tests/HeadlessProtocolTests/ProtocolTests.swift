@@ -2766,6 +2766,33 @@ struct ProtocolTests {
         )
     }
 
+    static func supervisedOwnerChannelIgnoresRetryableReads() throws {
+        try expect(
+            supervisedOwnerChannelClosed(readCount: 0, errnoValue: 0),
+            "EOF on the owner pipe must stop the host"
+        )
+        try expect(
+            supervisedOwnerChannelClosed(readCount: 1, errnoValue: 0),
+            "unexpected owner-pipe data must stop the host"
+        )
+        try expect(
+            !supervisedOwnerChannelClosed(readCount: -1, errnoValue: EINTR),
+            "EINTR must not be treated as owner exit"
+        )
+        try expect(
+            !supervisedOwnerChannelClosed(readCount: -1, errnoValue: EAGAIN),
+            "EAGAIN must not be treated as owner exit"
+        )
+        try expect(
+            !supervisedOwnerChannelClosed(readCount: -1, errnoValue: EWOULDBLOCK),
+            "EWOULDBLOCK must not be treated as owner exit"
+        )
+        try expect(
+            supervisedOwnerChannelClosed(readCount: -1, errnoValue: EBADF),
+            "a broken owner descriptor must stop the host"
+        )
+    }
+
     static func oversizedSocketRequestIsRejected() throws {
         try LocalRuntime.preparePrivateDirectory()
         let socketPath = LocalRuntime.directoryURL
@@ -4115,6 +4142,7 @@ struct ProtocolTests {
             ("host authentication orchestration", hostAuthenticationOrchestration),
             ("docs command reference matches help", docsCommandReferenceMatchesHelp),
             ("menu shortcuts have unique chords", menuShortcutsHaveUniqueChords),
+            ("supervised owner channel ignores retryable reads", supervisedOwnerChannelIgnoresRetryableReads),
             ("artifact file upload boundaries", artifactUploadCommands),
         ]
 

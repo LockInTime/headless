@@ -142,7 +142,7 @@ private struct HostLauncher {
                 let count = withUnsafeMutableBytes(of: &byte) { buffer in
                     read(STDIN_FILENO, buffer.baseAddress, 1)
                 }
-                if count >= 0 || errno != EINTR { break }
+                if supervisedOwnerChannelClosed(readCount: count, errnoValue: errno) { break }
             } else if status < 0, errno != EINTR {
                 break
             }
