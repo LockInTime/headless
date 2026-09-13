@@ -393,6 +393,20 @@ public struct SettingSnapshot: Equatable, Sendable {
 
     public var agentsMayModify: Bool { definition.access == .agentWritable }
 
+    /// User-only strings are rendered conservatively because the settings
+    /// registry has no secret-bearing value type. Credential values remain
+    /// outside this store, but an accidentally added user-only string must not
+    /// become plain, Accessibility-readable text.
+    public var usesSecureTextEntry: Bool {
+        guard definition.access == .userOnly else { return false }
+        if case .string = definition.valueType { return true }
+        return false
+    }
+
+    public var displayedDefaultValue: String {
+        usesSecureTextEntry ? "Hidden" : definition.defaultValue
+    }
+
     public var selectableValues: [String]? {
         switch definition.valueType {
         case .boolean:
@@ -441,13 +455,21 @@ public final class UserDefaultsSettingsBackend: @unchecked Sendable, SettingsBac
     private let defaults: UserDefaults
 
     public convenience init() throws {
-        try self.init(suiteName: Self.domain)
+        if Bundle.main.bundleIdentifier == Self.domain {
+            self.init(defaults: .standard)
+        } else {
+            try self.init(suiteName: Self.domain)
+        }
     }
 
-    public init(suiteName: String) throws {
+    public convenience init(suiteName: String) throws {
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             throw SettingsError.operationFailed("preferences access")
         }
+        self.init(defaults: defaults)
+    }
+
+    public init(defaults: UserDefaults) {
         self.defaults = defaults
     }
 

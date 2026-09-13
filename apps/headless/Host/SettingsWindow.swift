@@ -1,13 +1,18 @@
 import AppKit
 import HeadlessProtocol
 
+private final class FlippedSettingsDocumentView: NSView {
+    override var isFlipped: Bool { true }
+}
+
 final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTextFieldDelegate {
     private static var sharedController: SettingsWindowController?
 
     static func orderFrontShared(_ sender: Any?) {
         if sharedController == nil {
             do {
-                sharedController = try SettingsWindowController()
+                let store = try SettingsStore.production()
+                sharedController = try SettingsWindowController(store: store)
             } catch {
                 presentOpenFailure(error)
                 return
@@ -29,11 +34,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
 
     private let settings: SettingsController
     private let stack = NSStackView()
+    private let scrollView = NSScrollView()
+    private let documentView = FlippedSettingsDocumentView()
     private var isReloading = false
     private var firstEditor: NSView?
 
-    private init() throws {
-        settings = SettingsController(store: try SettingsStore.production())
+    private init(store: SettingsStore) throws {
+        settings = SettingsController(store: store)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 320),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -64,17 +71,33 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
 
     private func buildContent() {
         guard let content = window?.contentView else { return }
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        documentView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.documentView = documentView
+        content.addSubview(scrollView)
+
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 18
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 22, bottom: 20, right: 22)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(stack)
+        documentView.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: content.topAnchor),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: content.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            documentView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
+            documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            stack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: documentView.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor),
         ])
     }
 
@@ -92,10 +115,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
             return
         }
         for snapshot in snapshots {
-            stack.addArrangedSubview(makeSection(snapshot))
+            let section = makeSection(snapshot)
+            stack.addArrangedSubview(section)
+            section.widthAnchor.constraint(equalTo: documentView.widthAnchor, constant: -44).isActive = true
         }
         window?.initialFirstResponder = firstEditor
         window?.recalculateKeyViewLoop()
+        if window?.isKeyWindow == true, let firstEditor {
+            window?.makeFirstResponder(firstEditor)
+        }
     }
 
     private func makeSection(_ snapshot: SettingSnapshot) -> NSView {
@@ -135,18 +163,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
         valueRow.spacing = 8
         section.addArrangedSubview(valueRow)
 
-        section.addArrangedSubview(metaLabel("Default", snapshot.definition.defaultValue))
+        section.addArrangedSubview(metaLabel("Default", snapshot.displayedDefaultValue))
         section.addArrangedSubview(metaLabel("Platform", snapshot.platformSummary))
         section.addArrangedSubview(metaLabel("Takes effect", snapshot.definition.restartBehavior.rawValue))
         section.addArrangedSubview(
             metaLabel("Agents may modify", snapshot.agentsMayModify ? "yes" : "no")
         )
-
-        if let window, let content = window.contentView {
-            section.widthAnchor.constraint(
-                equalTo: content.widthAnchor, constant: -44
-            ).isActive = true
-        }
         return section
     }
 
@@ -166,7 +188,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
             return popup
         }
 
-        let field = NSTextField(string: snapshot.value)
+        let field: NSTextField
+        if snapshot.usesSecureTextEntry {
+            let secureField = NSSecureTextField(string: snapshot.value)
+            secureField.setAccessibilityValue("Hidden")
+            secureField.placeholderString = "Hidden"
+            field = secureField
+        } else {
+            field = NSTextField(string: snapshot.value)
+            field.placeholderString = snapshot.definition.defaultValue
+        }
         field.identifier = NSUserInterfaceItemIdentifier(key)
         field.delegate = self
         field.target = self
@@ -175,7 +206,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
         field.setAccessibilityHelp(snapshot.definition.summary)
         field.isEditable = snapshot.supportedOnCurrentPlatform
         field.isSelectable = true
-        field.placeholderString = snapshot.definition.defaultValue
         field.translatesAutoresizingMaskIntoConstraints = false
         field.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
         return field
@@ -218,10 +248,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
         let key = String(raw.dropFirst("reset.".count))
         do {
             _ = try settings.reset(key)
-            try reload()
+            reloadAfterCurrentEvent()
         } catch {
             present(error)
-            try? reload()
+            reloadAfterCurrentEvent()
         }
     }
 
@@ -230,10 +260,20 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
             let current = try settings.store.snapshot(key, caller: .user)
             guard current.value != rawValue || !current.configured else { return }
             _ = try settings.set(key, rawValue: rawValue)
-            try reload()
+            reloadAfterCurrentEvent()
         } catch {
             present(error)
-            try? reload()
+            reloadAfterCurrentEvent()
+        }
+    }
+
+    private func reloadAfterCurrentEvent() {
+        DispatchQueue.main.async { [weak self] in
+            do {
+                try self?.reload()
+            } catch {
+                self?.present(error)
+            }
         }
     }
 

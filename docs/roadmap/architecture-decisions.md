@@ -722,7 +722,10 @@ MCP surface. Agent callers cannot discover user-only keys, cannot mutate
 agent-readable keys, and can mutate only agent-writable keys. The macOS
 Settings window (Command-,) is the trusted native surface: it is built from the
 same registry and writes through the same backends as `headless config`. Linux
-has no Settings GUI. Ordinary CLI or PTY presence is not proof of a human.
+has no Settings GUI. User-only string preferences render as secure text and
+redact their defaults from Accessibility; credential values and approvals
+remain outside the settings store. Ordinary CLI or PTY presence is not proof
+of a human.
 
 macOS stores preferences in the existing `com.headless.app` UserDefaults
 domain. The initial `startup-presentation` definition deliberately retains its

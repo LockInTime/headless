@@ -1805,6 +1805,8 @@ struct ProtocolTests {
             "snapshots should expose restart behavior"
         )
         try expect(startup?.selectableValues == ["background", "foreground"], "enum values should come from the registry")
+        try expect(startup?.usesSecureTextEntry == false, "agent-writable enums should use ordinary controls")
+        try expect(startup?.displayedDefaultValue == "background", "ordinary defaults should remain visible")
 
         _ = try ui.set("startup-presentation", rawValue: "foreground")
         try expect(
@@ -1878,15 +1880,30 @@ struct ProtocolTests {
                 platforms: [.macOS, .linux], restartBehavior: .immediate, access: .agentWritable,
                 summary: "Shared flag"
             ),
+            SettingDefinition(
+                key: "user-secret", valueType: .string(maximumLength: 64), defaultValue: "unset",
+                platforms: [.macOS], restartBehavior: .immediate, access: .userOnly,
+                summary: "User-only secret"
+            ),
         ]
         let registry = SettingsRegistry(definitions: definitions)
         let trusted = SettingsController(
             store: SettingsStore(registry: registry, platform: .macOS, backend: TestSettingsBackend())
         )
         try expect(
-            try trusted.snapshots().map(\.definition.key) == ["private-policy", "shared-flag"],
+            try trusted.snapshots().map(\.definition.key) == ["private-policy", "shared-flag", "user-secret"],
             "the native surface should include user-only definitions"
         )
+        let secret = try trusted.store.snapshot("user-secret", caller: .user)
+        try expect(secret.usesSecureTextEntry, "user-only strings must fail closed to secure text entry")
+        try expect(secret.displayedDefaultValue == "Hidden", "secure defaults must not be displayed")
+        _ = try trusted.set("user-secret", rawValue: "test-secret")
+        try expectSettingsError(
+            .unknownKey("user-secret"),
+            "agent callers must not see user-only string values"
+        ) {
+            _ = try trusted.store.get("user-secret", caller: .agent)
+        }
         _ = try trusted.set("private-policy", rawValue: "true")
         try expectSettingsError(
             .unknownKey("private-policy"),
@@ -3591,6 +3608,10 @@ struct ProtocolTests {
         try expect(
             hostSource.contains("func showSettings("),
             "host must implement the Settings catalog selector"
+        )
+        try expect(
+            hostSource.contains("NSSecureTextField") && hostSource.contains("NSScrollView"),
+            "Settings must protect user-only strings and keep long content reachable"
         )
         let linuxHost = try String(contentsOfFile: "LinuxHost/main.swift", encoding: .utf8)
         try expect(
