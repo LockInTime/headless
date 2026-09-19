@@ -321,12 +321,16 @@ extension BrowserWindowController {
     func agentQAReport() -> JSONValue { qaBridge.store.report() }
     func agentQAClear() -> JSONValue { qaBridge.clear() }
 
-    func agentConsole(level: String, limit: Int) -> JSONValue {
-        qaBridge.store.console(level: level, limit: limit)
+    func agentConsole(level: String, limit: Int, cursor: String?) throws -> JSONValue {
+        try qaBridge.store.console(level: level, limit: limit, cursor: cursor)
     }
 
-    func agentNetwork(failedOnly: Bool, status: Int?, limit: Int) -> JSONValue {
-        qaBridge.store.network(failedOnly: failedOnly, status: status, limit: limit)
+    func agentNetwork(
+        failedOnly: Bool, status: Int?, limit: Int, cursor: String?
+    ) throws -> JSONValue {
+        try qaBridge.store.network(
+            failedOnly: failedOnly, status: status, limit: limit, cursor: cursor
+        )
     }
 
     func agentNetworkDetail(requestID: String) -> JSONValue {
@@ -519,6 +523,16 @@ final class WebKitBrowserEngine: BrowserEngine {
 extension BrowserWindowController: BrowserEngineSession {
     var hostIsolated: Bool { isIsolatedSession }
 
+    func hostSessionMetadata() throws -> BrowserSessionPageMetadata {
+        onMain {
+            BrowserSessionPageMetadata(
+                url: self.webView.url?.absoluteString,
+                title: self.webView.title,
+                lifecycle: self.webView.isLoading ? .navigating : .available
+            )
+        }
+    }
+
     func hostEnableAgentControl() { onMain { self.enableAgentControl() } }
     func hostVisit(_ url: URL) throws -> JSONValue { try agentVisit(url) }
     func hostInspect(parameters: [String: JSONValue]) throws -> JSONValue {
@@ -572,11 +586,11 @@ extension BrowserWindowController: BrowserEngineSession {
     }
     func hostQAReport() throws -> JSONValue { agentQAReport() }
     func hostQAClear() throws -> JSONValue { agentQAClear() }
-    func hostConsole(level: String, limit: Int) throws -> JSONValue {
-        agentConsole(level: level, limit: limit)
+    func hostConsole(level: String, limit: Int, cursor: String?) throws -> JSONValue {
+        try agentConsole(level: level, limit: limit, cursor: cursor)
     }
-    func hostNetwork(failedOnly: Bool, status: Int?, limit: Int) throws -> JSONValue {
-        agentNetwork(failedOnly: failedOnly, status: status, limit: limit)
+    func hostNetwork(failedOnly: Bool, status: Int?, limit: Int, cursor: String?) throws -> JSONValue {
+        try agentNetwork(failedOnly: failedOnly, status: status, limit: limit, cursor: cursor)
     }
     func hostNetworkDetail(requestID: String) throws -> JSONValue {
         agentNetworkDetail(requestID: requestID)

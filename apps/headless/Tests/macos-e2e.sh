@@ -655,7 +655,7 @@ cleanup() {
   fi
   rm -rf "$HEADLESS_ARTIFACT_DIR"
   rm -rf "$MENU_SNAPSHOT_DIR"
-  rm -f "$HEADLESS_SOCKET" "$LOG" "$HOST_LOG" "$RESTORE_LOG"
+  rm -f "$HEADLESS_SOCKET" "$LOG" "$HOST_LOG" "$HOST_LOG.1" "$HOST_LOG.lock" "$RESTORE_LOG"
   [[ -z "$SUPERVISED_FIFO" ]] || rm -f "$SUPERVISED_FIFO"
   [[ -z "$SUPERVISED_OUTPUT" ]] || rm -f "$SUPERVISED_OUTPUT"
   if [[ "$CLIPBOARD_SAVED" == 0 ]]; then
@@ -799,6 +799,11 @@ echo "$START_RESULT" | grep -q '"ready":true' || {
 echo "▸ host ready"
 HOST_PID="$(echo "$START_RESULT" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$HOST_PID"
+test -f "$HOST_LOG"
+test ! -L "$HOST_LOG"
+test "$(stat -f %Lp "$HOST_LOG")" = "600"
+test "$(stat -f %u "$HOST_LOG")" = "$(id -u)"
+test "$(stat -f %l "$HOST_LOG")" = "1"
 if [[ "$(frontmost_pid)" == "$HOST_PID" ]]; then
   echo "default agent startup stole focus" >&2
   fail
@@ -1304,7 +1309,16 @@ if [[ "$(frontmost_pid)" == "$HOST_PID" ]]; then
 fi
 "$CLI" session list | grep -q '"qa"'
 "$CLI" --session qa visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'
+SESSION_METADATA="$("$CLI" session list)"
+echo "$SESSION_METADATA" | grep -q '"name":"qa"'
+echo "$SESSION_METADATA" | grep -q '"status":"available"'
+echo "$SESSION_METADATA" | grep -q '"url":"http://127.0.0.1:'"$PORT"'/designers/dashboard"'
+echo "$SESSION_METADATA" | grep -q '"title":"Designers Dashboard"'
+echo "$SESSION_METADATA" | grep -q '"untrustedContent":true'
+echo "$SESSION_METADATA" | grep -Eq '"ageMs":[0-9]'
 STEP="inspect-diagnostics"
+"$CLI" --session qa reload >/dev/null
+"$CLI" --session qa reload >/dev/null
 SNAPSHOT="$("$CLI" --session qa inspect --interactive --text)"
 echo "$SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$SNAPSHOT" | grep -q '"name":"Reviewer"'
@@ -1315,10 +1329,18 @@ echo "$ACTION_SNAPSHOT" | grep -q '"task":"click Continue"'
 echo "$ACTION_SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$ACTION_SNAPSHOT" | grep -q '"actions":\["click"\]'
 echo "$ACTION_SNAPSHOT" | grep -q '"relevance"'
+CONSOLE_PAGE_ONE="$("$CLI" --session qa console list --level error --limit 1)"
+CONSOLE_CURSOR="$(echo "$CONSOLE_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
+test -n "$CONSOLE_CURSOR"
+"$CLI" --session qa console list --level error --limit 1 --cursor "$CONSOLE_CURSOR" | grep -q 'Next.js runtime error'
 CONSOLE="$("$CLI" --session qa console list --level error)"
 echo "$CONSOLE" | grep -q 'Next.js runtime error'
 NETWORK="$("$CLI" --session qa network list)"
 echo "$NETWORK" | grep -q '"requestId"'
+NETWORK_PAGE_ONE="$("$CLI" --session qa network list --limit 1)"
+NETWORK_CURSOR="$(echo "$NETWORK_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
+test -n "$NETWORK_CURSOR"
+"$CLI" --session qa network list --limit 1 --cursor "$NETWORK_CURSOR" | grep -q '"requestId"'
 NETWORK_ID="$(echo "$NETWORK" | sed -n 's/.*"requestId":"\([^"]*\)"[^}]*"url":"[^"]*\/api\/diagnostic".*/\1/p')"
 test -n "$NETWORK_ID"
 NETWORK_DETAIL="$("$CLI" --session qa network get "$NETWORK_ID")"
@@ -1481,6 +1503,10 @@ test -s "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mov"
 file "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mov" | grep -Eq 'ISO Media|QuickTime'
 "$CLI" artifacts list | grep -q '"name":"dashboard-flow.mp4"'
 "$CLI" artifacts list | grep -q '"name":"dashboard-flow.mov"'
+ARTIFACT_PAGE_ONE="$("$CLI" artifacts list --limit 1)"
+ARTIFACT_CURSOR="$(echo "$ARTIFACT_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
+test -n "$ARTIFACT_CURSOR"
+"$CLI" artifacts list --limit 1 --cursor "$ARTIFACT_CURSOR" | grep -q '"returned":1'
 "$CLI" --session qa back | grep -q 'Designers Dashboard'
 "$CLI" --session qa reload | grep -q 'Designers Dashboard'
 STEP="capture-hostile"

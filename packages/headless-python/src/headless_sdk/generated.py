@@ -13,11 +13,11 @@ PROTOCOL_VERSION = '0.5'
 PROTOCOL_SCHEMA_VERSION = 1
 MAXIMUM_MESSAGE_BYTES = 1048576
 MAXIMUM_COMMAND_TIMEOUT_SECONDS = 125.0
-PROTOCOL_SCHEMA_SHA256 = '882634187c7ef02ec4ed51fff0e747114eadeff308c10bb9b3274b3630fad11d'
+PROTOCOL_SCHEMA_SHA256 = '0eda66ca7a4ee067e6289ff70f96fd51e55361ca4941f26b03944294cd4dcdf3'
 PROTOCOL_FIXTURES_SHA256 = '0b51ffaa2d3e3aaf0c32adcfeb02c180dcbe44face0d49e1c332b69f403ae062'
 RESPONSE_ADDITIONAL_PROPERTIES = True
-COMMAND_ERROR_CODES = ('ARTIFACT_ERROR', 'AUTH_ACCOUNT_NOT_FOUND', 'AUTH_CHALLENGE_CONSUMED', 'AUTH_CHALLENGE_EXPIRED', 'AUTH_CHALLENGE_NOT_FOUND', 'AUTH_FORM_CHANGED', 'AUTH_ORIGIN_CHANGED', 'AUTH_REQUIRED', 'CREDENTIAL_ALIAS_EXISTS', 'ELEMENT_NOT_FOUND', 'FLOW_FAILED', 'HOST_STOPPING', 'HOST_UNAVAILABLE', 'INTERNAL_ERROR', 'INVALID_CAPTURE_FORMAT', 'INVALID_COMMAND', 'INVALID_FLOW', 'INVALID_INPUT', 'INVALID_REQUEST', 'INVALID_SESSION', 'MISSING_PARAMETER', 'OPERATION_FAILED', 'PEER_DENIED', 'RECORDER_UNAVAILABLE', 'RECORDING_ACTIVE', 'RECORDING_FAILED', 'RECORDING_NOT_ACTIVE', 'REGION_NOT_FOUND', 'RESPONSE_TOO_LARGE', 'SENSITIVE_DIAGNOSTICS_DISABLED', 'SESSION_EXISTS', 'SESSION_NOT_FOUND', 'TIMEOUT', 'UNSAFE_NAVIGATION', 'UNSAFE_RESOURCE_TYPE', 'UNSUPPORTED_CAPABILITY', 'USER_PRESENCE_DENIED', 'USER_PRESENCE_UNAVAILABLE', 'VAULT_LOCKED', 'VAULT_OPERATION_FAILED', 'VAULT_RESPONSE_INVALID', 'VAULT_UNAVAILABLE')
-CommandErrorCode = Literal['ARTIFACT_ERROR', 'AUTH_ACCOUNT_NOT_FOUND', 'AUTH_CHALLENGE_CONSUMED', 'AUTH_CHALLENGE_EXPIRED', 'AUTH_CHALLENGE_NOT_FOUND', 'AUTH_FORM_CHANGED', 'AUTH_ORIGIN_CHANGED', 'AUTH_REQUIRED', 'CREDENTIAL_ALIAS_EXISTS', 'ELEMENT_NOT_FOUND', 'FLOW_FAILED', 'HOST_STOPPING', 'HOST_UNAVAILABLE', 'INTERNAL_ERROR', 'INVALID_CAPTURE_FORMAT', 'INVALID_COMMAND', 'INVALID_FLOW', 'INVALID_INPUT', 'INVALID_REQUEST', 'INVALID_SESSION', 'MISSING_PARAMETER', 'OPERATION_FAILED', 'PEER_DENIED', 'RECORDER_UNAVAILABLE', 'RECORDING_ACTIVE', 'RECORDING_FAILED', 'RECORDING_NOT_ACTIVE', 'REGION_NOT_FOUND', 'RESPONSE_TOO_LARGE', 'SENSITIVE_DIAGNOSTICS_DISABLED', 'SESSION_EXISTS', 'SESSION_NOT_FOUND', 'TIMEOUT', 'UNSAFE_NAVIGATION', 'UNSAFE_RESOURCE_TYPE', 'UNSUPPORTED_CAPABILITY', 'USER_PRESENCE_DENIED', 'USER_PRESENCE_UNAVAILABLE', 'VAULT_LOCKED', 'VAULT_OPERATION_FAILED', 'VAULT_RESPONSE_INVALID', 'VAULT_UNAVAILABLE']
+COMMAND_ERROR_CODES = ('ARTIFACT_ERROR', 'AUTH_ACCOUNT_NOT_FOUND', 'AUTH_CHALLENGE_CONSUMED', 'AUTH_CHALLENGE_EXPIRED', 'AUTH_CHALLENGE_NOT_FOUND', 'AUTH_FORM_CHANGED', 'AUTH_ORIGIN_CHANGED', 'AUTH_REQUIRED', 'CREDENTIAL_ALIAS_EXISTS', 'ELEMENT_NOT_FOUND', 'FLOW_FAILED', 'HOST_STOPPING', 'HOST_UNAVAILABLE', 'INTERNAL_ERROR', 'INVALID_CAPTURE_FORMAT', 'INVALID_COMMAND', 'INVALID_FLOW', 'INVALID_INPUT', 'INVALID_REQUEST', 'INVALID_SESSION', 'MISSING_PARAMETER', 'OPERATION_FAILED', 'PAGINATION_CURSOR_EXPIRED', 'PAGINATION_CURSOR_INVALID', 'PAGINATION_CURSOR_SCOPE_MISMATCH', 'PAGINATION_CURSOR_STALE', 'PEER_DENIED', 'RECORDER_UNAVAILABLE', 'RECORDING_ACTIVE', 'RECORDING_FAILED', 'RECORDING_NOT_ACTIVE', 'REGION_NOT_FOUND', 'RESPONSE_TOO_LARGE', 'SENSITIVE_DIAGNOSTICS_DISABLED', 'SESSION_EXISTS', 'SESSION_NOT_FOUND', 'TIMEOUT', 'UNSAFE_NAVIGATION', 'UNSAFE_RESOURCE_TYPE', 'UNSUPPORTED_CAPABILITY', 'USER_PRESENCE_DENIED', 'USER_PRESENCE_UNAVAILABLE', 'VAULT_LOCKED', 'VAULT_OPERATION_FAILED', 'VAULT_RESPONSE_INVALID', 'VAULT_UNAVAILABLE')
+CommandErrorCode = Literal['ARTIFACT_ERROR', 'AUTH_ACCOUNT_NOT_FOUND', 'AUTH_CHALLENGE_CONSUMED', 'AUTH_CHALLENGE_EXPIRED', 'AUTH_CHALLENGE_NOT_FOUND', 'AUTH_FORM_CHANGED', 'AUTH_ORIGIN_CHANGED', 'AUTH_REQUIRED', 'CREDENTIAL_ALIAS_EXISTS', 'ELEMENT_NOT_FOUND', 'FLOW_FAILED', 'HOST_STOPPING', 'HOST_UNAVAILABLE', 'INTERNAL_ERROR', 'INVALID_CAPTURE_FORMAT', 'INVALID_COMMAND', 'INVALID_FLOW', 'INVALID_INPUT', 'INVALID_REQUEST', 'INVALID_SESSION', 'MISSING_PARAMETER', 'OPERATION_FAILED', 'PAGINATION_CURSOR_EXPIRED', 'PAGINATION_CURSOR_INVALID', 'PAGINATION_CURSOR_SCOPE_MISMATCH', 'PAGINATION_CURSOR_STALE', 'PEER_DENIED', 'RECORDER_UNAVAILABLE', 'RECORDING_ACTIVE', 'RECORDING_FAILED', 'RECORDING_NOT_ACTIVE', 'REGION_NOT_FOUND', 'RESPONSE_TOO_LARGE', 'SENSITIVE_DIAGNOSTICS_DISABLED', 'SESSION_EXISTS', 'SESSION_NOT_FOUND', 'TIMEOUT', 'UNSAFE_NAVIGATION', 'UNSAFE_RESOURCE_TYPE', 'UNSUPPORTED_CAPABILITY', 'USER_PRESENCE_DENIED', 'USER_PRESENCE_UNAVAILABLE', 'VAULT_LOCKED', 'VAULT_OPERATION_FAILED', 'VAULT_RESPONSE_INVALID', 'VAULT_UNAVAILABLE']
 LIFECYCLE_ERROR_CODES = ('HOST_START_FAILED', 'NAVIGATION_ALLOWLIST_CONFLICT', 'UNSUPPORTED_BROWSER_RUNTIME', 'UNSUPPORTED_CAPABILITY')
 LifecycleErrorCode = Literal['HOST_START_FAILED', 'NAVIGATION_ALLOWLIST_CONFLICT', 'UNSUPPORTED_BROWSER_RUNTIME', 'UNSUPPORTED_CAPABILITY']
 LAUNCH_PRESENTATIONS = ('background', 'foreground')
@@ -111,7 +111,8 @@ class ScreenshotParameters(TypedDict):
     clipboard: NotRequired[bool]
 
 class ArtifactListParameters(TypedDict):
-    pass
+    limit: NotRequired[int]
+    cursor: NotRequired[str]
 
 class RecordStartParameters(TypedDict):
     output: NotRequired[str]
@@ -133,12 +134,14 @@ class QaClearParameters(TypedDict):
 
 class ConsoleListParameters(TypedDict):
     level: NotRequired[Literal['all', 'log', 'info', 'debug', 'warn', 'error', 'assert']]
-    limit: NotRequired[int | float]
+    limit: NotRequired[int]
+    cursor: NotRequired[str]
 
 class NetworkListParameters(TypedDict):
     failed: NotRequired[bool]
     status: NotRequired[int | float]
-    limit: NotRequired[int | float]
+    limit: NotRequired[int]
+    cursor: NotRequired[str]
 
 class NetworkGetParameters(TypedDict):
     requestId: str
@@ -222,9 +225,20 @@ class SessionCreate(TypedDict, total=False):
     session: Required[str]
     isolated: Required[bool]
 
+class SessionDetail(TypedDict, total=False):
+    name: Required[str]
+    isolated: Required[bool]
+    ageMs: Required[int | float]
+    status: Required[Literal['available', 'navigating', 'unavailable']]
+    url: Required[str | None]
+    title: Required[str | None]
+    urlTruncated: Required[bool]
+    titleTruncated: Required[bool]
+    untrustedContent: Required[bool]
+
 class SessionList(TypedDict, total=False):
-    sessions: Required[list[JsonValue]]
-    details: Required[list[JsonValue]]
+    sessions: Required[list[str]]
+    details: Required[list[SessionDetail]]
 
 class SessionClose(TypedDict, total=False):
     closed: Required[str]
@@ -295,9 +309,12 @@ class Screenshot(TypedDict, total=False):
 class ArtifactList(TypedDict, total=False):
     directory: Required[str]
     artifacts: Required[list[JsonValue]]
+    returned: Required[int | float]
     total: Required[int | float]
     omitted: Required[int | float]
     truncated: Required[bool]
+    nextCursor: Required[str | None]
+    mutation: Required[Literal['none']]
 
 class Recording(TypedDict, total=False):
     active: Required[bool]
@@ -321,12 +338,18 @@ class ConsoleList(TypedDict, total=False):
     messages: Required[list[JsonValue]]
     returned: Required[int | float]
     available: Required[int | float]
+    truncated: Required[bool]
+    nextCursor: Required[str | None]
+    mutation: Required[Literal['none']]
 
 class NetworkList(TypedDict, total=False):
     untrustedContent: Required[bool]
     requests: Required[list[JsonValue]]
     returned: Required[int | float]
     available: Required[int | float]
+    truncated: Required[bool]
+    nextCursor: Required[str | None]
+    mutation: Required[Literal['none']]
 
 class NetworkDetail(TypedDict, total=False):
     found: Required[bool]
@@ -438,7 +461,17 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                     'timeout': {'defaultMilliseconds': 15000, 'parameterPresentOverrides': {}}},
  'artifact.list': {'capabilityNegotiated': False,
                    'constraints': [],
-                   'parameters': [],
+                   'parameters': [{'maximum': 250,
+                                   'minimum': 1,
+                                   'name': 'limit',
+                                   'required': False,
+                                   'sensitive': False,
+                                   'type': 'integer'},
+                                  {'maximumBytes': 64,
+                                   'name': 'cursor',
+                                   'required': False,
+                                   'sensitive': False,
+                                   'type': 'string'}],
                    'result': {'mayContainUntrustedContent': False,
                               'schema': {'additionalProperties': True,
                                          'fields': [{'name': 'directory',
@@ -447,6 +480,9 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                                                     {'name': 'artifacts',
                                                      'required': True,
                                                      'type': 'array'},
+                                                    {'name': 'returned',
+                                                     'required': True,
+                                                     'type': 'number'},
                                                     {'name': 'total',
                                                      'required': True,
                                                      'type': 'number'},
@@ -455,7 +491,14 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                                                      'type': 'number'},
                                                     {'name': 'truncated',
                                                      'required': True,
-                                                     'type': 'boolean'}],
+                                                     'type': 'boolean'},
+                                                    {'name': 'nextCursor',
+                                                     'required': True,
+                                                     'type': 'string-or-null'},
+                                                    {'name': 'mutation',
+                                                     'required': True,
+                                                     'type': 'string',
+                                                     'values': ['none']}],
                                          'name': 'ArtifactList',
                                          'type': 'object'}},
                    'scope': 'host',
@@ -587,12 +630,17 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                                              'warn',
                                              'error',
                                              'assert']},
-                                 {'maximum': 200,
+                                 {'maximum': 250,
                                   'minimum': 1,
                                   'name': 'limit',
                                   'required': False,
                                   'sensitive': False,
-                                  'type': 'number'}],
+                                  'type': 'integer'},
+                                 {'maximumBytes': 64,
+                                  'name': 'cursor',
+                                  'required': False,
+                                  'sensitive': False,
+                                  'type': 'string'}],
                   'result': {'mayContainUntrustedContent': True,
                              'schema': {'additionalProperties': True,
                                         'fields': [{'name': 'untrustedContent',
@@ -606,7 +654,17 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                                                     'type': 'number'},
                                                    {'name': 'available',
                                                     'required': True,
-                                                    'type': 'number'}],
+                                                    'type': 'number'},
+                                                   {'name': 'truncated',
+                                                    'required': True,
+                                                    'type': 'boolean'},
+                                                   {'name': 'nextCursor',
+                                                    'required': True,
+                                                    'type': 'string-or-null'},
+                                                   {'name': 'mutation',
+                                                    'required': True,
+                                                    'type': 'string',
+                                                    'values': ['none']}],
                                         'name': 'ConsoleList',
                                         'type': 'object'}},
                   'scope': 'session',
@@ -884,12 +942,17 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                                   'required': False,
                                   'sensitive': False,
                                   'type': 'number'},
-                                 {'maximum': 200,
+                                 {'maximum': 250,
                                   'minimum': 1,
                                   'name': 'limit',
                                   'required': False,
                                   'sensitive': False,
-                                  'type': 'number'}],
+                                  'type': 'integer'},
+                                 {'maximumBytes': 64,
+                                  'name': 'cursor',
+                                  'required': False,
+                                  'sensitive': False,
+                                  'type': 'string'}],
                   'result': {'mayContainUntrustedContent': True,
                              'schema': {'additionalProperties': True,
                                         'fields': [{'name': 'untrustedContent',
@@ -903,7 +966,17 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                                                     'type': 'number'},
                                                    {'name': 'available',
                                                     'required': True,
-                                                    'type': 'number'}],
+                                                    'type': 'number'},
+                                                   {'name': 'truncated',
+                                                    'required': True,
+                                                    'type': 'boolean'},
+                                                   {'name': 'nextCursor',
+                                                    'required': True,
+                                                    'type': 'string-or-null'},
+                                                   {'name': 'mutation',
+                                                    'required': True,
+                                                    'type': 'string',
+                                                    'values': ['none']}],
                                         'name': 'NetworkList',
                                         'type': 'object'}},
                   'scope': 'session',
@@ -1369,10 +1442,44 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                   'parameters': [],
                   'result': {'mayContainUntrustedContent': False,
                              'schema': {'additionalProperties': True,
-                                        'fields': [{'name': 'sessions',
+                                        'fields': [{'items': {'type': 'string'},
+                                                    'name': 'sessions',
                                                     'required': True,
                                                     'type': 'array'},
-                                                   {'name': 'details',
+                                                   {'items': {'additionalProperties': True,
+                                                              'fields': [{'name': 'name',
+                                                                          'required': True,
+                                                                          'type': 'string'},
+                                                                         {'name': 'isolated',
+                                                                          'required': True,
+                                                                          'type': 'boolean'},
+                                                                         {'name': 'ageMs',
+                                                                          'required': True,
+                                                                          'type': 'number'},
+                                                                         {'name': 'status',
+                                                                          'required': True,
+                                                                          'type': 'string',
+                                                                          'values': ['available',
+                                                                                     'navigating',
+                                                                                     'unavailable']},
+                                                                         {'name': 'url',
+                                                                          'required': True,
+                                                                          'type': 'string-or-null'},
+                                                                         {'name': 'title',
+                                                                          'required': True,
+                                                                          'type': 'string-or-null'},
+                                                                         {'name': 'urlTruncated',
+                                                                          'required': True,
+                                                                          'type': 'boolean'},
+                                                                         {'name': 'titleTruncated',
+                                                                          'required': True,
+                                                                          'type': 'boolean'},
+                                                                         {'name': 'untrustedContent',
+                                                                          'required': True,
+                                                                          'type': 'boolean'}],
+                                                              'name': 'SessionDetail',
+                                                              'type': 'object'},
+                                                    'name': 'details',
                                                     'required': True,
                                                     'type': 'array'}],
                                         'name': 'SessionList',
@@ -1775,10 +1882,17 @@ class SyncHostCommands:
     def artifact_list(
         self,
         *,
+        limit: int | None = None,
+        cursor: str | None = None,
         timeout: float | None = None,
         cancel: SyncCancellation | None = None,
     ) -> ArtifactList:
-        parameters: dict[str, JsonValue] = {}
+        parameters: dict[str, JsonValue] = {
+        }
+        if limit is not None:
+            parameters['limit'] = cast(JsonValue, limit)
+        if cursor is not None:
+            parameters['cursor'] = cast(JsonValue, cursor)
         return cast(ArtifactList, self._invoke_sync('artifact.list', parameters, timeout, cancel))
 
 class SyncSessionCommands:
@@ -2100,7 +2214,8 @@ class SyncSessionCommands:
         self,
         *,
         level: Literal['all', 'log', 'info', 'debug', 'warn', 'error', 'assert'] | None = None,
-        limit: int | float | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
         timeout: float | None = None,
         cancel: SyncCancellation | None = None,
     ) -> Untrusted[ConsoleList]:
@@ -2110,6 +2225,8 @@ class SyncSessionCommands:
             parameters['level'] = cast(JsonValue, level)
         if limit is not None:
             parameters['limit'] = cast(JsonValue, limit)
+        if cursor is not None:
+            parameters['cursor'] = cast(JsonValue, cursor)
         return cast(Untrusted[ConsoleList], self._invoke_sync('console.list', parameters, timeout, cancel))
 
     def network_list(
@@ -2117,7 +2234,8 @@ class SyncSessionCommands:
         *,
         failed: bool | None = None,
         status: int | float | None = None,
-        limit: int | float | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
         timeout: float | None = None,
         cancel: SyncCancellation | None = None,
     ) -> Untrusted[NetworkList]:
@@ -2129,6 +2247,8 @@ class SyncSessionCommands:
             parameters['status'] = cast(JsonValue, status)
         if limit is not None:
             parameters['limit'] = cast(JsonValue, limit)
+        if cursor is not None:
+            parameters['cursor'] = cast(JsonValue, cursor)
         return cast(Untrusted[NetworkList], self._invoke_sync('network.list', parameters, timeout, cancel))
 
     def network_get(
@@ -2407,10 +2527,17 @@ class AsyncHostCommands:
     async def artifact_list(
         self,
         *,
+        limit: int | None = None,
+        cursor: str | None = None,
         timeout: float | None = None,
         cancel: AsyncCancellation | None = None,
     ) -> ArtifactList:
-        parameters: dict[str, JsonValue] = {}
+        parameters: dict[str, JsonValue] = {
+        }
+        if limit is not None:
+            parameters['limit'] = cast(JsonValue, limit)
+        if cursor is not None:
+            parameters['cursor'] = cast(JsonValue, cursor)
         return cast(ArtifactList, await self._invoke_async('artifact.list', parameters, timeout, cancel))
 
 class AsyncSessionCommands:
@@ -2732,7 +2859,8 @@ class AsyncSessionCommands:
         self,
         *,
         level: Literal['all', 'log', 'info', 'debug', 'warn', 'error', 'assert'] | None = None,
-        limit: int | float | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
         timeout: float | None = None,
         cancel: AsyncCancellation | None = None,
     ) -> Untrusted[ConsoleList]:
@@ -2742,6 +2870,8 @@ class AsyncSessionCommands:
             parameters['level'] = cast(JsonValue, level)
         if limit is not None:
             parameters['limit'] = cast(JsonValue, limit)
+        if cursor is not None:
+            parameters['cursor'] = cast(JsonValue, cursor)
         return cast(Untrusted[ConsoleList], await self._invoke_async('console.list', parameters, timeout, cancel))
 
     async def network_list(
@@ -2749,7 +2879,8 @@ class AsyncSessionCommands:
         *,
         failed: bool | None = None,
         status: int | float | None = None,
-        limit: int | float | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
         timeout: float | None = None,
         cancel: AsyncCancellation | None = None,
     ) -> Untrusted[NetworkList]:
@@ -2761,6 +2892,8 @@ class AsyncSessionCommands:
             parameters['status'] = cast(JsonValue, status)
         if limit is not None:
             parameters['limit'] = cast(JsonValue, limit)
+        if cursor is not None:
+            parameters['cursor'] = cast(JsonValue, cursor)
         return cast(Untrusted[NetworkList], await self._invoke_async('network.list', parameters, timeout, cancel))
 
     async def network_get(
