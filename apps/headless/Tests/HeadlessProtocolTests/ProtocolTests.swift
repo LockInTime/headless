@@ -36,6 +36,21 @@ private func expectThrows(_ message: String, _ body: () throws -> Void) throws {
     }
 }
 
+private func expectHostError(
+    _ expected: HostErrorCode, _ message: String, _ body: () throws -> Void
+) throws {
+    do {
+        try body()
+        throw TestFailure(description: message)
+    } catch let error as HostError {
+        try expect(error.code == expected, "\(message): received \(error.code.rawValue)")
+    } catch is TestFailure {
+        throw TestFailure(description: message)
+    } catch {
+        throw TestFailure(description: "\(message): received \(error)")
+    }
+}
+
 private func repositoryFile(_ relativePath: String) -> URL? {
     var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
     while directory.path != "/" {
@@ -190,6 +205,44 @@ private func connectRawUnixSocket(path: String) throws -> Int32 {
     return descriptor
 }
 
+private func createStaleUnixSocket(path: String) throws {
+    #if canImport(Darwin)
+    let descriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+    #else
+    let descriptor = Glibc.socket(AF_UNIX, Int32(SOCK_STREAM.rawValue), 0)
+    #endif
+    guard descriptor >= 0 else { throw TestFailure(description: "stale socket creation failed") }
+    defer { closeRawSocket(descriptor) }
+
+    var address = sockaddr_un()
+    let bytes = Array(path.utf8)
+    let capacity = MemoryLayout.size(ofValue: address.sun_path)
+    guard bytes.count < capacity else { throw TestFailure(description: "stale socket path was too long") }
+    address.sun_family = sa_family_t(AF_UNIX)
+    #if canImport(Darwin)
+    address.sun_len = UInt8(MemoryLayout<sa_family_t>.size + bytes.count + 1)
+    #endif
+    withUnsafeMutablePointer(to: &address.sun_path) { pointer in
+        pointer.withMemoryRebound(to: UInt8.self, capacity: capacity) { buffer in
+            for (index, byte) in bytes.enumerated() { buffer[index] = byte }
+            buffer[bytes.count] = 0
+        }
+    }
+    let length = socklen_t(MemoryLayout<sa_family_t>.size + bytes.count + 1)
+    let bound = withUnsafePointer(to: &address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            #if canImport(Darwin)
+            Darwin.bind(descriptor, $0, length)
+            #else
+            Glibc.bind(descriptor, $0, length)
+            #endif
+        }
+    }
+    guard bound == 0, chmod(path, 0o600) == 0 else {
+        throw TestFailure(description: "stale socket bind failed")
+    }
+}
+
 private func closeRawSocket(_ descriptor: Int32) {
     #if canImport(Darwin)
     _ = Darwin.close(descriptor)
@@ -250,6 +303,11 @@ private func readRawSocketLine(descriptor: Int32) throws -> Data {
 private final class TestBrowserSession: BrowserEngineSession {
     let hostIsolated: Bool
     private(set) var agentControlEnableCount = 0
+    private(set) var sessionMetadataReadCount = 0
+    var sessionMetadata = BrowserSessionPageMetadata(
+        url: nil, title: nil, lifecycle: .available
+    )
+    var sessionMetadataHook: (() throws -> Void)?
     var authenticationState: JSONValue = .object([
         "origin": .string("http://localhost"), "detection": .string("none"),
     ])
@@ -263,6 +321,12 @@ private final class TestBrowserSession: BrowserEngineSession {
 
     init(isolated: Bool = false) {
         hostIsolated = isolated
+    }
+
+    func hostSessionMetadata() throws -> BrowserSessionPageMetadata {
+        sessionMetadataReadCount += 1
+        try sessionMetadataHook?()
+        return sessionMetadata
     }
 
     func hostEnableAgentControl() { agentControlEnableCount += 1 }
@@ -302,8 +366,10 @@ private final class TestBrowserSession: BrowserEngineSession {
     func hostScrollToCapturePoint(y: Double) throws -> JSONValue { .object(["y": .number(y)]) }
     func hostQAReport() throws -> JSONValue { .object(["issues": .array([])]) }
     func hostQAClear() throws -> JSONValue { .object(["cleared": .bool(true)]) }
-    func hostConsole(level: String, limit: Int) throws -> JSONValue { .object(["entries": .array([])]) }
-    func hostNetwork(failedOnly: Bool, status: Int?, limit: Int) throws -> JSONValue {
+    func hostConsole(level: String, limit: Int, cursor: String?) throws -> JSONValue {
+        .object(["entries": .array([])])
+    }
+    func hostNetwork(failedOnly: Bool, status: Int?, limit: Int, cursor: String?) throws -> JSONValue {
         .object(["requests": .array([])])
     }
     func hostNetworkDetail(requestID: String) throws -> JSONValue {
@@ -1419,6 +1485,111 @@ struct ProtocolTests {
         try expectThrows("a literal session option must not bypass config arity validation") {
             _ = try CLIParser().parse(["config", "list", "--", "--session", "qa"])
         }
+    }
+
+    static func doctorCLIAndDiagnostics() throws {
+        let invocation = try CLIParser().parse(["doctor"])
+        try expect(invocation.local == .doctor, "doctor should be a local command")
+        try expect(invocation.jsonOutput, "doctor should always produce JSON")
+        try expectThrows("doctor should reject trailing arguments") {
+            _ = try CLIParser().parse(["doctor", "repair"])
+        }
+        try expectThrows("doctor should reject a browser session") {
+            _ = try CLIParser().parse(["--session", "qa", "doctor"])
+        }
+
+        let root = URL(fileURLWithPath: "/tmp/headless-doctor-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = root.appendingPathComponent("runtime", isDirectory: true)
+        let artifacts = root.appendingPathComponent("artifacts", isDirectory: true)
+        let settings = root.appendingPathComponent("settings", isDirectory: true)
+        for directory in [root, runtime, artifacts] {
+            try FileManager.default.createDirectory(
+                at: directory, withIntermediateDirectories: false,
+                attributes: [.posixPermissions: NSNumber(value: 0o700)]
+            )
+            try expect(chmod(directory.path, 0o700) == 0, "doctor fixture permissions")
+        }
+        let log = runtime.appendingPathComponent("host.log")
+        try Data("safe\n".utf8).write(to: log)
+        try expect(chmod(log.path, 0o600) == 0, "doctor log permissions")
+        let testExecutable = URL(fileURLWithPath: "/bin/sh").resolvingSymlinksInPath()
+
+        let healthyConfiguration = try DoctorConfiguration(
+            environment: ["HEADLESS_HOST_LOG": log.path],
+            platform: .linux,
+            executableURL: testExecutable,
+            runtimeDirectoryURL: runtime,
+            socketURL: runtime.appendingPathComponent("host.sock"),
+            artifactRootURL: artifacts,
+            settingsRootURL: settings,
+            chromiumCandidates: ["/bin/sh"],
+            ffmpegCandidates: ["/bin/sh"],
+            runningAsRoot: false
+        )
+        let healthy = HeadlessDoctor(configuration: healthyConfiguration).run()
+        try expect(!healthy.hasFailures, "a complete synthetic installation should pass doctor")
+        try expect(healthy.status == .healthy, "all healthy checks should produce a healthy report")
+        try expect(
+            healthy.document == HeadlessDoctor(configuration: healthyConfiguration).run().document,
+            "doctor output should be deterministic"
+        )
+        let healthyData = try ProtocolCodec.encoder.encode(healthy.document)
+        try expect(healthyData.count < headlessMaximumMessageBytes, "doctor output should fit the frame budget")
+        try expect(!String(decoding: healthyData, as: UTF8.self).contains(root.path), "doctor must not expose paths")
+
+        try expect(chmod(runtime.path, 0o755) == 0, "unsafe runtime fixture")
+        try FileManager.default.createDirectory(
+            at: settings, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: NSNumber(value: 0o700)]
+        )
+        try expect(chmod(settings.path, 0o700) == 0, "settings fixture permissions")
+        let settingsFile = settings.appendingPathComponent("settings.json")
+        try Data("{}".utf8).write(to: settingsFile)
+        try expect(chmod(settingsFile.path, 0o600) == 0, "settings file fixture permissions")
+        let socket = runtime.appendingPathComponent("host.sock")
+        try createStaleUnixSocket(path: socket.path)
+
+        let failingConfiguration = try DoctorConfiguration(
+            environment: ["HEADLESS_HOST_LOG": log.path, "SECRET_SENTINEL": "must-not-leak"],
+            platform: .linux,
+            executableURL: testExecutable,
+            runtimeDirectoryURL: runtime,
+            socketURL: socket,
+            artifactRootURL: artifacts,
+            settingsRootURL: settings,
+            chromiumCandidates: [],
+            ffmpegCandidates: [],
+            runningAsRoot: true
+        )
+        let failing = HeadlessDoctor(configuration: failingConfiguration).run()
+        try expect(failing.hasFailures && failing.status == .failed, "blocking diagnostics should fail doctor")
+        guard case .object(let report) = failing.document,
+              case .array(let rawChecks)? = report["checks"] else {
+            throw TestFailure(description: "doctor report shape")
+        }
+        let checks = try rawChecks.reduce(into: [String: [String: JSONValue]]()) { result, value in
+            guard case .object(let check) = value, let identifier = check["id"]?.stringValue else {
+                throw TestFailure(description: "doctor check shape")
+            }
+            result[identifier] = check
+        }
+        for identifier in [
+            "browser.runtime", "runtime.directory", "runtime.socket", "sandbox.linux", "settings.storage",
+        ] {
+            try expect(checks[identifier]?["status"] == .string("failed"), "\(identifier) should fail")
+        }
+        try expect(
+            checks["dependency.ffmpeg"]?["status"] == .string("warning"),
+            "missing FFmpeg should remain non-blocking"
+        )
+        let failingData = try ProtocolCodec.encoder.encode(failing.document)
+        try expect(!String(decoding: failingData, as: UTF8.self).contains("must-not-leak"), "doctor leaked an environment value")
+        try expect(FileManager.default.fileExists(atPath: socket.path), "doctor must not remove a stale socket")
+        try expect(
+            (try FileManager.default.attributesOfItem(atPath: runtime.path)[.posixPermissions] as? NSNumber)?.intValue == 0o755,
+            "doctor must not repair unsafe permissions"
+        )
     }
 
     static func settingsRegistryAndAccess() throws {
@@ -2732,7 +2903,54 @@ struct ProtocolTests {
         try expect(
             protocolCommandDefinition(for: .visit).resultContainsUntrustedContent
                 && protocolCommandDefinition(for: .captureInfo).resultContainsUntrustedContent,
-            "page state and capture metadata must remain marked as untrusted"
+            "page-derived result contracts must remain marked as untrusted"
+        )
+        try expect(
+            !protocolCommandDefinition(for: .sessionList).resultContainsUntrustedContent,
+            "session list must preserve its directly accessible compatibility fields"
+        )
+        let sessionDetail: [String: JSONValue] = [
+            "name": .string("default"), "isolated": .bool(false), "ageMs": .number(1),
+            "status": .string("available"), "url": .string("https://example.test/"),
+            "title": .string("Example"), "urlTruncated": .bool(false),
+            "titleTruncated": .bool(false), "untrustedContent": .bool(true),
+        ]
+        try protocolResultDefinition(for: .sessionList).validate(.object([
+            "sessions": .array([.string("default")]),
+            "details": .array([.object(sessionDetail)]),
+        ]))
+        try expectThrows("session metadata should reject unknown lifecycle states") {
+            var invalid = sessionDetail
+            invalid["status"] = .string("closed")
+            try protocolResultDefinition(for: .sessionList).validate(.object([
+                "sessions": .array([.string("default")]),
+                "details": .array([.object(invalid)]),
+            ]))
+        }
+
+        for command in [CommandName.artifactList, .consoleList, .networkList] {
+            let parameters = protocolCommandDefinition(for: command).parameters
+            let limit = parameters.first { $0.name == "limit" }
+            let cursor = parameters.first { $0.name == "cursor" }
+            try expect(
+                limit?.kind == .integer && limit?.minimum == 1
+                    && limit?.maximum == Double(PaginationCursorStore.maximumLimit),
+                "\(command.rawValue) must expose the shared bounded integer limit"
+            )
+            try expect(
+                cursor?.kind == .string
+                    && cursor?.maximumBytes == PaginationCursorStore.cursorMaximumBytes,
+                "\(command.rawValue) must expose the shared bounded cursor"
+            )
+        }
+        try expect(
+            Set([
+                HostErrorCode.paginationCursorInvalid.rawValue,
+                HostErrorCode.paginationCursorExpired.rawValue,
+                HostErrorCode.paginationCursorScopeMismatch.rawValue,
+                HostErrorCode.paginationCursorStale.rawValue,
+            ]).isSubset(of: Set(protocolErrorCodes)),
+            "the schema must publish every typed pagination recovery error"
         )
 
         let schemaInvocation = try CLIParser().parse(["schema"])
@@ -3151,6 +3369,19 @@ struct ProtocolTests {
         try expect(listing["total"] == .number(260), "artifact listing should report the true total")
         try expect(listing["omitted"] == .number(10), "artifact listing should report what it left out")
         try expect(listing["truncated"] == .bool(true), "a bounded artifact listing is truncated")
+        guard let cursor = listing["nextCursor"]?.stringValue,
+              case .object(let secondPage) = try store.list(limit: 250, cursor: cursor),
+              case .array(let remaining)? = secondPage["artifacts"] else {
+            throw TestFailure(description: "artifact pagination should return a second page")
+        }
+        try expect(remaining.count == 10, "artifact pagination should return every omitted item")
+        let names = (artifacts + remaining).compactMap { value -> String? in
+            guard case .object(let object) = value else { return nil }
+            return object["name"]?.stringValue
+        }
+        try expect(Set(names).count == 260, "artifact traversal should not duplicate or skip entries")
+        try expect(secondPage["nextCursor"] == .null, "the final artifact page should end traversal")
+        try expect(secondPage["mutation"] == .string("none"), "stable traversal should report no mutation")
         let encoded = try ProtocolCodec.encodeLine(
             CommandResponse.success(id: "artifacts", result: try store.list())
         )
@@ -3158,6 +3389,188 @@ struct ProtocolTests {
             encoded.count <= headlessMaximumMessageBytes,
             "an artifact listing must fit the protocol frame"
         )
+        guard case .object(let mutationStart) = try store.list(limit: 1),
+              let mutationCursor = mutationStart["nextCursor"]?.stringValue else {
+            throw TestFailure(description: "artifact mutation cursor")
+        }
+        _ = try store.write(
+            Data("x".utf8), requestedName: "bound-new.json", extension: "json", prefix: "bound"
+        )
+        try expectHostError(.paginationCursorStale, "artifact mutations must invalidate cursors") {
+            _ = try store.list(limit: 1, cursor: mutationCursor)
+        }
+    }
+
+    static func paginationCursorSecurityAndLifecycle() throws {
+        let clock = TestMonotonicClock(10)
+        let cursors = PaginationCursorStore(now: { clock.now() })
+        let values = (0..<5).map { JSONValue.number(Double($0)) }
+        let first = try cursors.page(
+            values: values, context: "console.list|level=all", limit: 2,
+            cursor: nil, direction: .newestBatchFirst
+        )
+        guard let cursor = first.nextCursor else {
+            throw TestFailure(description: "bounded pagination should issue a cursor")
+        }
+        try expect(cursor.utf8.count == 36, "cursor tokens should be fixed-size opaque UUIDs")
+        try expect(!cursor.contains("console") && !cursor.contains("level"), "cursor tokens must not encode scope")
+
+        try expectHostError(.paginationCursorScopeMismatch, "cross-filter cursors must fail closed") {
+            _ = try cursors.page(
+                values: values, context: "console.list|level=error", limit: 2,
+                cursor: cursor, direction: .newestBatchFirst
+            )
+        }
+        try expectHostError(.paginationCursorInvalid, "tampered cursors must fail closed") {
+            let replacement = cursor.first == "0" ? "1" : "0"
+            _ = try cursors.page(
+                values: values, context: "console.list|level=all", limit: 2,
+                cursor: replacement + cursor.dropFirst(), direction: .newestBatchFirst
+            )
+        }
+        try expectHostError(.paginationCursorStale, "mutated collections must reject old cursors") {
+            _ = try cursors.page(
+                values: values + [.number(5)], context: "console.list|level=all", limit: 2,
+                cursor: cursor, direction: .newestBatchFirst
+            )
+        }
+        clock.advance(by: PaginationCursorStore.lifetimeSeconds + 1)
+        try expectHostError(.paginationCursorExpired, "expired cursors must have a typed error") {
+            _ = try cursors.page(
+                values: values, context: "console.list|level=all", limit: 2,
+                cursor: cursor, direction: .newestBatchFirst
+            )
+        }
+
+        let otherSession = PaginationCursorStore()
+        try expectHostError(.paginationCursorInvalid, "cross-session cursors must fail closed") {
+            _ = try otherSession.page(
+                values: values, context: "console.list|level=all", limit: 2,
+                cursor: cursor, direction: .newestBatchFirst
+            )
+        }
+
+        let largeValues = (0..<12).map { index in
+            JSONValue.object([
+                "index": .number(Double(index)),
+                "payload": .string(String(repeating: "x", count: 100_000)),
+            ])
+        }
+        let bounded = try PaginationCursorStore().page(
+            values: largeValues, context: "bounded", limit: 250,
+            cursor: nil, direction: .fromStart
+        )
+        try expect(bounded.values.count < largeValues.count, "pagination should enforce a byte budget")
+        try expect(bounded.nextCursor != nil, "byte-bounded pages should remain traversable")
+        let boundedResponse = try ProtocolCodec.encodeLine(CommandResponse.success(
+            id: "bounded", result: .object(["items": .array(bounded.values)])
+        ))
+        try expect(
+            boundedResponse.count < headlessMaximumMessageBytes,
+            "pagination byte bounds should keep responses below the frame limit"
+        )
+    }
+
+    static func hostLoggingIsPrivateBoundedAndRedacted() throws {
+        let defaultStore = try HostLogStore(environment: [:])
+        try expect(
+            defaultStore.url == LocalRuntime.directoryURL.appendingPathComponent("host.log"),
+            "host logging should default to the private runtime directory"
+        )
+
+        let root = "/tmp/headless-host-log-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        try FileManager.default.createDirectory(
+            atPath: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: NSNumber(value: 0o700)]
+        )
+        let logPath = root + "/host.log"
+        let store = try HostLogStore(
+            environment: ["HEADLESS_HOST_LOG": logPath], maximumBytes: 12_000
+        )
+        try store.prepare()
+
+        let pipe = Pipe()
+        let repeated = String(repeating: "safe diagnostic line\n", count: 900)
+        let sensitive = "\"password\":\"visible\" token:visible https://user:visible@example.com/path\n"
+            + "Authorization: Bearer visible\nCookie: session=visible\n"
+        pipe.fileHandleForWriting.write(Data((repeated + sensitive).utf8))
+        try pipe.fileHandleForWriting.close()
+        try store.consume(pipe.fileHandleForReading)
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: logPath)
+        let archiveAttributes = try FileManager.default.attributesOfItem(atPath: logPath + ".1")
+        try expect(
+            (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600,
+            "host log should be owner-only"
+        )
+        try expect(
+            (archiveAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o600,
+            "rotated host log should remain owner-only"
+        )
+        try expect(
+            (attributes[.size] as? NSNumber)?.intValue ?? Int.max <= 12_000,
+            "active host log should remain bounded"
+        )
+        try expect(
+            (archiveAttributes[.size] as? NSNumber)?.intValue ?? Int.max <= 12_000,
+            "rotated host log should remain bounded"
+        )
+        let combined = try String(contentsOfFile: logPath, encoding: .utf8)
+            + String(contentsOfFile: logPath + ".1", encoding: .utf8)
+        try expect(!combined.contains("visible"), "host logs must redact common secret forms")
+        try expect(combined.contains("[REDACTED]"), "host logs should preserve an explicit redaction marker")
+        try expect(store.diagnosticTail(maximumBytes: 512)?.utf8.count ?? 0 <= 512, "diagnostic tail should be bounded")
+
+        let concurrentErrors = ConcurrentSettingsErrors()
+        DispatchQueue.concurrentPerform(iterations: 8) { index in
+            do {
+                let writer = try HostLogStore(
+                    environment: ["HEADLESS_HOST_LOG": logPath], maximumBytes: 12_000
+                )
+                let input = Pipe()
+                input.fileHandleForWriting.write(
+                    Data(String(repeating: "concurrent writer \(index)\n", count: 80).utf8)
+                )
+                try input.fileHandleForWriting.close()
+                try writer.consume(input.fileHandleForReading)
+            } catch {
+                concurrentErrors.append(error)
+            }
+        }
+        try expect(
+            concurrentErrors.messages.isEmpty,
+            "concurrent host log writers should serialize: \(concurrentErrors.messages.joined(separator: ", "))"
+        )
+        for path in [logPath, logPath + ".1"] {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            try expect(data.count <= 12_000, "concurrent host logging should preserve disk bounds")
+            for line in data.split(separator: 0x0A) {
+                _ = try JSONSerialization.jsonObject(with: Data(line))
+            }
+        }
+
+        let target = root + "/target.log"
+        _ = FileManager.default.createFile(atPath: target, contents: Data())
+        let symlink = root + "/symlink.log"
+        try FileManager.default.createSymbolicLink(atPath: symlink, withDestinationPath: target)
+        try expectThrows("host logging must reject symlinks") {
+            try HostLogStore(environment: ["HEADLESS_HOST_LOG": symlink]).prepare()
+        }
+        let hardlink = root + "/hardlink.log"
+        guard link(target, hardlink) == 0 else { throw TestFailure(description: "hard-link setup") }
+        try expectThrows("host logging must reject multiply linked files") {
+            try HostLogStore(environment: ["HEADLESS_HOST_LOG": hardlink]).prepare()
+        }
+        try expectThrows("host logging must reject relative overrides") {
+            _ = try HostLogStore(environment: ["HEADLESS_HOST_LOG": "host.log"])
+        }
+        try expectThrows("host logging must reject an unbounded size override") {
+            _ = try HostLogStore(
+                environment: ["HEADLESS_HOST_LOG": logPath],
+                maximumBytes: HostLogStore.maximumFileBytes + 1
+            )
+        }
     }
 
     static func diagnosticServices() throws {
@@ -3173,13 +3586,13 @@ struct ProtocolTests {
             requestID: "request-1", requestHeaders: ["Authorization": "Bearer secret", "X-Visible": "yes"],
             responseHeaders: ["Set-Cookie": "session=secret", "Content-Type": "application/json"], source: "test"
         )
-        guard case .object(let console) = store.console(level: "error", limit: 10),
+        guard case .object(let console) = try store.console(level: "error", limit: 10),
               case .array(let messages)? = console["messages"] else {
             throw TestFailure(description: "console service")
         }
         try expect(console["untrustedContent"] == .bool(true), "console output should mark page evidence untrusted")
         try expect(messages.count == 1, "console service should filter by level")
-        guard case .object(let network) = store.network(failedOnly: true, status: nil, limit: 10),
+        guard case .object(let network) = try store.network(failedOnly: true, status: nil, limit: 10),
               case .array(let requests)? = network["requests"] else {
             throw TestFailure(description: "network service")
         }
@@ -3208,17 +3621,102 @@ struct ProtocolTests {
         try expect(boundedHeaders["X-000"] == .string("value-0"), "header selection should use sorted keys")
         try expect(boundedHeaders["X-063"] == .string("value-63"), "the deterministic header boundary changed")
         try expect(boundedHeaders["X-064"] == nil, "headers beyond the sorted cap should be omitted")
+
+        let pagingStore = QADiagnosticStore()
+        for index in 0..<5 {
+            pagingStore.append(kind: "console", level: "error", message: "console-\(index)")
+            pagingStore.append(
+                kind: "response", url: "https://example.test/\(index)", status: 500,
+                requestID: "page-\(index)"
+            )
+        }
+        var consoleCursor: String?
+        var consoleMessages: [String] = []
+        repeat {
+            guard case .object(let page) = try pagingStore.console(
+                level: "error", limit: 2, cursor: consoleCursor
+            ), case .array(let pageMessages)? = page["messages"] else {
+                throw TestFailure(description: "console pagination shape")
+            }
+            consoleMessages += pageMessages.compactMap { value in
+                guard case .object(let object) = value else { return nil }
+                return object["message"]?.stringValue
+            }
+            consoleCursor = page["nextCursor"]?.stringValue
+        } while consoleCursor != nil
+        try expect(
+            consoleMessages == ["console-3", "console-4", "console-1", "console-2", "console-0"],
+            "console traversal should return newest chronological batches without gaps"
+        )
+
+        var networkCursor: String?
+        var requestIDs: [String] = []
+        repeat {
+            guard case .object(let page) = try pagingStore.network(
+                failedOnly: true, status: 500, limit: 2, cursor: networkCursor
+            ), case .array(let requests)? = page["requests"] else {
+                throw TestFailure(description: "network pagination shape")
+            }
+            requestIDs += requests.compactMap { value in
+                guard case .object(let object) = value else { return nil }
+                return object["requestId"]?.stringValue
+            }
+            networkCursor = page["nextCursor"]?.stringValue
+        } while networkCursor != nil
+        try expect(
+            requestIDs.count == 5 && Set(requestIDs) == Set((0..<5).map { "page-\($0)" }),
+            "network traversal should be complete and duplicate-free"
+        )
+
+        guard case .object(let scopedPage) = try pagingStore.console(level: "error", limit: 1),
+              let scopedCursor = scopedPage["nextCursor"]?.stringValue else {
+            throw TestFailure(description: "console scope cursor")
+        }
+        try expectHostError(.paginationCursorScopeMismatch, "console filters must bind cursors") {
+            _ = try pagingStore.console(level: "warn", limit: 1, cursor: scopedCursor)
+        }
+        try expectHostError(.paginationCursorScopeMismatch, "commands must bind cursors") {
+            _ = try pagingStore.network(
+                failedOnly: false, status: nil, limit: 1, cursor: scopedCursor
+            )
+        }
+        pagingStore.append(kind: "console", level: "error", message: "mutation")
+        try expectHostError(.paginationCursorStale, "diagnostic mutation must be explicit") {
+            _ = try pagingStore.console(level: "error", limit: 1, cursor: scopedCursor)
+        }
     }
 
     static func diagnosticCLI() throws {
-        let console = try CLIParser().parse(["console", "list", "--level", "error", "--limit", "25"])
+        let cursor = "123e4567-e89b-12d3-a456-426614174000"
+        let console = try CLIParser().parse([
+            "console", "list", "--level", "error", "--limit", "25", "--cursor", cursor,
+        ])
         try expect(console.request?.command == .consoleList, "console command should parse")
+        try expect(console.request?.parameters["cursor"] == .string(cursor), "console cursor should parse")
+        let networkList = try CLIParser().parse([
+            "network", "list", "--failed", "--limit", "2", "--cursor", cursor,
+        ])
+        try expect(networkList.request?.parameters["cursor"] == .string(cursor), "network cursor should parse")
+        let artifacts = try CLIParser().parse(["artifacts", "list", "--limit", "4", "--cursor", cursor])
+        try expect(artifacts.request?.parameters["limit"] == .number(4), "artifact limit should parse")
+        try expect(artifacts.request?.parameters["cursor"] == .string(cursor), "artifact cursor should parse")
         let network = try CLIParser().parse(["network", "get", "request-1"])
         try expect(network.request?.command == .networkGet, "network detail command should parse")
         let styles = try CLIParser().parse(["styles", "get", "--role", "button", "--name", "Continue", "--property", "display"])
         try expect(styles.request?.parameters["properties"] == .array([.string("display")]), "style property should parse")
         let storage = try CLIParser().parse(["storage", "list", "--scope", "local"])
         try expect(storage.request?.command == .storageList, "storage command should parse")
+        try expectThrows("pagination limits must be integers") {
+            _ = try CLIParser().parse(["console", "list", "--limit", "1.5"])
+        }
+        try expectThrows("pagination limits must stay bounded") {
+            _ = try CLIParser().parse(["artifacts", "list", "--limit", "251"])
+        }
+        try expectThrows("protocol pagination limits must be integers") {
+            try CommandRequest(
+                command: .networkList, parameters: ["limit": .number(1.5)]
+            ).validate()
+        }
         do {
             _ = try CLIParser().parse(["qa", "bogus", "--x"])
             throw TestFailure(description: "unknown QA subcommands should fail")
@@ -3998,10 +4496,12 @@ struct ProtocolTests {
         defer { try? FileManager.default.removeItem(atPath: root) }
         let defaultSession = TestBrowserSession()
         let engine = TestBrowserEngine()
+        let clock = TestMonotonicClock(100)
         let core = HostCore(
             engine: engine,
             artifacts: try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": root]),
             defaultSession: defaultSession,
+            monotonicNow: { clock.now() },
             shutdownHandler: {}
         )
         defer { core.stop() }
@@ -4042,14 +4542,75 @@ struct ProtocolTests {
         try expect(isolatedResult["isolated"] == .bool(true), "session result should report isolation")
         try expect(engine.createdSessions.count == 3, "isolated creation should delegate to the engine")
         try expect(engine.createdSessions[2].hostIsolated, "engine should create an isolated session")
+
+        engine.createdSessions[1].sessionMetadata = BrowserSessionPageMetadata(
+            url: "https://user:secret@example.test/path?value=\(String(repeating: "x", count: 8_300))",
+            title: String(repeating: "é", count: 600),
+            lifecycle: .available
+        )
+        engine.createdSessions[2].sessionMetadata = BrowserSessionPageMetadata(
+            url: "https://private.example.test/loading",
+            title: "Loading",
+            lifecycle: .navigating
+        )
+        let broken = core.handle(CommandRequest(
+            command: .sessionCreate, parameters: ["name": .string("broken")]
+        ))
+        try expect(broken.ok, "metadata failure session creation should succeed")
+        let brokenSession = engine.createdSessions[3]
+        brokenSession.sessionMetadataHook = {
+            core.sessionDidClose(brokenSession)
+            throw TestFailure(description: "session closed during metadata read")
+        }
+        let controlCounts = engine.createdSessions.map(\.agentControlEnableCount)
+        clock.advance(by: 1.25)
         let listed = core.handle(CommandRequest(command: .sessionList))
         guard listed.ok, case .object(let listedResult) = listed.result,
               case .array(let details)? = listedResult["details"] else {
             throw TestFailure(description: "session list should include typed details")
         }
         try expect(
-            details.contains(.object(["name": .string("private"), "isolated": .bool(true)])),
+            listedResult["sessions"] == .array([
+                .string("broken"), .string("default"), .string("private"), .string("secondary"),
+            ]),
+            "session list should retain a deterministic compatibility array"
+        )
+        let objects = details.compactMap { value -> [String: JSONValue]? in
+            guard case .object(let object) = value else { return nil }
+            return object
+        }
+        try expect(objects.count == 4, "every listed session should have one detail")
+        let privateDetail = objects.first { $0["name"] == .string("private") }
+        try expect(
+            privateDetail?["isolated"] == .bool(true)
+                && privateDetail?["status"] == .string("navigating"),
             "session list should identify isolated sessions"
+        )
+        let secondaryDetail = objects.first { $0["name"] == .string("secondary") }
+        let listedURL = secondaryDetail?["url"]?.stringValue ?? ""
+        let listedTitle = secondaryDetail?["title"]?.stringValue ?? ""
+        try expect(!listedURL.contains("user") && !listedURL.contains("secret"), "URL userinfo must be redacted")
+        try expect(listedURL.utf8.count == 8_192, "session URLs should be byte bounded")
+        try expect(secondaryDetail?["urlTruncated"] == .bool(true), "URL truncation should be reported")
+        try expect(listedTitle.utf8.count == 1_000, "session titles should be UTF-8 byte bounded")
+        try expect(secondaryDetail?["titleTruncated"] == .bool(true), "title truncation should be reported")
+        try expect(secondaryDetail?["untrustedContent"] == .bool(true), "page metadata should be untrusted")
+        try expect(secondaryDetail?["ageMs"] == .number(1_250), "session age should use monotonic time")
+        let brokenDetail = objects.first { $0["name"] == .string("broken") }
+        try expect(brokenDetail?["status"] == .string("unavailable"), "one metadata failure should be isolated")
+        try expect(
+            engine.createdSessions.map(\.agentControlEnableCount) == controlCounts,
+            "session listing must not enable agent control"
+        )
+        let afterRace = core.handle(CommandRequest(command: .sessionList))
+        guard case .object(let afterRaceResult) = afterRace.result else {
+            throw TestFailure(description: "session list should survive a close race")
+        }
+        try expect(
+            afterRaceResult["sessions"] == .array([
+                .string("default"), .string("private"), .string("secondary"),
+            ]),
+            "a session closed during listing should disappear from the next snapshot"
         )
 
         let inspected = core.handle(CommandRequest(
@@ -4275,6 +4836,7 @@ struct ProtocolTests {
             ("CLI P2 commands and boundaries", cliP2CommandsAndBoundaries),
             ("CLI command matrix", cliCommandMatrix),
             ("config CLI commands and arity", configCLICommandsAndArity),
+            ("doctor CLI and diagnostics", doctorCLIAndDiagnostics),
             ("settings registry and access", settingsRegistryAndAccess),
             ("UserDefaults settings compatibility", userDefaultsSettingsCompatibility),
             ("file settings backend security and persistence", fileSettingsBackendSecurityAndPersistence),
@@ -4300,6 +4862,8 @@ struct ProtocolTests {
             ("diagnostic bounds and URL redaction", diagnosticsBoundAndRedacted),
             ("responses fit the protocol frame", responsesFitTheProtocolFrame),
             ("artifact listing stays bounded", artifactListingStaysBounded),
+            ("pagination cursor security and lifecycle", paginationCursorSecurityAndLifecycle),
+            ("host logging security and bounds", hostLoggingIsPrivateBoundedAndRedacted),
             ("diagnostic services", diagnosticServices),
             ("diagnostic CLI", diagnosticCLI),
             ("local socket round-trip", localSocketRoundTrip),

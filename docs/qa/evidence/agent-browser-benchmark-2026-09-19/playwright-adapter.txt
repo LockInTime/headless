@@ -5,4 +5,3 @@ Use only the Playwright MCP `browser_*` tools. Navigate with
 snapshot refs, wait for dynamic content with `browser_wait_for`, and close the
 browser with `browser_close` when finished. Do not use `browser_evaluate`,
 direct JavaScript, shell, file, web-search, or HTTP-client tools.
-

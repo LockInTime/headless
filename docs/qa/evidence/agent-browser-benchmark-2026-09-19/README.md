@@ -49,10 +49,12 @@ confidence interval or a general product claim.
 | OpenCode | Playwright MCP | 3 | pass | 48.895 s | 24 | 0 | 0 |
 
 Setup reads are mandatory skill or reference-file loads. They count toward wall
-time and model tokens, but not browser calls or prohibited task actions. The raw
-event streams are unchanged. The initial summaries misclassified some of these
-reads; the aggregate `results.json` applies the narrow, path-specific correction
-and records scoring version 2.
+time and model tokens, but not browser calls or prohibited task actions. The
+published event streams retain event order, tool calls, and scoring data, but
+replace contributor-specific absolute paths and omit unrelated non-repository
+file contents. The initial summaries misclassified some setup reads; the
+aggregate `results.json` applies the narrow correction and records scoring
+version 2.
 
 ## Versions and method
 
@@ -101,7 +103,7 @@ variance. The timeout is worth keeping as a reliability signal.
 ## Files
 
 - `results.json`: aggregate machine-readable results and methodology.
-- `runs/*/trial-*.stdout.jsonl`: immutable runner events.
+- `runs/*/trial-*.stdout.jsonl`: immutable sanitized runner events.
 - `runs/*/trial-*.stderr.txt`: runner diagnostics.
 - `fixture/server.mjs`, `task.txt`, and `fixture/validate.mjs`: fixture, neutral
   task, and mechanical validator.
@@ -109,7 +111,7 @@ variance. The timeout is worth keeping as a reliability signal.
 - `SHA256SUMS`: checksums for every evidence file in this directory.
 
 The maintained runner is intentionally absent from this snapshot. The full issue
-still needs acceptance of architecture decision 29, the separate lab repository,
+still needs acceptance of architecture decision 33, the separate lab repository,
 a versioned schema, broader task set, controlled startup parity, resource
 metrics, and enough repetitions for uncertainty estimates. The existing
 in-repository conformance benchmark remains untouched.

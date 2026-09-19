@@ -10,12 +10,13 @@
     "validation": "five backend-state checks plus runner exit and prohibited-tool-call checks",
     "exactTaskSha256": "465ebb2c257ebfd9ca4835a1ba6c940d7b48daaf5daffebfd5fe45b7571d7a90",
     "headlessAdapterSha256": "4ab9b0fd49ed107a0d7d06fa7137dc82b0200d281dff7e11e8bb1e07a967e6ef",
-    "playwrightAdapterSha256": "d5f12509e0293501cc1ef78cf217830bb03b9e3cad1dde61a35ec251c2a03720",
+    "playwrightAdapterSha256": "9eaa40ef9ef0f6c74d079aaa2f9eb3ca096851eb5368d371c6d3cdf6fbc1a979",
     "viewport": "1280x720 requested for Playwright MCP; Headless reported 1160x673 content viewport",
     "originBoundary": "http://127.0.0.1:41731 only",
     "cleanState": "unique fixture run ID and browser session for every trial",
     "startup": "Headless host prestarted and reused; Playwright MCP used an isolated browser per trial",
-    "approvals": "Codex --approve-for-me enabled because browser mutations carry approval-required annotations"
+    "approvals": "Codex --approve-for-me enabled because browser mutations carry approval-required annotations",
+    "publicationSanitization": "Contributor-specific absolute paths are replaced and unrelated non-repository file contents are omitted; event order, tool calls, metrics, and scoring data are retained"
   },
   "environment": {
     "os": "Linux x86_64",

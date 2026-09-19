@@ -235,7 +235,7 @@ These checks pass on the current branch. The harness treats a partial run as a f
 The reviewed [non-Claude browser-tool pilot](qa/evidence/agent-browser-benchmark-2026-09-19/README.md)
 records three trials for each Codex and OpenCode pairing with Headless and a
 pinned Playwright MCP baseline. The snapshot includes the deterministic fixture,
-validator, exact prompts, raw runner events, derived results, and checksums. It
+validator, exact prompts, sanitized runner events, derived results, and checksums. It
 is evidence for the external benchmark-lab design in
 [#161](https://github.com/LockInTime/headless/issues/161), not a replacement for
 the deterministic regression benchmark or a general product ranking.
