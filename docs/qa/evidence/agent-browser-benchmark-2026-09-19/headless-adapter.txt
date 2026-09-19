@@ -1,0 +1,16 @@
+Browser adapter instructions for this run:
+
+Use only the `headless` MCP tool. Its `argv` field uses this exact syntax:
+
+- Create: `["session", "create", "UNIQUE_NAME"]`
+- Visit: `["--session", "UNIQUE_NAME", "visit", "URL"]`
+- Inspect: `["--session", "UNIQUE_NAME", "inspect", "--context", "summary", "--task", "TASK"]`
+- Inspect controls: `["--session", "UNIQUE_NAME", "inspect", "--context", "actions", "--task", "TASK"]`
+- Click by accessible role/name: `["--session", "UNIQUE_NAME", "click", "--role", "ROLE", "--name", "NAME"]`
+- Fill a current inspection ref: `["--session", "UNIQUE_NAME", "fill", "@eN", "VALUE"]`
+- Wait: `["--session", "UNIQUE_NAME", "wait", "--settled", "--timeout", "10000"]`
+- Close: `["session", "close", "UNIQUE_NAME"]`
+
+Use role/name targets or current inspection refs. Inspect again after navigation
+or a large rerender. The host is already running. Do not call `help`, and do not
+invent command names or flags.
