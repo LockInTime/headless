@@ -866,6 +866,43 @@ the schema so client packages cannot silently invent a different policy.
 
 ---
 
+## 29. Detached hosts use a private bounded log writer
+
+**Decision:** a detached host no longer sends stdout and stderr to
+`/dev/null`. The CLI starts a minimal writer process and connects the host to
+it through an inherited pipe. The writer emits bounded JSON lines to
+`/tmp/headless-<uid>/host.log`, keeps one `host.log.1` generation, and caps
+each file at 1 MiB. A pipe is required instead of launch-time rotation because
+only a live consumer can enforce a disk bound across a long host lifetime.
+
+The runtime directory remains the default trust boundary: it is an
+owner-checked `0700` directory, while the active log, archive, and lock are
+owner-owned regular files with one link and mode `0600`. Opens use
+`O_NOFOLLOW`; rotation is serialized with a private file lock. Unsafe files,
+symlinks, hard links, and relative overrides fail closed. The existing
+`HEADLESS_HOST_LOG` absolute-path override remains for operators and tests,
+but receives the same final-file checks, redaction, rotation, and bounds.
+
+The writer records only native host stdout and stderr. It does not receive
+protocol requests, page snapshots, fill values, credentials, cookies, or
+storage. Every line is byte-bounded and common secret assignments and URL
+userinfo are redacted before persistence. Startup exit and timeout responses
+may include only the selected path and an 8 KiB tail that has already passed
+through that writer. Logging adds no protocol command, listener, or browser
+capability.
+
+**Status:** implemented for
+[#193](https://github.com/LockInTime/headless/issues/193).
+
+**Consequences:** normal failures are diagnosable without a special
+environment variable, disk use is bounded to two generations, and logging
+survives the launching CLI process without keeping that CLI resident. The
+writer exits on pipe EOF when the host exits. Log content remains diagnostic
+data, not trusted evidence, and must not be exposed through the agent-facing
+protocol.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -891,5 +928,6 @@ the schema so client packages cannot silently invent a different policy.
 | 26  | Isolated sessions own one ephemeral browser context         | Implemented                                               | 2026-09-12 |
 | 27  | Interactive authentication keeps consent in trusted host    | Implemented                                               | 2026-09-12 |
 | 28  | SDKs derive from one Swift-owned protocol contract          | Decided                                                   | 2026-09-12 |
+| 29  | Detached hosts use a private bounded log writer             | Implemented                                               | 2026-09-19 |
 
 New decisions append here with the same format.

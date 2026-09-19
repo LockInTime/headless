@@ -655,7 +655,7 @@ cleanup() {
   fi
   rm -rf "$HEADLESS_ARTIFACT_DIR"
   rm -rf "$MENU_SNAPSHOT_DIR"
-  rm -f "$HEADLESS_SOCKET" "$LOG" "$HOST_LOG" "$RESTORE_LOG"
+  rm -f "$HEADLESS_SOCKET" "$LOG" "$HOST_LOG" "$HOST_LOG.1" "$HOST_LOG.lock" "$RESTORE_LOG"
   [[ -z "$SUPERVISED_FIFO" ]] || rm -f "$SUPERVISED_FIFO"
   [[ -z "$SUPERVISED_OUTPUT" ]] || rm -f "$SUPERVISED_OUTPUT"
   if [[ "$CLIPBOARD_SAVED" == 0 ]]; then
@@ -799,6 +799,11 @@ echo "$START_RESULT" | grep -q '"ready":true' || {
 echo "▸ host ready"
 HOST_PID="$(echo "$START_RESULT" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$HOST_PID"
+test -f "$HOST_LOG"
+test ! -L "$HOST_LOG"
+test "$(stat -f %Lp "$HOST_LOG")" = "600"
+test "$(stat -f %u "$HOST_LOG")" = "$(id -u)"
+test "$(stat -f %l "$HOST_LOG")" = "1"
 if [[ "$(frontmost_pid)" == "$HOST_PID" ]]; then
   echo "default agent startup stole focus" >&2
   fail

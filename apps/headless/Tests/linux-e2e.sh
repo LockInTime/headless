@@ -47,7 +47,7 @@ cleanup() {
   rm -rf "$HEADLESS_ARTIFACT_DIR"
   rm -rf "$XDG_DATA_HOME"
   rm -rf "$XDG_CONFIG_HOME"
-  rm -f "$HEADLESS_HOST_LOG"
+  rm -f "$HEADLESS_HOST_LOG" "$HEADLESS_HOST_LOG.1" "$HEADLESS_HOST_LOG.lock"
   [ -z "$SUPERVISED_FIFO" ] || rm -f "$SUPERVISED_FIFO"
   [ -z "$SUPERVISED_OUTPUT" ] || rm -f "$SUPERVISED_OUTPUT"
   exit "$status"
@@ -155,6 +155,11 @@ SUPERVISED_OUTPUT=""
 
 STEP="host-start"
 headless start | grep -q '"ready":true'
+test -f "$HEADLESS_HOST_LOG"
+test ! -L "$HEADLESS_HOST_LOG"
+test "$(stat -c %a "$HEADLESS_HOST_LOG")" = "600"
+test "$(stat -c %u "$HEADLESS_HOST_LOG")" = "$(id -u)"
+test "$(stat -c %h "$HEADLESS_HOST_LOG")" = "1"
 test "$(stat -c %a "$XDG_DATA_HOME/headless")" = "700"
 test "$(stat -c %a "$XDG_DATA_HOME/headless/chromium-profile")" = "700"
 if RUNNING_PRESENTATION_START="$(headless start --foreground 2>&1)"; then

@@ -867,4 +867,8 @@ Global options:
 Settings:
   macOS Command-, opens Settings; `config` is the portable path on every platform.
 \(SettingsRegistry.shared.helpLines.joined(separator: "\n"))
+
+Host logs:
+  Detached hosts write bounded private logs to /tmp/headless-<uid>/host.log.
+  HEADLESS_HOST_LOG=/absolute/path overrides the destination for operators and tests.
 """

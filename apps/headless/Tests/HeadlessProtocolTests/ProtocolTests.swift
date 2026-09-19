@@ -3160,6 +3160,108 @@ struct ProtocolTests {
         )
     }
 
+    static func hostLoggingIsPrivateBoundedAndRedacted() throws {
+        let defaultStore = try HostLogStore(environment: [:])
+        try expect(
+            defaultStore.url == LocalRuntime.directoryURL.appendingPathComponent("host.log"),
+            "host logging should default to the private runtime directory"
+        )
+
+        let root = "/tmp/headless-host-log-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        try FileManager.default.createDirectory(
+            atPath: root, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: NSNumber(value: 0o700)]
+        )
+        let logPath = root + "/host.log"
+        let store = try HostLogStore(
+            environment: ["HEADLESS_HOST_LOG": logPath], maximumBytes: 12_000
+        )
+        try store.prepare()
+
+        let pipe = Pipe()
+        let repeated = String(repeating: "safe diagnostic line\n", count: 900)
+        let sensitive = "\"password\":\"visible\" token:visible https://user:visible@example.com/path\n"
+            + "Authorization: Bearer visible\nCookie: session=visible\n"
+        pipe.fileHandleForWriting.write(Data((repeated + sensitive).utf8))
+        try pipe.fileHandleForWriting.close()
+        try store.consume(pipe.fileHandleForReading)
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: logPath)
+        let archiveAttributes = try FileManager.default.attributesOfItem(atPath: logPath + ".1")
+        try expect(
+            (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600,
+            "host log should be owner-only"
+        )
+        try expect(
+            (archiveAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o600,
+            "rotated host log should remain owner-only"
+        )
+        try expect(
+            (attributes[.size] as? NSNumber)?.intValue ?? Int.max <= 12_000,
+            "active host log should remain bounded"
+        )
+        try expect(
+            (archiveAttributes[.size] as? NSNumber)?.intValue ?? Int.max <= 12_000,
+            "rotated host log should remain bounded"
+        )
+        let combined = try String(contentsOfFile: logPath, encoding: .utf8)
+            + String(contentsOfFile: logPath + ".1", encoding: .utf8)
+        try expect(!combined.contains("visible"), "host logs must redact common secret forms")
+        try expect(combined.contains("[REDACTED]"), "host logs should preserve an explicit redaction marker")
+        try expect(store.diagnosticTail(maximumBytes: 512)?.utf8.count ?? 0 <= 512, "diagnostic tail should be bounded")
+
+        let concurrentErrors = ConcurrentSettingsErrors()
+        DispatchQueue.concurrentPerform(iterations: 8) { index in
+            do {
+                let writer = try HostLogStore(
+                    environment: ["HEADLESS_HOST_LOG": logPath], maximumBytes: 12_000
+                )
+                let input = Pipe()
+                input.fileHandleForWriting.write(
+                    Data(String(repeating: "concurrent writer \(index)\n", count: 80).utf8)
+                )
+                try input.fileHandleForWriting.close()
+                try writer.consume(input.fileHandleForReading)
+            } catch {
+                concurrentErrors.append(error)
+            }
+        }
+        try expect(
+            concurrentErrors.messages.isEmpty,
+            "concurrent host log writers should serialize: \(concurrentErrors.messages.joined(separator: ", "))"
+        )
+        for path in [logPath, logPath + ".1"] {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            try expect(data.count <= 12_000, "concurrent host logging should preserve disk bounds")
+            for line in data.split(separator: 0x0A) {
+                _ = try JSONSerialization.jsonObject(with: Data(line))
+            }
+        }
+
+        let target = root + "/target.log"
+        _ = FileManager.default.createFile(atPath: target, contents: Data())
+        let symlink = root + "/symlink.log"
+        try FileManager.default.createSymbolicLink(atPath: symlink, withDestinationPath: target)
+        try expectThrows("host logging must reject symlinks") {
+            try HostLogStore(environment: ["HEADLESS_HOST_LOG": symlink]).prepare()
+        }
+        let hardlink = root + "/hardlink.log"
+        guard link(target, hardlink) == 0 else { throw TestFailure(description: "hard-link setup") }
+        try expectThrows("host logging must reject multiply linked files") {
+            try HostLogStore(environment: ["HEADLESS_HOST_LOG": hardlink]).prepare()
+        }
+        try expectThrows("host logging must reject relative overrides") {
+            _ = try HostLogStore(environment: ["HEADLESS_HOST_LOG": "host.log"])
+        }
+        try expectThrows("host logging must reject an unbounded size override") {
+            _ = try HostLogStore(
+                environment: ["HEADLESS_HOST_LOG": logPath],
+                maximumBytes: HostLogStore.maximumFileBytes + 1
+            )
+        }
+    }
+
     static func diagnosticServices() throws {
         let store = QADiagnosticStore()
         let typedHeaders = diagnosticStringHeaders([
@@ -4300,6 +4402,7 @@ struct ProtocolTests {
             ("diagnostic bounds and URL redaction", diagnosticsBoundAndRedacted),
             ("responses fit the protocol frame", responsesFitTheProtocolFrame),
             ("artifact listing stays bounded", artifactListingStaysBounded),
+            ("host logging security and bounds", hostLoggingIsPrivateBoundedAndRedacted),
             ("diagnostic services", diagnosticServices),
             ("diagnostic CLI", diagnosticCLI),
             ("local socket round-trip", localSocketRoundTrip),

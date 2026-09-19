@@ -42,6 +42,12 @@ schema
   attach to an existing host, verifies the launched host PID, and shuts the host
   down when the launcher input closes or the launcher exits. Normal starts
   remain shared and detached.
+- Detached hosts write bounded structured output to
+  `/tmp/headless-<uid>/host.log`, with one rotated `host.log.1` generation.
+  Both files are private regular files capped at 1 MiB each. An operator or
+  test may set `HEADLESS_HOST_LOG` to an absolute path; unsafe files, symlinks,
+  hard links, and relative overrides are rejected. Startup failures report the
+  selected path and a bounded redacted tail.
 - `schema` prints the versioned SDK contract generated from the Swift request
   definitions. It is local-only and includes request and response envelopes,
   command parameters and bounds, errors, compatibility, cancellation, and

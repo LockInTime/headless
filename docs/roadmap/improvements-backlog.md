@@ -464,9 +464,13 @@ get an architecture-decision entry:
 - **G1. `headless doctor`** — one command validating runtime, ffmpeg, socket
   dir, permissions, and printing fix hints (pieces exist across
   `install-linux.sh`, `runtime`, sandbox `doctor`).
-- **G2. Structured host logging** — today host stderr goes to `/dev/null`
-  unless `HEADLESS_HOST_LOG` is set (`HeadlessCLI/main.swift`); startup
-  failures are near-invisible. Default to a rotating log in the runtime dir.
+- **G2. Structured host logging** ([#193](https://github.com/LockInTime/headless/issues/193)) —
+  ~~today host stderr goes to `/dev/null` unless `HEADLESS_HOST_LOG` is set
+  (`HeadlessCLI/main.swift`); startup failures are near-invisible. Default to
+  a rotating log in the runtime dir.~~ **Done:** detached hosts stream through
+  a bounded writer into private JSON-line logs in the runtime directory, keep
+  one rotated generation, preserve the absolute-path operator override, and
+  include a redacted tail in startup failures.
 - **G3. Response pagination primitives** (with A3) — cursor pattern reusable
   by `console list`, `network list`, `artifacts list`.
 - **G4. Session metadata** — `session list` returning current URL/title/age;

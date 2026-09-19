@@ -30,6 +30,81 @@ private struct HostLauncher {
 
     let client = LocalSocketClient()
 
+    private final class LogCapture {
+        let store: HostLogStore
+        let process: Process
+        let writer: FileHandle
+
+        init(environment: [String: String]) throws {
+            store = try HostLogStore(environment: environment)
+            try store.prepare()
+            let pipe = Pipe()
+            process = Process()
+            process.executableURL = try Self.runningCLIURL()
+            process.arguments = ["__host-log-writer"]
+            process.environment = [
+                "HEADLESS_INTERNAL_LOG_WRITER": "1",
+                "HEADLESS_INTERNAL_LOG_PATH": store.url.path,
+                "HEADLESS_INTERNAL_LOG_MAX_BYTES": String(store.maximumBytes),
+            ]
+            process.standardInput = pipe.fileHandleForReading
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            writer = pipe.fileHandleForWriting
+            do {
+                try process.run()
+                try pipe.fileHandleForReading.close()
+            } catch {
+                try? pipe.fileHandleForReading.close()
+                try? pipe.fileHandleForWriting.close()
+                throw error
+            }
+        }
+
+        func closeParentWriter() {
+            try? writer.close()
+        }
+
+        func waitForDrain() {
+            closeParentWriter()
+            let deadline = Date().addingTimeInterval(1)
+            while process.isRunning, Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+            if process.isRunning {
+                process.terminate()
+                let terminationDeadline = Date().addingTimeInterval(1)
+                while process.isRunning, Date() < terminationDeadline {
+                    Thread.sleep(forTimeInterval: 0.01)
+                }
+            }
+            if process.isRunning { _ = kill(process.processIdentifier, SIGKILL) }
+            process.waitUntilExit()
+        }
+
+        var diagnostic: HostLaunchDiagnostic {
+            HostLaunchDiagnostic(path: store.url.path, tail: store.diagnosticTail())
+        }
+
+        private static func runningCLIURL() throws -> URL {
+            #if os(Linux)
+            let candidate = URL(fileURLWithPath: "/proc/self/exe").resolvingSymlinksInPath()
+            #else
+            var requiredSize: UInt32 = 0
+            _ = _NSGetExecutablePath(nil, &requiredSize)
+            var buffer = [CChar](repeating: 0, count: Int(requiredSize))
+            guard _NSGetExecutablePath(&buffer, &requiredSize) == 0 else {
+                throw HostLogError.operationFailed("writer executable resolution")
+            }
+            let candidate = URL(fileURLWithPath: String(cString: buffer)).standardizedFileURL
+            #endif
+            guard FileManager.default.isExecutableFile(atPath: candidate.path) else {
+                throw HostLogError.operationFailed("writer executable resolution")
+            }
+            return candidate
+        }
+    }
+
     func ping() -> CommandResponse? {
         try? client.send(CommandRequest(command: .ping), timeout: 0.5)
     }
@@ -75,22 +150,17 @@ private struct HostLauncher {
             environment.removeValue(forKey: headlessNavigationAllowlistEnvironmentKey)
         }
         process.environment = environment
+        let logCapture = try LogCapture(environment: environment)
         let ownerPipe = supervised ? Pipe() : nil
         process.standardInput = ownerPipe?.fileHandleForReading ?? FileHandle.nullDevice
-        if let hostLog = environment["HEADLESS_HOST_LOG"], hostLog.hasPrefix("/") {
-            let logURL = URL(fileURLWithPath: hostLog)
-            FileManager.default.createFile(atPath: logURL.path, contents: nil)
-            let handle = try FileHandle(forWritingTo: logURL)
-            process.standardOutput = handle
-            process.standardError = handle
-        } else {
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-        }
+        process.standardOutput = logCapture.writer
+        process.standardError = logCapture.writer
         do {
             try process.run()
+            logCapture.closeParentWriter()
             try ownerPipe?.fileHandleForReading.close()
         } catch {
+            logCapture.waitForDrain()
             try? ownerPipe?.fileHandleForReading.close()
             try? ownerPipe?.fileHandleForWriting.close()
             throw error
@@ -117,13 +187,15 @@ private struct HostLauncher {
             if !process.isRunning {
                 try? ownerPipe?.fileHandleForWriting.close()
                 process.waitUntilExit()
-                throw HostLaunchError.exited(process.terminationStatus)
+                logCapture.waitForDrain()
+                throw HostLaunchError.exited(process.terminationStatus, logCapture.diagnostic)
             }
             Thread.sleep(forTimeInterval: 0.05)
         } while Date() < deadline
         try? ownerPipe?.fileHandleForWriting.close()
         terminateAndReap(process)
-        throw HostLaunchError.timedOut
+        logCapture.waitForDrain()
+        throw HostLaunchError.timedOut(logCapture.diagnostic)
     }
 
     func waitForSupervisedHost(_ launch: Launch) -> Int32 {
@@ -228,12 +300,22 @@ private struct HostLauncher {
     }
 }
 
+private struct HostLaunchDiagnostic {
+    let path: String
+    let tail: String?
+
+    var description: String {
+        guard let tail, !tail.isEmpty else { return "Host log: \(path)" }
+        return "Host log: \(path)\nRecent host output:\n\(tail)"
+    }
+}
+
 private enum HostLaunchError: Error, CustomStringConvertible {
     case notFound
     case alreadyRunning
     case ownershipMismatch
-    case timedOut
-    case exited(Int32)
+    case timedOut(HostLaunchDiagnostic)
+    case exited(Int32, HostLaunchDiagnostic)
     case allowlistMismatch(running: [String], requested: [String])
 
     var description: String {
@@ -243,8 +325,10 @@ private enum HostLaunchError: Error, CustomStringConvertible {
             return "A shared Headless host is already running. Stop it before starting a supervised host."
         case .ownershipMismatch:
             return "A different Headless host answered during supervised startup."
-        case .timedOut: return "Headless host did not become ready within 8 seconds."
-        case .exited(let status): return "Headless host exited during startup (status \(status))."
+        case .timedOut(let diagnostic):
+            return "Headless host did not become ready within 8 seconds.\n\(diagnostic.description)"
+        case .exited(let status, let diagnostic):
+            return "Headless host exited during startup (status \(status)).\n\(diagnostic.description)"
         case .allowlistMismatch(let running, let requested):
             let runningText = running.isEmpty ? "unrestricted" : running.joined(separator: ", ")
             return "The running host navigation allowlist (\(runningText)) does not match (\(requested.joined(separator: ", "))). Run `headless stop` first."
@@ -321,7 +405,30 @@ private enum CredentialBrokerLaunchError: Error, CustomStringConvertible {
     }
 }
 
+private func runInternalHostLogWriterIfRequested() -> Bool {
+    guard Array(CommandLine.arguments.dropFirst()) == ["__host-log-writer"] else { return false }
+    let environment = ProcessInfo.processInfo.environment
+    guard environment["HEADLESS_INTERNAL_LOG_WRITER"] == "1",
+          let path = environment["HEADLESS_INTERNAL_LOG_PATH"], path.hasPrefix("/"),
+          let rawMaximum = environment["HEADLESS_INTERNAL_LOG_MAX_BYTES"],
+          let maximum = Int(rawMaximum) else {
+        fputs("headless: internal log writer authorization failed\n", stderr)
+        exit(64)
+    }
+    do {
+        let store = try HostLogStore(
+            environment: ["HEADLESS_HOST_LOG": path], maximumBytes: maximum
+        )
+        try store.consume(.standardInput)
+    } catch {
+        fputs("headless: internal log writer failed\n", stderr)
+        exit(74)
+    }
+    return true
+}
+
 do {
+    if runInternalHostLogWriterIfRequested() { exit(0) }
     let invocation = try CLIParser().parse(Array(CommandLine.arguments.dropFirst()))
     if let local = invocation.local {
         switch local {
@@ -420,6 +527,13 @@ do {
     let response = CommandResponse.failure(
         id: "unknown", code: "UNSUPPORTED_BROWSER_RUNTIME", message: error.description,
         suggestion: "Run `headless runtime` after installing a supported Chromium runtime."
+    )
+    try? printResponse(response)
+    exit(69)
+} catch let error as HostLogError {
+    let response = CommandResponse.failure(
+        id: "unknown", code: "HOST_LOG_UNAVAILABLE", message: error.description,
+        suggestion: "Check the private runtime directory or HEADLESS_HOST_LOG path."
     )
     try? printResponse(response)
     exit(69)
