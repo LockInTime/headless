@@ -77,6 +77,10 @@ final class ChromiumBrowserEngineSession: BrowserEngineSession {
 
     var hostIsolated: Bool { browserSession.isIsolated }
 
+    func hostSessionMetadata() throws -> BrowserSessionPageMetadata {
+        try browserSession.sessionMetadata()
+    }
+
     func hostVisit(_ url: URL) throws -> JSONValue { try browserSession.visit(url) }
     func hostInspect(parameters: [String: JSONValue]) throws -> JSONValue {
         try browserSession.inspect(parameters: parameters)

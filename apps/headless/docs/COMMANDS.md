@@ -45,6 +45,13 @@ schema
   facilities; its exit status is nonzero only when a failed check blocks a
   supported operation. It never starts a browser, repairs storage, removes a
   stale socket, or prints environment values and file contents.
+- `session list` preserves the ordered `sessions` name array and includes a
+  typed `details` entry for each session. Details report isolation, monotonic
+  age, `available`, `navigating`, or `unavailable` status, and nullable current
+  HTTP(S) URL and title. URL userinfo is removed, URL and title lengths are
+  bounded with explicit truncation flags, and page-derived fields are marked
+  `untrustedContent`. Listing does not focus windows, enable agent control, or
+  execute page JavaScript; one unavailable session does not fail the list.
 - `start --supervised` is for SDK-owned lifecycle management. It refuses to
   attach to an existing host, verifies the launched host PID, and shuts the host
   down when the launcher input closes or the launcher exits. Normal starts

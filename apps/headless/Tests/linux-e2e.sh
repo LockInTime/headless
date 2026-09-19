@@ -299,6 +299,13 @@ HEADLESS_CONFORMANCE_BASE_URL=http://127.0.0.1:41739 \
 headless session create qa | grep -q '"session":"qa"'
 headless session list | grep -q '"qa"'
 headless --session qa visit http://127.0.0.1:41739/designers/dashboard/ | grep -q 'Designers Dashboard'
+SESSION_METADATA="$(headless session list)"
+echo "$SESSION_METADATA" | grep -q '"name":"qa"'
+echo "$SESSION_METADATA" | grep -q '"status":"available"'
+echo "$SESSION_METADATA" | grep -q '"url":"http://127.0.0.1:41739/designers/dashboard/"'
+echo "$SESSION_METADATA" | grep -q '"title":"Designers Dashboard"'
+echo "$SESSION_METADATA" | grep -q '"untrustedContent":true'
+echo "$SESSION_METADATA" | grep -Eq '"ageMs":[0-9]'
 # Exercise the control-channel regression directly: the same session must
 # survive a second document, reload that document, go back, and reload again.
 headless --session qa visit http://127.0.0.1:41739/next/ | grep -q 'Designer Details'

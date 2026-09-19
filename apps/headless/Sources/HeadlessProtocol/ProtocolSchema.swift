@@ -134,13 +134,34 @@ public struct ProtocolResultField: Sendable {
     public let name: String
     public let kind: ProtocolResultValueKind
     public let required: Bool
+    public let items: ProtocolResultArrayItems?
+    public let values: [String]?
 
     fileprivate var document: JSONValue {
-        .object([
+        var fields: [String: JSONValue] = [
             "name": .string(name),
             "type": .string(kind.rawValue),
             "required": .bool(required),
-        ])
+        ]
+        if let items { fields["items"] = items.document }
+        if let values { fields["values"] = .array(values.map(JSONValue.string)) }
+        return .object(fields)
+    }
+}
+
+public struct ProtocolResultArrayItems: Sendable {
+    public let kind: ProtocolResultValueKind
+    public let name: String?
+    public let fields: [ProtocolResultField]
+
+    fileprivate var document: JSONValue {
+        var value: [String: JSONValue] = ["type": .string(kind.rawValue)]
+        if let name { value["name"] = .string(name) }
+        if kind == .object {
+            value["additionalProperties"] = .bool(true)
+            value["fields"] = .array(fields.map(\.document))
+        }
+        return .object(value)
     }
 }
 
@@ -175,12 +196,16 @@ public struct ProtocolResultDefinition: Sendable {
                     "Invalid \(name) result: \(field.name) must be \(field.kind.rawValue)"
                 )
             }
+            try field.validateItems(value)
         }
     }
 }
 
 private extension ProtocolResultField {
     func accepts(_ value: JSONValue) -> Bool {
+        if let values, case .string(let string) = value {
+            return values.contains(string)
+        }
         switch (kind, value) {
         case (.string, .string), (.number, .number), (.boolean, .bool),
              (.object, .object), (.array, .array), (.json, _):
@@ -191,12 +216,50 @@ private extension ProtocolResultField {
             return false
         }
     }
+
+    func validateItems(_ value: JSONValue) throws {
+        guard let items, case .array(let values) = value else { return }
+        for value in values {
+            guard items.accepts(value) else {
+                throw ProtocolValidationError.invalidParameter(
+                    "Invalid \(name) result: array item must be \(items.kind.rawValue)"
+                )
+            }
+            if items.kind == .object {
+                try ProtocolResultDefinition(
+                    name: items.name ?? "ArrayItem", fields: items.fields
+                ).validate(value)
+            }
+        }
+    }
+}
+
+private extension ProtocolResultArrayItems {
+    func accepts(_ value: JSONValue) -> Bool {
+        ProtocolResultField(
+            name: "item", kind: kind, required: true, items: nil, values: nil
+        ).accepts(value)
+    }
 }
 
 private func resultField(
-    _ name: String, _ kind: ProtocolResultValueKind, required: Bool = true
+    _ name: String, _ kind: ProtocolResultValueKind, required: Bool = true,
+    values: [String]? = nil
 ) -> ProtocolResultField {
-    ProtocolResultField(name: name, kind: kind, required: required)
+    ProtocolResultField(
+        name: name, kind: kind, required: required, items: nil, values: values
+    )
+}
+
+private func resultArrayField(
+    _ name: String, itemKind: ProtocolResultValueKind,
+    itemName: String? = nil, itemFields: [ProtocolResultField] = []
+) -> ProtocolResultField {
+    ProtocolResultField(
+        name: name, kind: .array, required: true,
+        items: ProtocolResultArrayItems(kind: itemKind, name: itemName, fields: itemFields),
+        values: nil
+    )
 }
 
 private func result(
@@ -221,7 +284,17 @@ public func protocolResultDefinition(for command: CommandName) -> ProtocolResult
     case .sessionCreate:
         return result("SessionCreate", [resultField("session", .string), resultField("isolated", .boolean)])
     case .sessionList:
-        return result("SessionList", [resultField("sessions", .array), resultField("details", .array)])
+        return result("SessionList", [
+            resultArrayField("sessions", itemKind: .string),
+            resultArrayField("details", itemKind: .object, itemName: "SessionDetail", itemFields: [
+                resultField("name", .string), resultField("isolated", .boolean),
+                resultField("ageMs", .number),
+                resultField("status", .string, values: ["available", "navigating", "unavailable"]),
+                resultField("url", .stringOrNull), resultField("title", .stringOrNull),
+                resultField("urlTruncated", .boolean), resultField("titleTruncated", .boolean),
+                resultField("untrustedContent", .boolean),
+            ]),
+        ])
     case .sessionClose: return result("SessionClose", [resultField("closed", .string)])
     case .visit, .back, .reload, .wait:
         return result("PageState", [
@@ -597,7 +670,7 @@ public let protocolCommandDefinitions: [CommandName: ProtocolCommandDefinition] 
         command(.shutdown),
         command(.profileClear),
         command(.sessionCreate, [string("name", required: true, maximumBytes: 64), boolean("isolated")]),
-        command(.sessionList),
+        command(.sessionList, untrusted: true),
         command(.sessionClose),
         command(.visit, [string("url", required: true)], untrusted: true),
         command(.inspect, [

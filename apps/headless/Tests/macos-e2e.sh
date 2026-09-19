@@ -1309,6 +1309,13 @@ if [[ "$(frontmost_pid)" == "$HOST_PID" ]]; then
 fi
 "$CLI" session list | grep -q '"qa"'
 "$CLI" --session qa visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'
+SESSION_METADATA="$("$CLI" session list)"
+echo "$SESSION_METADATA" | grep -q '"name":"qa"'
+echo "$SESSION_METADATA" | grep -q '"status":"available"'
+echo "$SESSION_METADATA" | grep -q '"url":"http://127.0.0.1:'"$PORT"'/designers/dashboard"'
+echo "$SESSION_METADATA" | grep -q '"title":"Designers Dashboard"'
+echo "$SESSION_METADATA" | grep -q '"untrustedContent":true'
+echo "$SESSION_METADATA" | grep -Eq '"ageMs":[0-9]'
 STEP="inspect-diagnostics"
 SNAPSHOT="$("$CLI" --session qa inspect --interactive --text)"
 echo "$SNAPSHOT" | grep -q '"name":"Continue"'

@@ -476,8 +476,11 @@ get an architecture-decision entry:
   include a redacted tail in startup failures.
 - **G3. Response pagination primitives** (with A3) — cursor pattern reusable
   by `console list`, `network list`, `artifacts list`.
-- **G4. Session metadata** — `session list` returning current URL/title/age;
-  cheap, big agent QoL.
+- **G4. Session metadata** ([#196](https://github.com/LockInTime/headless/issues/196)) —
+  ~~`session list` returning current URL/title/age; cheap, big agent QoL.~~
+  **Done:** the compatible ordered name array now includes typed, bounded
+  details for age, isolation, lifecycle, sanitized URL, and title. Engine
+  failures and close races are isolated to one unavailable detail.
 - **G5. `wait --network-idle`** — Chromium engine has the events; declared
   capability on WKWebView.
 - **G6. Element screenshot on Linux `--by-region @rN`** — region-scoped series

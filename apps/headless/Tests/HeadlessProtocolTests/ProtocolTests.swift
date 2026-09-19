@@ -288,6 +288,11 @@ private func readRawSocketLine(descriptor: Int32) throws -> Data {
 private final class TestBrowserSession: BrowserEngineSession {
     let hostIsolated: Bool
     private(set) var agentControlEnableCount = 0
+    private(set) var sessionMetadataReadCount = 0
+    var sessionMetadata = BrowserSessionPageMetadata(
+        url: nil, title: nil, lifecycle: .available
+    )
+    var sessionMetadataHook: (() throws -> Void)?
     var authenticationState: JSONValue = .object([
         "origin": .string("http://localhost"), "detection": .string("none"),
     ])
@@ -301,6 +306,12 @@ private final class TestBrowserSession: BrowserEngineSession {
 
     init(isolated: Bool = false) {
         hostIsolated = isolated
+    }
+
+    func hostSessionMetadata() throws -> BrowserSessionPageMetadata {
+        sessionMetadataReadCount += 1
+        try sessionMetadataHook?()
+        return sessionMetadata
     }
 
     func hostEnableAgentControl() { agentControlEnableCount += 1 }
@@ -2874,9 +2885,28 @@ struct ProtocolTests {
         )
         try expect(
             protocolCommandDefinition(for: .visit).resultContainsUntrustedContent
-                && protocolCommandDefinition(for: .captureInfo).resultContainsUntrustedContent,
-            "page state and capture metadata must remain marked as untrusted"
+                && protocolCommandDefinition(for: .captureInfo).resultContainsUntrustedContent
+                && protocolCommandDefinition(for: .sessionList).resultContainsUntrustedContent,
+            "page-derived result contracts must remain marked as untrusted"
         )
+        let sessionDetail: [String: JSONValue] = [
+            "name": .string("default"), "isolated": .bool(false), "ageMs": .number(1),
+            "status": .string("available"), "url": .string("https://example.test/"),
+            "title": .string("Example"), "urlTruncated": .bool(false),
+            "titleTruncated": .bool(false), "untrustedContent": .bool(true),
+        ]
+        try protocolResultDefinition(for: .sessionList).validate(.object([
+            "sessions": .array([.string("default")]),
+            "details": .array([.object(sessionDetail)]),
+        ]))
+        try expectThrows("session metadata should reject unknown lifecycle states") {
+            var invalid = sessionDetail
+            invalid["status"] = .string("closed")
+            try protocolResultDefinition(for: .sessionList).validate(.object([
+                "sessions": .array([.string("default")]),
+                "details": .array([.object(invalid)]),
+            ]))
+        }
 
         let schemaInvocation = try CLIParser().parse(["schema"])
         try expect(schemaInvocation.local == .schema, "schema must remain a local CLI command")
@@ -4243,10 +4273,12 @@ struct ProtocolTests {
         defer { try? FileManager.default.removeItem(atPath: root) }
         let defaultSession = TestBrowserSession()
         let engine = TestBrowserEngine()
+        let clock = TestMonotonicClock(100)
         let core = HostCore(
             engine: engine,
             artifacts: try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": root]),
             defaultSession: defaultSession,
+            monotonicNow: { clock.now() },
             shutdownHandler: {}
         )
         defer { core.stop() }
@@ -4287,14 +4319,75 @@ struct ProtocolTests {
         try expect(isolatedResult["isolated"] == .bool(true), "session result should report isolation")
         try expect(engine.createdSessions.count == 3, "isolated creation should delegate to the engine")
         try expect(engine.createdSessions[2].hostIsolated, "engine should create an isolated session")
+
+        engine.createdSessions[1].sessionMetadata = BrowserSessionPageMetadata(
+            url: "https://user:secret@example.test/path?value=\(String(repeating: "x", count: 8_300))",
+            title: String(repeating: "é", count: 600),
+            lifecycle: .available
+        )
+        engine.createdSessions[2].sessionMetadata = BrowserSessionPageMetadata(
+            url: "https://private.example.test/loading",
+            title: "Loading",
+            lifecycle: .navigating
+        )
+        let broken = core.handle(CommandRequest(
+            command: .sessionCreate, parameters: ["name": .string("broken")]
+        ))
+        try expect(broken.ok, "metadata failure session creation should succeed")
+        let brokenSession = engine.createdSessions[3]
+        brokenSession.sessionMetadataHook = {
+            core.sessionDidClose(brokenSession)
+            throw TestFailure(description: "session closed during metadata read")
+        }
+        let controlCounts = engine.createdSessions.map(\.agentControlEnableCount)
+        clock.advance(by: 1.25)
         let listed = core.handle(CommandRequest(command: .sessionList))
         guard listed.ok, case .object(let listedResult) = listed.result,
               case .array(let details)? = listedResult["details"] else {
             throw TestFailure(description: "session list should include typed details")
         }
         try expect(
-            details.contains(.object(["name": .string("private"), "isolated": .bool(true)])),
+            listedResult["sessions"] == .array([
+                .string("broken"), .string("default"), .string("private"), .string("secondary"),
+            ]),
+            "session list should retain a deterministic compatibility array"
+        )
+        let objects = details.compactMap { value -> [String: JSONValue]? in
+            guard case .object(let object) = value else { return nil }
+            return object
+        }
+        try expect(objects.count == 4, "every listed session should have one detail")
+        let privateDetail = objects.first { $0["name"] == .string("private") }
+        try expect(
+            privateDetail?["isolated"] == .bool(true)
+                && privateDetail?["status"] == .string("navigating"),
             "session list should identify isolated sessions"
+        )
+        let secondaryDetail = objects.first { $0["name"] == .string("secondary") }
+        let listedURL = secondaryDetail?["url"]?.stringValue ?? ""
+        let listedTitle = secondaryDetail?["title"]?.stringValue ?? ""
+        try expect(!listedURL.contains("user") && !listedURL.contains("secret"), "URL userinfo must be redacted")
+        try expect(listedURL.utf8.count == 8_192, "session URLs should be byte bounded")
+        try expect(secondaryDetail?["urlTruncated"] == .bool(true), "URL truncation should be reported")
+        try expect(listedTitle.utf8.count == 1_000, "session titles should be UTF-8 byte bounded")
+        try expect(secondaryDetail?["titleTruncated"] == .bool(true), "title truncation should be reported")
+        try expect(secondaryDetail?["untrustedContent"] == .bool(true), "page metadata should be untrusted")
+        try expect(secondaryDetail?["ageMs"] == .number(1_250), "session age should use monotonic time")
+        let brokenDetail = objects.first { $0["name"] == .string("broken") }
+        try expect(brokenDetail?["status"] == .string("unavailable"), "one metadata failure should be isolated")
+        try expect(
+            engine.createdSessions.map(\.agentControlEnableCount) == controlCounts,
+            "session listing must not enable agent control"
+        )
+        let afterRace = core.handle(CommandRequest(command: .sessionList))
+        guard case .object(let afterRaceResult) = afterRace.result else {
+            throw TestFailure(description: "session list should survive a close race")
+        }
+        try expect(
+            afterRaceResult["sessions"] == .array([
+                .string("default"), .string("private"), .string("secondary"),
+            ]),
+            "a session closed during listing should disappear from the next snapshot"
         )
 
         let inspected = core.handle(CommandRequest(

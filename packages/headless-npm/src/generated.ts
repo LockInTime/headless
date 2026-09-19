@@ -7,7 +7,7 @@ export type Untrusted<T> = Readonly<{ readonly untrustedContent: true; readonly 
 export const PROTOCOL_VERSION = "0.5" as const;
 export const PROTOCOL_SCHEMA_VERSION = 1 as const;
 export const MAXIMUM_MESSAGE_BYTES = 1048576 as const;
-export const PROTOCOL_SCHEMA_SHA256 = "882634187c7ef02ec4ed51fff0e747114eadeff308c10bb9b3274b3630fad11d" as const;
+export const PROTOCOL_SCHEMA_SHA256 = "f74594367c0d762432876ac252b91bc2bc97fd1a9e71ba19f734283c7d654fd3" as const;
 export const PROTOCOL_FIXTURES_SHA256 = "0b51ffaa2d3e3aaf0c32adcfeb02c180dcbe44face0d49e1c332b69f403ae062" as const;
 export const RESPONSE_ADDITIONAL_PROPERTIES = true as const;
 export const MAXIMUM_COMMAND_TIMEOUT_MS = 125000 as const;
@@ -355,9 +355,22 @@ export interface SessionCreate {
   readonly [key: string]: JsonValue;
 }
 
+export interface SessionDetail {
+  readonly "name": string;
+  readonly "isolated": boolean;
+  readonly "ageMs": number;
+  readonly "status": "available" | "navigating" | "unavailable";
+  readonly "url": string | null;
+  readonly "title": string | null;
+  readonly "urlTruncated": boolean;
+  readonly "titleTruncated": boolean;
+  readonly "untrustedContent": boolean;
+  readonly [key: string]: JsonValue;
+}
+
 export interface SessionList {
-  readonly "sessions": readonly JsonValue[];
-  readonly "details": readonly JsonValue[];
+  readonly "sessions": readonly string[];
+  readonly "details": readonly SessionDetail[];
   readonly [key: string]: JsonValue;
 }
 
@@ -747,7 +760,7 @@ export interface CommandResults {
   readonly "shutdown": Shutdown;
   readonly "profile.clear": ProfileClear;
   readonly "session.create": SessionCreate;
-  readonly "session.list": SessionList;
+  readonly "session.list": Untrusted<SessionList>;
   readonly "session.close": SessionClose;
   readonly "visit": Untrusted<PageState>;
   readonly "inspect": Untrusted<Inspection>;
@@ -959,16 +972,76 @@ export const COMMAND_METADATA = {
     "capabilityNegotiated": false,
     "parameters": [],
     "result": {
-      "mayContainUntrustedContent": false,
+      "mayContainUntrustedContent": true,
       "schema": {
         "additionalProperties": true,
         "fields": [
           {
+            "items": {
+              "type": "string"
+            },
             "name": "sessions",
             "required": true,
             "type": "array"
           },
           {
+            "items": {
+              "additionalProperties": true,
+              "fields": [
+                {
+                  "name": "name",
+                  "required": true,
+                  "type": "string"
+                },
+                {
+                  "name": "isolated",
+                  "required": true,
+                  "type": "boolean"
+                },
+                {
+                  "name": "ageMs",
+                  "required": true,
+                  "type": "number"
+                },
+                {
+                  "name": "status",
+                  "required": true,
+                  "type": "string",
+                  "values": [
+                    "available",
+                    "navigating",
+                    "unavailable"
+                  ]
+                },
+                {
+                  "name": "url",
+                  "required": true,
+                  "type": "string-or-null"
+                },
+                {
+                  "name": "title",
+                  "required": true,
+                  "type": "string-or-null"
+                },
+                {
+                  "name": "urlTruncated",
+                  "required": true,
+                  "type": "boolean"
+                },
+                {
+                  "name": "titleTruncated",
+                  "required": true,
+                  "type": "boolean"
+                },
+                {
+                  "name": "untrustedContent",
+                  "required": true,
+                  "type": "boolean"
+                }
+              ],
+              "name": "SessionDetail",
+              "type": "object"
+            },
             "name": "details",
             "required": true,
             "type": "array"

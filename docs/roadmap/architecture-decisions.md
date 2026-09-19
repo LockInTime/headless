@@ -937,6 +937,37 @@ behavior rather than trusting doctor's earlier result.
 
 ---
 
+## 31. Session metadata is a bounded read-only host snapshot
+
+**Decision:** `session.list` preserves its ordered `sessions` name array and
+adds one fixed-shape detail per session. Details contain the name, isolation,
+monotonic age in milliseconds, lifecycle status, nullable current HTTP(S) URL
+and title, independent truncation flags, and `untrustedContent: true`. URLs are
+limited to 8,192 UTF-8 bytes after userinfo removal; titles are limited to
+1,000 UTF-8 bytes. Non-web URLs are omitted.
+
+The core snapshots session references and creation times under its state lock,
+then releases that lock before asking either engine for metadata. WebKit reads
+`WKWebView` URL, title, and loading state on the main thread. Chromium uses the
+read-only `Page.getNavigationHistory` CDP command plus host-owned navigation
+state. Neither adapter activates a window, enables agent control, evaluates
+page JavaScript, takes a semantic snapshot, or changes navigation. A session
+that closes or fails while being queried remains in that response with status
+`unavailable`; it does not fail metadata for other sessions and disappears
+from the next snapshot.
+
+**Status:** implemented for
+[#196](https://github.com/LockInTime/headless/issues/196).
+
+**Consequences:** agents can choose an existing session without inspecting or
+focusing every page. Page-controlled titles and URLs remain explicitly
+untrusted and bounded. No cookies, storage, credential aliases, authentication
+state, native window identifiers, process identifiers, or filesystem paths are
+exposed. The fields are additive at protocol version `0.5`; the generated SDK
+schema defines `SessionDetail` so clients do not need untyped casts.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -964,5 +995,6 @@ behavior rather than trusting doctor's earlier result.
 | 28  | SDKs derive from one Swift-owned protocol contract          | Decided                                                   | 2026-09-12 |
 | 29  | Detached hosts use a private bounded log writer             | Implemented                                               | 2026-09-19 |
 | 30  | Doctor is a read-only local readiness report                | Implemented                                               | 2026-09-19 |
+| 31  | Session metadata is a bounded read-only host snapshot       | Implemented                                               | 2026-09-19 |
 
 New decisions append here with the same format.

@@ -13,7 +13,7 @@ PROTOCOL_VERSION = '0.5'
 PROTOCOL_SCHEMA_VERSION = 1
 MAXIMUM_MESSAGE_BYTES = 1048576
 MAXIMUM_COMMAND_TIMEOUT_SECONDS = 125.0
-PROTOCOL_SCHEMA_SHA256 = '882634187c7ef02ec4ed51fff0e747114eadeff308c10bb9b3274b3630fad11d'
+PROTOCOL_SCHEMA_SHA256 = 'f74594367c0d762432876ac252b91bc2bc97fd1a9e71ba19f734283c7d654fd3'
 PROTOCOL_FIXTURES_SHA256 = '0b51ffaa2d3e3aaf0c32adcfeb02c180dcbe44face0d49e1c332b69f403ae062'
 RESPONSE_ADDITIONAL_PROPERTIES = True
 COMMAND_ERROR_CODES = ('ARTIFACT_ERROR', 'AUTH_ACCOUNT_NOT_FOUND', 'AUTH_CHALLENGE_CONSUMED', 'AUTH_CHALLENGE_EXPIRED', 'AUTH_CHALLENGE_NOT_FOUND', 'AUTH_FORM_CHANGED', 'AUTH_ORIGIN_CHANGED', 'AUTH_REQUIRED', 'CREDENTIAL_ALIAS_EXISTS', 'ELEMENT_NOT_FOUND', 'FLOW_FAILED', 'HOST_STOPPING', 'HOST_UNAVAILABLE', 'INTERNAL_ERROR', 'INVALID_CAPTURE_FORMAT', 'INVALID_COMMAND', 'INVALID_FLOW', 'INVALID_INPUT', 'INVALID_REQUEST', 'INVALID_SESSION', 'MISSING_PARAMETER', 'OPERATION_FAILED', 'PEER_DENIED', 'RECORDER_UNAVAILABLE', 'RECORDING_ACTIVE', 'RECORDING_FAILED', 'RECORDING_NOT_ACTIVE', 'REGION_NOT_FOUND', 'RESPONSE_TOO_LARGE', 'SENSITIVE_DIAGNOSTICS_DISABLED', 'SESSION_EXISTS', 'SESSION_NOT_FOUND', 'TIMEOUT', 'UNSAFE_NAVIGATION', 'UNSAFE_RESOURCE_TYPE', 'UNSUPPORTED_CAPABILITY', 'USER_PRESENCE_DENIED', 'USER_PRESENCE_UNAVAILABLE', 'VAULT_LOCKED', 'VAULT_OPERATION_FAILED', 'VAULT_RESPONSE_INVALID', 'VAULT_UNAVAILABLE')
@@ -222,9 +222,20 @@ class SessionCreate(TypedDict, total=False):
     session: Required[str]
     isolated: Required[bool]
 
+class SessionDetail(TypedDict, total=False):
+    name: Required[str]
+    isolated: Required[bool]
+    ageMs: Required[int | float]
+    status: Required[Literal['available', 'navigating', 'unavailable']]
+    url: Required[str | None]
+    title: Required[str | None]
+    urlTruncated: Required[bool]
+    titleTruncated: Required[bool]
+    untrustedContent: Required[bool]
+
 class SessionList(TypedDict, total=False):
-    sessions: Required[list[JsonValue]]
-    details: Required[list[JsonValue]]
+    sessions: Required[list[str]]
+    details: Required[list[SessionDetail]]
 
 class SessionClose(TypedDict, total=False):
     closed: Required[str]
@@ -1367,12 +1378,46 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
  'session.list': {'capabilityNegotiated': False,
                   'constraints': [],
                   'parameters': [],
-                  'result': {'mayContainUntrustedContent': False,
+                  'result': {'mayContainUntrustedContent': True,
                              'schema': {'additionalProperties': True,
-                                        'fields': [{'name': 'sessions',
+                                        'fields': [{'items': {'type': 'string'},
+                                                    'name': 'sessions',
                                                     'required': True,
                                                     'type': 'array'},
-                                                   {'name': 'details',
+                                                   {'items': {'additionalProperties': True,
+                                                              'fields': [{'name': 'name',
+                                                                          'required': True,
+                                                                          'type': 'string'},
+                                                                         {'name': 'isolated',
+                                                                          'required': True,
+                                                                          'type': 'boolean'},
+                                                                         {'name': 'ageMs',
+                                                                          'required': True,
+                                                                          'type': 'number'},
+                                                                         {'name': 'status',
+                                                                          'required': True,
+                                                                          'type': 'string',
+                                                                          'values': ['available',
+                                                                                     'navigating',
+                                                                                     'unavailable']},
+                                                                         {'name': 'url',
+                                                                          'required': True,
+                                                                          'type': 'string-or-null'},
+                                                                         {'name': 'title',
+                                                                          'required': True,
+                                                                          'type': 'string-or-null'},
+                                                                         {'name': 'urlTruncated',
+                                                                          'required': True,
+                                                                          'type': 'boolean'},
+                                                                         {'name': 'titleTruncated',
+                                                                          'required': True,
+                                                                          'type': 'boolean'},
+                                                                         {'name': 'untrustedContent',
+                                                                          'required': True,
+                                                                          'type': 'boolean'}],
+                                                              'name': 'SessionDetail',
+                                                              'type': 'object'},
+                                                    'name': 'details',
                                                     'required': True,
                                                     'type': 'array'}],
                                         'name': 'SessionList',
@@ -1768,9 +1813,9 @@ class SyncHostCommands:
         *,
         timeout: float | None = None,
         cancel: SyncCancellation | None = None,
-    ) -> SessionList:
+    ) -> Untrusted[SessionList]:
         parameters: dict[str, JsonValue] = {}
-        return cast(SessionList, self._invoke_sync('session.list', parameters, timeout, cancel))
+        return cast(Untrusted[SessionList], self._invoke_sync('session.list', parameters, timeout, cancel))
 
     def artifact_list(
         self,
@@ -2400,9 +2445,9 @@ class AsyncHostCommands:
         *,
         timeout: float | None = None,
         cancel: AsyncCancellation | None = None,
-    ) -> SessionList:
+    ) -> Untrusted[SessionList]:
         parameters: dict[str, JsonValue] = {}
-        return cast(SessionList, await self._invoke_async('session.list', parameters, timeout, cancel))
+        return cast(Untrusted[SessionList], await self._invoke_async('session.list', parameters, timeout, cancel))
 
     async def artifact_list(
         self,

@@ -519,6 +519,16 @@ final class WebKitBrowserEngine: BrowserEngine {
 extension BrowserWindowController: BrowserEngineSession {
     var hostIsolated: Bool { isIsolatedSession }
 
+    func hostSessionMetadata() throws -> BrowserSessionPageMetadata {
+        onMain {
+            BrowserSessionPageMetadata(
+                url: self.webView.url?.absoluteString,
+                title: self.webView.title,
+                lifecycle: self.webView.isLoading ? .navigating : .available
+            )
+        }
+    }
+
     func hostEnableAgentControl() { onMain { self.enableAgentControl() } }
     func hostVisit(_ url: URL) throws -> JSONValue { try agentVisit(url) }
     func hostInspect(parameters: [String: JSONValue]) throws -> JSONValue {

@@ -10,10 +10,28 @@ public struct BrowserScreenshot: Sendable {
     }
 }
 
+public enum BrowserSessionLifecycle: String, Sendable {
+    case available
+    case navigating
+}
+
+public struct BrowserSessionPageMetadata: Sendable {
+    public let url: String?
+    public let title: String?
+    public let lifecycle: BrowserSessionLifecycle
+
+    public init(url: String?, title: String?, lifecycle: BrowserSessionLifecycle) {
+        self.url = url
+        self.title = title
+        self.lifecycle = lifecycle
+    }
+}
+
 /// The portable browser surface used by `HostCore`. Platform adapters keep
 /// WKWebView and CDP details out of the command dispatcher.
 public protocol BrowserEngineSession: AnyObject {
     var hostIsolated: Bool { get }
+    func hostSessionMetadata() throws -> BrowserSessionPageMetadata
     func hostEnableAgentControl()
     func hostVisit(_ url: URL) throws -> JSONValue
     func hostInspect(parameters: [String: JSONValue]) throws -> JSONValue
@@ -143,14 +161,19 @@ public extension BrowserEngine {
 /// Shared command dispatcher and lifecycle state for every browser engine.
 /// New portable commands belong here exactly once.
 public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
+    private static var sessionURLMaximumBytes: Int { 8_192 }
+    private static var sessionTitleMaximumBytes: Int { 1_000 }
+
     private let engine: Engine
     private let artifacts: ArtifactStore
     private let authenticationBroker: AuthenticationBroker
     private let authenticationChallenges: AuthenticationChallengeStore
     private let navigationAllowlist: NavigationAllowlist
+    private let monotonicNow: @Sendable () -> TimeInterval
     private let shutdownHandler: @Sendable () -> Void
     private let lock = NSLock()
     private var sessions: [String: Engine.Session]
+    private var sessionCreatedAt: [String: TimeInterval]
     private var trace: [String: [JSONValue]] = ["default": []]
     private var activeFlows: [String: [RecordedFlowStep]] = [:]
     private var recordings: [String: BrowserRecording] = [:]
@@ -165,6 +188,9 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         authenticationBroker: AuthenticationBroker = UnavailableAuthenticationBroker(),
         authenticationChallenges: AuthenticationChallengeStore = AuthenticationChallengeStore(),
         navigationAllowlist: NavigationAllowlist = processNavigationAllowlist,
+        monotonicNow: @escaping @Sendable () -> TimeInterval = {
+            ProcessInfo.processInfo.systemUptime
+        },
         shutdownHandler: @escaping @Sendable () -> Void
     ) {
         self.engine = engine
@@ -172,7 +198,9 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         self.authenticationBroker = authenticationBroker
         self.authenticationChallenges = authenticationChallenges
         self.navigationAllowlist = navigationAllowlist
+        self.monotonicNow = monotonicNow
         self.sessions = ["default": defaultSession]
+        self.sessionCreatedAt = ["default": monotonicNow()]
         self.privateAuthenticationBrokers = defaultSession.hostIsolated
             ? ["default": EphemeralAuthenticationBroker()] : [:]
         self.shutdownHandler = shutdownHandler
@@ -190,6 +218,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             var stopped: [BrowserRecording] = []
             for name in names {
                 sessions.removeValue(forKey: name)
+                sessionCreatedAt.removeValue(forKey: name)
                 trace.removeValue(forKey: name)
                 activeFlows.removeValue(forKey: name)
                 if let recording = recordings.removeValue(forKey: name) { stopped.append(recording) }
@@ -211,6 +240,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             let openSessions = Array(sessions.values)
             recordings.removeAll()
             sessions.removeAll()
+            sessionCreatedAt.removeAll()
             trace.removeAll()
             activeFlows.removeAll()
             privateAuthenticationBrokers.values.forEach { $0.removeAll() }
@@ -241,17 +271,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             case .sessionCreate:
                 return try createSession(request)
             case .sessionList:
-                let listing = withState { () -> ([JSONValue], [JSONValue]) in
-                    let ordered = sessions.sorted(by: { $0.key < $1.key })
-                    return (
-                        ordered.map { .string($0.key) },
-                        ordered.map { name, session in
-                            .object([
-                                "name": .string(name), "isolated": .bool(session.hostIsolated),
-                            ])
-                        }
-                    )
-                }
+                let listing = sessionListing()
                 return .success(
                     id: request.id,
                     result: .object([
@@ -326,6 +346,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             let openSessions = Array(sessions.values)
             recordings.removeAll()
             sessions.removeAll()
+            sessionCreatedAt.removeAll()
             trace.removeAll()
             activeFlows.removeAll()
             privateAuthenticationBrokers.values.forEach { $0.removeAll() }
@@ -340,6 +361,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             let replacement = try engine.createSession()
             withState {
                 sessions["default"] = replacement
+                sessionCreatedAt["default"] = monotonicNow()
                 trace["default"] = []
             }
             return .success(id: request.id, result: .object([
@@ -350,6 +372,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             if let replacement = try? engine.createSession() {
                 withState {
                     sessions["default"] = replacement
+                    sessionCreatedAt["default"] = monotonicNow()
                     trace["default"] = []
                 }
             }
@@ -398,6 +421,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             if stopping { return "HOST_UNAVAILABLE" }
             if sessions[name] != nil { return "SESSION_EXISTS" }
             sessions[name] = created
+            sessionCreatedAt[name] = monotonicNow()
             trace[name] = []
             if created.hostIsolated {
                 privateAuthenticationBrokers[name] = EphemeralAuthenticationBroker()
@@ -423,6 +447,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         let closing = withState { () -> (Engine.Session?, BrowserRecording?) in
             let session = sessions.removeValue(forKey: name)
             guard session != nil else { return (nil, nil) }
+            sessionCreatedAt.removeValue(forKey: name)
             let recording = recordings.removeValue(forKey: name)
             trace.removeValue(forKey: name)
             activeFlows.removeValue(forKey: name)
@@ -434,6 +459,80 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         if let recording = closing.1 { _ = try? recording.stop(timeout: 5) }
         engine.closeSession(session)
         return .success(id: request.id, result: .object(["closed": .string(name)]))
+    }
+
+    private func sessionListing() -> ([JSONValue], [JSONValue]) {
+        let listedAt = monotonicNow()
+        let snapshot = withState {
+            sessions.map { name, session in
+                (name, session, sessionCreatedAt[name] ?? listedAt)
+            }.sorted { $0.0 < $1.0 }
+        }
+        let names = snapshot.map { JSONValue.string($0.0) }
+        let details = snapshot.map { name, session, createdAt in
+            sessionDetail(
+                name: name, session: session,
+                ageMilliseconds: max(0, (listedAt - createdAt) * 1_000)
+            )
+        }
+        return (names, details)
+    }
+
+    private func sessionDetail(
+        name: String, session: Engine.Session, ageMilliseconds: TimeInterval
+    ) -> JSONValue {
+        let base: [String: JSONValue] = [
+            "name": .string(name),
+            "isolated": .bool(session.hostIsolated),
+            "ageMs": .number(ageMilliseconds),
+            "untrustedContent": .bool(true),
+        ]
+        do {
+            let metadata = try session.hostSessionMetadata()
+            let boundedURL = Self.boundedSessionURL(metadata.url)
+            let boundedTitle = Self.boundedSessionString(
+                metadata.title, maximumBytes: Self.sessionTitleMaximumBytes
+            )
+            return .object(base.merging([
+                "status": .string(metadata.lifecycle.rawValue),
+                "url": boundedURL.value.map(JSONValue.string) ?? .null,
+                "title": boundedTitle.value.map(JSONValue.string) ?? .null,
+                "urlTruncated": .bool(boundedURL.truncated),
+                "titleTruncated": .bool(boundedTitle.truncated),
+            ]) { _, value in value })
+        } catch {
+            return .object(base.merging([
+                "status": .string("unavailable"),
+                "url": .null,
+                "title": .null,
+                "urlTruncated": .bool(false),
+                "titleTruncated": .bool(false),
+            ]) { _, value in value })
+        }
+    }
+
+    private static func boundedSessionURL(_ value: String?) -> (value: String?, truncated: Bool) {
+        guard let value,
+              var components = URLComponents(string: value),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              components.host != nil else { return (nil, false) }
+        components.user = nil
+        components.password = nil
+        return boundedSessionString(
+            components.string, maximumBytes: sessionURLMaximumBytes
+        )
+    }
+
+    private static func boundedSessionString(
+        _ value: String?, maximumBytes: Int
+    ) -> (value: String?, truncated: Bool) {
+        guard let value else { return (nil, false) }
+        let bytes = Array(value.utf8)
+        guard bytes.count > maximumBytes else { return (value, false) }
+        var end = maximumBytes
+        while end > 0, String(bytes: bytes[..<end], encoding: .utf8) == nil { end -= 1 }
+        return (String(decoding: bytes[..<end], as: UTF8.self), true)
     }
 
     private func execute(

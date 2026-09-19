@@ -616,6 +616,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
     private var mainFrameID: String?
     private var lastSafeURL: String?
     private var navigationRecoveryPending = false
+    private var navigationInProgress = false
     private var isolatedContextID: Int?
     private let mockLock = NSLock()
     private var networkMocks: [NetworkMock] = []
@@ -671,10 +672,28 @@ final class LinuxBrowserSession: @unchecked Sendable {
     }
 
     func visit(_ url: URL) throws -> JSONValue {
-        navigationLock.lock(); lastSafeURL = url.absoluteString; navigationLock.unlock()
+        navigationLock.lock()
+        lastSafeURL = url.absoluteString
+        navigationInProgress = true
+        navigationLock.unlock()
         pauseRecordingCapture()
         _ = try command("Page.navigate", parameters: ["url": url.absoluteString])
         return try wait(parameters: ["settled": .bool(true), "timeoutMs": .number(20_000)])
+    }
+
+    func sessionMetadata() throws -> BrowserSessionPageMetadata {
+        let history = try command("Page.getNavigationHistory", timeoutMilliseconds: 2_000)
+        let currentIndex = (history["currentIndex"] as? NSNumber)?.intValue ?? -1
+        let entries = history["entries"] as? [[String: Any]] ?? []
+        let entry = entries.indices.contains(currentIndex) ? entries[currentIndex] : nil
+        navigationLock.lock()
+        let navigating = navigationInProgress
+        navigationLock.unlock()
+        return BrowserSessionPageMetadata(
+            url: entry?["url"] as? String,
+            title: entry?["title"] as? String,
+            lifecycle: navigating ? .navigating : .available
+        )
     }
 
     func inspect(parameters: [String: JSONValue]) throws -> JSONValue {
@@ -1106,6 +1125,22 @@ final class LinuxBrowserSession: @unchecked Sendable {
             }
         case "Page.frameStartedLoading":
             pauseRecordingCapture()
+            if let frameID = parameters["frameId"] as? String {
+                navigationLock.lock()
+                if mainFrameID == nil { mainFrameID = frameID }
+                if mainFrameID == frameID { navigationInProgress = true }
+                navigationLock.unlock()
+            }
+        case "Page.frameStoppedLoading":
+            if let frameID = parameters["frameId"] as? String {
+                navigationLock.lock()
+                if mainFrameID == frameID { navigationInProgress = false }
+                navigationLock.unlock()
+            }
+        case "Page.loadEventFired":
+            navigationLock.lock()
+            navigationInProgress = false
+            navigationLock.unlock()
         case "Page.frameRequestedNavigation":
             pauseRecordingCapture()
             if let frameID = parameters["frameId"] as? String,
