@@ -82,6 +82,10 @@ test ! -e "$HOME/.local/share/headless/credential-vault/credentials-index.json"
 STEP="runtime-discovery"
 headless runtime | grep -q '"executable":"/usr/lib/chromium/chromium"'
 headless runtime | grep -q '"transport":"inherited-devtools-pipe"'
+DOCTOR_OUTPUT="$(headless doctor)"
+echo "$DOCTOR_OUTPUT" | grep -q '"ok":true'
+echo "$DOCTOR_OUTPUT" | grep -q '"id":"browser.runtime"'
+echo "$DOCTOR_OUTPUT" | grep -q '"id":"runtime.socket"'
 if SNAP_RUNTIME="$(HEADLESS_CHROMIUM_EXECUTABLE=/snap/bin/chromium headless runtime 2>&1)"; then
   echo "Snap Chromium was accepted by runtime selection" >&2
   exit 1

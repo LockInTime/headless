@@ -461,9 +461,12 @@ Owner-decided scope: package managers, no hosted service.
 Gathered from the audit and product thinking; none are committed until they
 get an architecture-decision entry:
 
-- **G1. `headless doctor`** — one command validating runtime, ffmpeg, socket
-  dir, permissions, and printing fix hints (pieces exist across
-  `install-linux.sh`, `runtime`, sandbox `doctor`).
+- **G1. `headless doctor`** ([#194](https://github.com/LockInTime/headless/issues/194)) —
+  ~~one command validating runtime, ffmpeg, socket dir, permissions, and
+  printing fix hints (pieces exist across `install-linux.sh`, `runtime`,
+  sandbox `doctor`).~~ **Done:** added a deterministic read-only JSON report
+  covering runtime, storage, logs, settings, browser, FFmpeg, and sandbox
+  readiness with stable findings and actionable failure guidance.
 - **G2. Structured host logging** ([#193](https://github.com/LockInTime/headless/issues/193)) —
   ~~today host stderr goes to `/dev/null` unless `HEADLESS_HOST_LOG` is set
   (`HeadlessCLI/main.swift`); startup failures are near-invisible. Default to

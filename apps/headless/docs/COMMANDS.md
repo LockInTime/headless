@@ -21,7 +21,7 @@ headless <command> -- --value       # stop option parsing; literal values
 
 ```sh
 version | --version
-start [--background|--foreground] [--allow PATTERN]... [--supervised] | status | stop | runtime
+start [--background|--foreground] [--allow PATTERN]... [--supervised] | status | stop | runtime | doctor
 profile clear
 config list | config describe KEY | config get KEY
 config set KEY VALUE | config reset KEY
@@ -38,6 +38,13 @@ schema
   `start --allow` with the same hosts in any order is a no-op. `stop`
   controls the host afterwards. `runtime` reports which engine is active and
   where it came from.
+- `doctor` runs a read-only, offline installation check. It reports bounded
+  JSON with stable check identifiers for the executable, browser engine,
+  FFmpeg, runtime directory and socket, artifact and settings storage, host
+  log, and platform sandbox. Warnings identify optional or not-yet-created
+  facilities; its exit status is nonzero only when a failed check blocks a
+  supported operation. It never starts a browser, repairs storage, removes a
+  stale socket, or prints environment values and file contents.
 - `start --supervised` is for SDK-owned lifecycle management. It refuses to
   attach to an existing host, verifies the launched host PID, and shuts the host
   down when the launcher input closes or the launcher exits. Normal starts

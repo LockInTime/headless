@@ -903,6 +903,40 @@ protocol.
 
 ---
 
+## 30. Doctor is a read-only local readiness report
+
+**Decision:** `headless doctor` is an offline local command with a versioned,
+bounded JSON report. Checks have stable identifiers, one of `healthy`,
+`warning`, `unsupported`, or `failed`, a severity, a short controlled detail,
+and an optional actionable suggestion. The report includes product, protocol,
+and platform versions. Output stays below the protocol frame budget even
+though doctor does not use the host protocol.
+
+Doctor inspects the running CLI, browser runtime, FFmpeg, private runtime and
+socket, artifact storage, typed settings, bounded host log, and applicable
+Linux sandbox constraints. It may send the existing non-disruptive `ping` to
+an owned private socket, but it never launches a browser, contacts the network,
+creates or repairs storage, changes configuration, removes stale sockets, or
+reads arbitrary file contents. Settings parsing is bounded to the existing
+settings-file limit. Reports use controlled messages and never include
+environment values, page data, credentials, cookies, storage values, URLs, or
+file contents.
+
+Missing optional tools and storage that has not been initialized are warnings.
+Unsafe storage, corrupt settings, stale or unsafe sockets, missing required
+Linux Chromium, an unresolved CLI, and running the Linux host as root are
+failures. The command exits nonzero only when at least one check failed.
+
+**Status:** implemented for
+[#194](https://github.com/LockInTime/headless/issues/194).
+
+**Consequences:** users and agents get one deterministic installation report
+without changing the machine they are diagnosing. Repair remains an explicit
+operator action, and startup keeps its existing validation and failure
+behavior rather than trusting doctor's earlier result.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -929,5 +963,6 @@ protocol.
 | 27  | Interactive authentication keeps consent in trusted host    | Implemented                                               | 2026-09-12 |
 | 28  | SDKs derive from one Swift-owned protocol contract          | Decided                                                   | 2026-09-12 |
 | 29  | Detached hosts use a private bounded log writer             | Implemented                                               | 2026-09-19 |
+| 30  | Doctor is a read-only local readiness report                | Implemented                                               | 2026-09-19 |
 
 New decisions append here with the same format.

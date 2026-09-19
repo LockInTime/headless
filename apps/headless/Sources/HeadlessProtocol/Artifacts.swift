@@ -28,14 +28,21 @@ public final class ArtifactStore: @unchecked Sendable {
     private let lock = NSLock()
 
     public init(environment: [String: String] = ProcessInfo.processInfo.environment) throws {
+        rootURL = try Self.resolvedRootURL(environment: environment, platform: .current)
+        try prepareRoot()
+    }
+
+    public static func resolvedRootURL(
+        environment: [String: String], platform: SettingPlatform = .current
+    ) throws -> URL {
         if let override = environment["HEADLESS_ARTIFACT_DIR"] {
             guard override.hasPrefix("/") else { throw ArtifactError.invalidRoot }
-            rootURL = URL(fileURLWithPath: override, isDirectory: true).standardizedFileURL
+            return URL(fileURLWithPath: override, isDirectory: true).standardizedFileURL
         } else {
-            #if os(macOS)
-            rootURL = FileManager.default.homeDirectoryForCurrentUser
+            if platform == .macOS {
+                return FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Application Support/Headless/Artifacts", isDirectory: true)
-            #else
+            }
             let base: URL
             if let stateHome = environment["XDG_STATE_HOME"], stateHome.hasPrefix("/") {
                 base = URL(fileURLWithPath: stateHome, isDirectory: true)
@@ -43,10 +50,8 @@ public final class ArtifactStore: @unchecked Sendable {
                 base = FileManager.default.homeDirectoryForCurrentUser
                     .appendingPathComponent(".local/state", isDirectory: true)
             }
-            rootURL = base.appendingPathComponent("headless/artifacts", isDirectory: true)
-            #endif
+            return base.appendingPathComponent("headless/artifacts", isDirectory: true)
         }
-        try prepareRoot()
     }
 
     public func reserve(

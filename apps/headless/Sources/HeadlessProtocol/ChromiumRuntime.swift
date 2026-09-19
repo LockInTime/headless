@@ -164,6 +164,12 @@ public struct ChromiumRuntimeResolver {
         return candidates.filter { seen.insert($0).inserted }
     }
 
+    public static func defaultCandidatePaths(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String] {
+        defaultSystemCandidates(environment: environment)
+    }
+
     private static func isSnapPath(_ path: String) -> Bool {
         let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
         return standardized == "/usr/bin/snap"

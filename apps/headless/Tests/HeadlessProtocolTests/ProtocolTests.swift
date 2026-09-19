@@ -190,6 +190,44 @@ private func connectRawUnixSocket(path: String) throws -> Int32 {
     return descriptor
 }
 
+private func createStaleUnixSocket(path: String) throws {
+    #if canImport(Darwin)
+    let descriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+    #else
+    let descriptor = Glibc.socket(AF_UNIX, Int32(SOCK_STREAM.rawValue), 0)
+    #endif
+    guard descriptor >= 0 else { throw TestFailure(description: "stale socket creation failed") }
+    defer { closeRawSocket(descriptor) }
+
+    var address = sockaddr_un()
+    let bytes = Array(path.utf8)
+    let capacity = MemoryLayout.size(ofValue: address.sun_path)
+    guard bytes.count < capacity else { throw TestFailure(description: "stale socket path was too long") }
+    address.sun_family = sa_family_t(AF_UNIX)
+    #if canImport(Darwin)
+    address.sun_len = UInt8(MemoryLayout<sa_family_t>.size + bytes.count + 1)
+    #endif
+    withUnsafeMutablePointer(to: &address.sun_path) { pointer in
+        pointer.withMemoryRebound(to: UInt8.self, capacity: capacity) { buffer in
+            for (index, byte) in bytes.enumerated() { buffer[index] = byte }
+            buffer[bytes.count] = 0
+        }
+    }
+    let length = socklen_t(MemoryLayout<sa_family_t>.size + bytes.count + 1)
+    let bound = withUnsafePointer(to: &address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            #if canImport(Darwin)
+            Darwin.bind(descriptor, $0, length)
+            #else
+            Glibc.bind(descriptor, $0, length)
+            #endif
+        }
+    }
+    guard bound == 0, chmod(path, 0o600) == 0 else {
+        throw TestFailure(description: "stale socket bind failed")
+    }
+}
+
 private func closeRawSocket(_ descriptor: Int32) {
     #if canImport(Darwin)
     _ = Darwin.close(descriptor)
@@ -1419,6 +1457,111 @@ struct ProtocolTests {
         try expectThrows("a literal session option must not bypass config arity validation") {
             _ = try CLIParser().parse(["config", "list", "--", "--session", "qa"])
         }
+    }
+
+    static func doctorCLIAndDiagnostics() throws {
+        let invocation = try CLIParser().parse(["doctor"])
+        try expect(invocation.local == .doctor, "doctor should be a local command")
+        try expect(invocation.jsonOutput, "doctor should always produce JSON")
+        try expectThrows("doctor should reject trailing arguments") {
+            _ = try CLIParser().parse(["doctor", "repair"])
+        }
+        try expectThrows("doctor should reject a browser session") {
+            _ = try CLIParser().parse(["--session", "qa", "doctor"])
+        }
+
+        let root = URL(fileURLWithPath: "/tmp/headless-doctor-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = root.appendingPathComponent("runtime", isDirectory: true)
+        let artifacts = root.appendingPathComponent("artifacts", isDirectory: true)
+        let settings = root.appendingPathComponent("settings", isDirectory: true)
+        for directory in [root, runtime, artifacts] {
+            try FileManager.default.createDirectory(
+                at: directory, withIntermediateDirectories: false,
+                attributes: [.posixPermissions: NSNumber(value: 0o700)]
+            )
+            try expect(chmod(directory.path, 0o700) == 0, "doctor fixture permissions")
+        }
+        let log = runtime.appendingPathComponent("host.log")
+        try Data("safe\n".utf8).write(to: log)
+        try expect(chmod(log.path, 0o600) == 0, "doctor log permissions")
+        let testExecutable = URL(fileURLWithPath: "/bin/sh").resolvingSymlinksInPath()
+
+        let healthyConfiguration = try DoctorConfiguration(
+            environment: ["HEADLESS_HOST_LOG": log.path],
+            platform: .linux,
+            executableURL: testExecutable,
+            runtimeDirectoryURL: runtime,
+            socketURL: runtime.appendingPathComponent("host.sock"),
+            artifactRootURL: artifacts,
+            settingsRootURL: settings,
+            chromiumCandidates: ["/bin/sh"],
+            ffmpegCandidates: ["/bin/sh"],
+            runningAsRoot: false
+        )
+        let healthy = HeadlessDoctor(configuration: healthyConfiguration).run()
+        try expect(!healthy.hasFailures, "a complete synthetic installation should pass doctor")
+        try expect(healthy.status == .healthy, "all healthy checks should produce a healthy report")
+        try expect(
+            healthy.document == HeadlessDoctor(configuration: healthyConfiguration).run().document,
+            "doctor output should be deterministic"
+        )
+        let healthyData = try ProtocolCodec.encoder.encode(healthy.document)
+        try expect(healthyData.count < headlessMaximumMessageBytes, "doctor output should fit the frame budget")
+        try expect(!String(decoding: healthyData, as: UTF8.self).contains(root.path), "doctor must not expose paths")
+
+        try expect(chmod(runtime.path, 0o755) == 0, "unsafe runtime fixture")
+        try FileManager.default.createDirectory(
+            at: settings, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: NSNumber(value: 0o700)]
+        )
+        try expect(chmod(settings.path, 0o700) == 0, "settings fixture permissions")
+        let settingsFile = settings.appendingPathComponent("settings.json")
+        try Data("{}".utf8).write(to: settingsFile)
+        try expect(chmod(settingsFile.path, 0o600) == 0, "settings file fixture permissions")
+        let socket = runtime.appendingPathComponent("host.sock")
+        try createStaleUnixSocket(path: socket.path)
+
+        let failingConfiguration = try DoctorConfiguration(
+            environment: ["HEADLESS_HOST_LOG": log.path, "SECRET_SENTINEL": "must-not-leak"],
+            platform: .linux,
+            executableURL: testExecutable,
+            runtimeDirectoryURL: runtime,
+            socketURL: socket,
+            artifactRootURL: artifacts,
+            settingsRootURL: settings,
+            chromiumCandidates: [],
+            ffmpegCandidates: [],
+            runningAsRoot: true
+        )
+        let failing = HeadlessDoctor(configuration: failingConfiguration).run()
+        try expect(failing.hasFailures && failing.status == .failed, "blocking diagnostics should fail doctor")
+        guard case .object(let report) = failing.document,
+              case .array(let rawChecks)? = report["checks"] else {
+            throw TestFailure(description: "doctor report shape")
+        }
+        let checks = try rawChecks.reduce(into: [String: [String: JSONValue]]()) { result, value in
+            guard case .object(let check) = value, let identifier = check["id"]?.stringValue else {
+                throw TestFailure(description: "doctor check shape")
+            }
+            result[identifier] = check
+        }
+        for identifier in [
+            "browser.runtime", "runtime.directory", "runtime.socket", "sandbox.linux", "settings.storage",
+        ] {
+            try expect(checks[identifier]?["status"] == .string("failed"), "\(identifier) should fail")
+        }
+        try expect(
+            checks["dependency.ffmpeg"]?["status"] == .string("warning"),
+            "missing FFmpeg should remain non-blocking"
+        )
+        let failingData = try ProtocolCodec.encoder.encode(failing.document)
+        try expect(!String(decoding: failingData, as: UTF8.self).contains("must-not-leak"), "doctor leaked an environment value")
+        try expect(FileManager.default.fileExists(atPath: socket.path), "doctor must not remove a stale socket")
+        try expect(
+            (try FileManager.default.attributesOfItem(atPath: runtime.path)[.posixPermissions] as? NSNumber)?.intValue == 0o755,
+            "doctor must not repair unsafe permissions"
+        )
     }
 
     static func settingsRegistryAndAccess() throws {
@@ -4377,6 +4520,7 @@ struct ProtocolTests {
             ("CLI P2 commands and boundaries", cliP2CommandsAndBoundaries),
             ("CLI command matrix", cliCommandMatrix),
             ("config CLI commands and arity", configCLICommandsAndArity),
+            ("doctor CLI and diagnostics", doctorCLIAndDiagnostics),
             ("settings registry and access", settingsRegistryAndAccess),
             ("UserDefaults settings compatibility", userDefaultsSettingsCompatibility),
             ("file settings backend security and persistence", fileSettingsBackendSecurityAndPersistence),

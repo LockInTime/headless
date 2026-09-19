@@ -19,6 +19,7 @@ public enum LocalCommand: Equatable, Sendable {
     case capabilities
     case schema
     case runtime
+    case doctor
     case start(
         presentation: AgentStartupPresentation?, allowlist: NavigationAllowlist,
         supervised: Bool
@@ -102,6 +103,10 @@ public struct CLIParser {
         case "runtime":
             try requireEmpty(arguments)
             return CLIInvocation(local: .runtime, jsonOutput: true)
+        case "doctor":
+            guard session == nil else { throw CLIParseError.invalidOption("--session") }
+            try requireEmpty(arguments)
+            return CLIInvocation(local: .doctor, jsonOutput: true)
         case "start":
             return try parseStart(arguments, jsonOutput: jsonOutput)
         case "config":
@@ -816,7 +821,7 @@ Core workflow:
 
 Commands:
   version | --version
-  start [--background|--foreground] [--allow PATTERN]... [--supervised] | status | stop | runtime
+  start [--background|--foreground] [--allow PATTERN]... [--supervised] | status | stop | runtime | doctor
   profile clear
   config list | config describe KEY | config get KEY
   config set KEY VALUE | config reset KEY

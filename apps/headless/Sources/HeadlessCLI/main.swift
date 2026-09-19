@@ -449,6 +449,10 @@ do {
                 "supported": .bool(true), "transport": .string("native-webkit"),
             ]))
             #endif
+        case .doctor:
+            let report = try HeadlessDoctor().run()
+            printJSON(report.document)
+            if report.hasFailures { exit(69) }
         case .start(let presentation, let allowlist, let supervised):
             let launch = try HostLauncher().start(
                 presentation: presentation, allowlist: allowlist, supervised: supervised
