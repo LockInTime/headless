@@ -26,6 +26,7 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
         -target "$(uname -m)-apple-macos13.0" -typecheck \
         Sources/HeadlessProtocol/Protocol.swift \
         Sources/HeadlessProtocol/ProtocolSchema.swift \
+        Sources/HeadlessProtocol/Pagination.swift \
         Sources/HeadlessProtocol/SupervisedHost.swift \
         Sources/HeadlessProtocol/CredentialCommands.swift \
         Sources/HeadlessProtocol/HostError.swift \

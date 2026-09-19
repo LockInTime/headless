@@ -474,8 +474,11 @@ get an architecture-decision entry:
   a bounded writer into private JSON-line logs in the runtime directory, keep
   one rotated generation, preserve the absolute-path operator override, and
   include a redacted tail in startup failures.
-- **G3. Response pagination primitives** (with A3) — cursor pattern reusable
-  by `console list`, `network list`, `artifacts list`.
+- **G3. Response pagination primitives** ([#195](https://github.com/LockInTime/headless/issues/195)) —
+  ~~cursor pattern reusable by `console list`, `network list`, `artifacts
+  list`.~~ **Done:** all three commands use bounded opaque host-side cursors,
+  deterministic ordering, filter and store binding, expiry, mutation
+  detection, and typed recovery errors.
 - **G4. Session metadata** ([#196](https://github.com/LockInTime/headless/issues/196)) —
   ~~`session list` returning current URL/title/age; cheap, big agent QoL.~~
   **Done:** the compatible ordered name array now includes typed, bounded

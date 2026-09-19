@@ -36,6 +36,21 @@ private func expectThrows(_ message: String, _ body: () throws -> Void) throws {
     }
 }
 
+private func expectHostError(
+    _ expected: HostErrorCode, _ message: String, _ body: () throws -> Void
+) throws {
+    do {
+        try body()
+        throw TestFailure(description: message)
+    } catch let error as HostError {
+        try expect(error.code == expected, "\(message): received \(error.code.rawValue)")
+    } catch is TestFailure {
+        throw TestFailure(description: message)
+    } catch {
+        throw TestFailure(description: "\(message): received \(error)")
+    }
+}
+
 private func repositoryFile(_ relativePath: String) -> URL? {
     var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
     while directory.path != "/" {
@@ -351,8 +366,10 @@ private final class TestBrowserSession: BrowserEngineSession {
     func hostScrollToCapturePoint(y: Double) throws -> JSONValue { .object(["y": .number(y)]) }
     func hostQAReport() throws -> JSONValue { .object(["issues": .array([])]) }
     func hostQAClear() throws -> JSONValue { .object(["cleared": .bool(true)]) }
-    func hostConsole(level: String, limit: Int) throws -> JSONValue { .object(["entries": .array([])]) }
-    func hostNetwork(failedOnly: Bool, status: Int?, limit: Int) throws -> JSONValue {
+    func hostConsole(level: String, limit: Int, cursor: String?) throws -> JSONValue {
+        .object(["entries": .array([])])
+    }
+    func hostNetwork(failedOnly: Bool, status: Int?, limit: Int, cursor: String?) throws -> JSONValue {
         .object(["requests": .array([])])
     }
     func hostNetworkDetail(requestID: String) throws -> JSONValue {
@@ -2911,6 +2928,31 @@ struct ProtocolTests {
             ]))
         }
 
+        for command in [CommandName.artifactList, .consoleList, .networkList] {
+            let parameters = protocolCommandDefinition(for: command).parameters
+            let limit = parameters.first { $0.name == "limit" }
+            let cursor = parameters.first { $0.name == "cursor" }
+            try expect(
+                limit?.kind == .integer && limit?.minimum == 1
+                    && limit?.maximum == Double(PaginationCursorStore.maximumLimit),
+                "\(command.rawValue) must expose the shared bounded integer limit"
+            )
+            try expect(
+                cursor?.kind == .string
+                    && cursor?.maximumBytes == PaginationCursorStore.cursorMaximumBytes,
+                "\(command.rawValue) must expose the shared bounded cursor"
+            )
+        }
+        try expect(
+            Set([
+                HostErrorCode.paginationCursorInvalid.rawValue,
+                HostErrorCode.paginationCursorExpired.rawValue,
+                HostErrorCode.paginationCursorScopeMismatch.rawValue,
+                HostErrorCode.paginationCursorStale.rawValue,
+            ]).isSubset(of: Set(protocolErrorCodes)),
+            "the schema must publish every typed pagination recovery error"
+        )
+
         let schemaInvocation = try CLIParser().parse(["schema"])
         try expect(schemaInvocation.local == .schema, "schema must remain a local CLI command")
         try expect(schemaInvocation.request == nil, "schema must not enter the browser protocol")
@@ -3327,12 +3369,105 @@ struct ProtocolTests {
         try expect(listing["total"] == .number(260), "artifact listing should report the true total")
         try expect(listing["omitted"] == .number(10), "artifact listing should report what it left out")
         try expect(listing["truncated"] == .bool(true), "a bounded artifact listing is truncated")
+        guard let cursor = listing["nextCursor"]?.stringValue,
+              case .object(let secondPage) = try store.list(limit: 250, cursor: cursor),
+              case .array(let remaining)? = secondPage["artifacts"] else {
+            throw TestFailure(description: "artifact pagination should return a second page")
+        }
+        try expect(remaining.count == 10, "artifact pagination should return every omitted item")
+        let names = (artifacts + remaining).compactMap { value -> String? in
+            guard case .object(let object) = value else { return nil }
+            return object["name"]?.stringValue
+        }
+        try expect(Set(names).count == 260, "artifact traversal should not duplicate or skip entries")
+        try expect(secondPage["nextCursor"] == .null, "the final artifact page should end traversal")
+        try expect(secondPage["mutation"] == .string("none"), "stable traversal should report no mutation")
         let encoded = try ProtocolCodec.encodeLine(
             CommandResponse.success(id: "artifacts", result: try store.list())
         )
         try expect(
             encoded.count <= headlessMaximumMessageBytes,
             "an artifact listing must fit the protocol frame"
+        )
+        guard case .object(let mutationStart) = try store.list(limit: 1),
+              let mutationCursor = mutationStart["nextCursor"]?.stringValue else {
+            throw TestFailure(description: "artifact mutation cursor")
+        }
+        _ = try store.write(
+            Data("x".utf8), requestedName: "bound-new.json", extension: "json", prefix: "bound"
+        )
+        try expectHostError(.paginationCursorStale, "artifact mutations must invalidate cursors") {
+            _ = try store.list(limit: 1, cursor: mutationCursor)
+        }
+    }
+
+    static func paginationCursorSecurityAndLifecycle() throws {
+        let clock = TestMonotonicClock(10)
+        let cursors = PaginationCursorStore(now: { clock.now() })
+        let values = (0..<5).map { JSONValue.number(Double($0)) }
+        let first = try cursors.page(
+            values: values, context: "console.list|level=all", limit: 2,
+            cursor: nil, direction: .newestBatchFirst
+        )
+        guard let cursor = first.nextCursor else {
+            throw TestFailure(description: "bounded pagination should issue a cursor")
+        }
+        try expect(cursor.utf8.count == 36, "cursor tokens should be fixed-size opaque UUIDs")
+        try expect(!cursor.contains("console") && !cursor.contains("level"), "cursor tokens must not encode scope")
+
+        try expectHostError(.paginationCursorScopeMismatch, "cross-filter cursors must fail closed") {
+            _ = try cursors.page(
+                values: values, context: "console.list|level=error", limit: 2,
+                cursor: cursor, direction: .newestBatchFirst
+            )
+        }
+        try expectHostError(.paginationCursorInvalid, "tampered cursors must fail closed") {
+            let replacement = cursor.first == "0" ? "1" : "0"
+            _ = try cursors.page(
+                values: values, context: "console.list|level=all", limit: 2,
+                cursor: replacement + cursor.dropFirst(), direction: .newestBatchFirst
+            )
+        }
+        try expectHostError(.paginationCursorStale, "mutated collections must reject old cursors") {
+            _ = try cursors.page(
+                values: values + [.number(5)], context: "console.list|level=all", limit: 2,
+                cursor: cursor, direction: .newestBatchFirst
+            )
+        }
+        clock.advance(by: PaginationCursorStore.lifetimeSeconds + 1)
+        try expectHostError(.paginationCursorExpired, "expired cursors must have a typed error") {
+            _ = try cursors.page(
+                values: values, context: "console.list|level=all", limit: 2,
+                cursor: cursor, direction: .newestBatchFirst
+            )
+        }
+
+        let otherSession = PaginationCursorStore()
+        try expectHostError(.paginationCursorInvalid, "cross-session cursors must fail closed") {
+            _ = try otherSession.page(
+                values: values, context: "console.list|level=all", limit: 2,
+                cursor: cursor, direction: .newestBatchFirst
+            )
+        }
+
+        let largeValues = (0..<12).map { index in
+            JSONValue.object([
+                "index": .number(Double(index)),
+                "payload": .string(String(repeating: "x", count: 100_000)),
+            ])
+        }
+        let bounded = try PaginationCursorStore().page(
+            values: largeValues, context: "bounded", limit: 250,
+            cursor: nil, direction: .fromStart
+        )
+        try expect(bounded.values.count < largeValues.count, "pagination should enforce a byte budget")
+        try expect(bounded.nextCursor != nil, "byte-bounded pages should remain traversable")
+        let boundedResponse = try ProtocolCodec.encodeLine(CommandResponse.success(
+            id: "bounded", result: .object(["items": .array(bounded.values)])
+        ))
+        try expect(
+            boundedResponse.count < headlessMaximumMessageBytes,
+            "pagination byte bounds should keep responses below the frame limit"
         )
     }
 
@@ -3451,13 +3586,13 @@ struct ProtocolTests {
             requestID: "request-1", requestHeaders: ["Authorization": "Bearer secret", "X-Visible": "yes"],
             responseHeaders: ["Set-Cookie": "session=secret", "Content-Type": "application/json"], source: "test"
         )
-        guard case .object(let console) = store.console(level: "error", limit: 10),
+        guard case .object(let console) = try store.console(level: "error", limit: 10),
               case .array(let messages)? = console["messages"] else {
             throw TestFailure(description: "console service")
         }
         try expect(console["untrustedContent"] == .bool(true), "console output should mark page evidence untrusted")
         try expect(messages.count == 1, "console service should filter by level")
-        guard case .object(let network) = store.network(failedOnly: true, status: nil, limit: 10),
+        guard case .object(let network) = try store.network(failedOnly: true, status: nil, limit: 10),
               case .array(let requests)? = network["requests"] else {
             throw TestFailure(description: "network service")
         }
@@ -3486,17 +3621,102 @@ struct ProtocolTests {
         try expect(boundedHeaders["X-000"] == .string("value-0"), "header selection should use sorted keys")
         try expect(boundedHeaders["X-063"] == .string("value-63"), "the deterministic header boundary changed")
         try expect(boundedHeaders["X-064"] == nil, "headers beyond the sorted cap should be omitted")
+
+        let pagingStore = QADiagnosticStore()
+        for index in 0..<5 {
+            pagingStore.append(kind: "console", level: "error", message: "console-\(index)")
+            pagingStore.append(
+                kind: "response", url: "https://example.test/\(index)", status: 500,
+                requestID: "page-\(index)"
+            )
+        }
+        var consoleCursor: String?
+        var consoleMessages: [String] = []
+        repeat {
+            guard case .object(let page) = try pagingStore.console(
+                level: "error", limit: 2, cursor: consoleCursor
+            ), case .array(let pageMessages)? = page["messages"] else {
+                throw TestFailure(description: "console pagination shape")
+            }
+            consoleMessages += pageMessages.compactMap { value in
+                guard case .object(let object) = value else { return nil }
+                return object["message"]?.stringValue
+            }
+            consoleCursor = page["nextCursor"]?.stringValue
+        } while consoleCursor != nil
+        try expect(
+            consoleMessages == ["console-3", "console-4", "console-1", "console-2", "console-0"],
+            "console traversal should return newest chronological batches without gaps"
+        )
+
+        var networkCursor: String?
+        var requestIDs: [String] = []
+        repeat {
+            guard case .object(let page) = try pagingStore.network(
+                failedOnly: true, status: 500, limit: 2, cursor: networkCursor
+            ), case .array(let requests)? = page["requests"] else {
+                throw TestFailure(description: "network pagination shape")
+            }
+            requestIDs += requests.compactMap { value in
+                guard case .object(let object) = value else { return nil }
+                return object["requestId"]?.stringValue
+            }
+            networkCursor = page["nextCursor"]?.stringValue
+        } while networkCursor != nil
+        try expect(
+            requestIDs.count == 5 && Set(requestIDs) == Set((0..<5).map { "page-\($0)" }),
+            "network traversal should be complete and duplicate-free"
+        )
+
+        guard case .object(let scopedPage) = try pagingStore.console(level: "error", limit: 1),
+              let scopedCursor = scopedPage["nextCursor"]?.stringValue else {
+            throw TestFailure(description: "console scope cursor")
+        }
+        try expectHostError(.paginationCursorScopeMismatch, "console filters must bind cursors") {
+            _ = try pagingStore.console(level: "warn", limit: 1, cursor: scopedCursor)
+        }
+        try expectHostError(.paginationCursorScopeMismatch, "commands must bind cursors") {
+            _ = try pagingStore.network(
+                failedOnly: false, status: nil, limit: 1, cursor: scopedCursor
+            )
+        }
+        pagingStore.append(kind: "console", level: "error", message: "mutation")
+        try expectHostError(.paginationCursorStale, "diagnostic mutation must be explicit") {
+            _ = try pagingStore.console(level: "error", limit: 1, cursor: scopedCursor)
+        }
     }
 
     static func diagnosticCLI() throws {
-        let console = try CLIParser().parse(["console", "list", "--level", "error", "--limit", "25"])
+        let cursor = "123e4567-e89b-12d3-a456-426614174000"
+        let console = try CLIParser().parse([
+            "console", "list", "--level", "error", "--limit", "25", "--cursor", cursor,
+        ])
         try expect(console.request?.command == .consoleList, "console command should parse")
+        try expect(console.request?.parameters["cursor"] == .string(cursor), "console cursor should parse")
+        let networkList = try CLIParser().parse([
+            "network", "list", "--failed", "--limit", "2", "--cursor", cursor,
+        ])
+        try expect(networkList.request?.parameters["cursor"] == .string(cursor), "network cursor should parse")
+        let artifacts = try CLIParser().parse(["artifacts", "list", "--limit", "4", "--cursor", cursor])
+        try expect(artifacts.request?.parameters["limit"] == .number(4), "artifact limit should parse")
+        try expect(artifacts.request?.parameters["cursor"] == .string(cursor), "artifact cursor should parse")
         let network = try CLIParser().parse(["network", "get", "request-1"])
         try expect(network.request?.command == .networkGet, "network detail command should parse")
         let styles = try CLIParser().parse(["styles", "get", "--role", "button", "--name", "Continue", "--property", "display"])
         try expect(styles.request?.parameters["properties"] == .array([.string("display")]), "style property should parse")
         let storage = try CLIParser().parse(["storage", "list", "--scope", "local"])
         try expect(storage.request?.command == .storageList, "storage command should parse")
+        try expectThrows("pagination limits must be integers") {
+            _ = try CLIParser().parse(["console", "list", "--limit", "1.5"])
+        }
+        try expectThrows("pagination limits must stay bounded") {
+            _ = try CLIParser().parse(["artifacts", "list", "--limit", "251"])
+        }
+        try expectThrows("protocol pagination limits must be integers") {
+            try CommandRequest(
+                command: .networkList, parameters: ["limit": .number(1.5)]
+            ).validate()
+        }
         do {
             _ = try CLIParser().parse(["qa", "bogus", "--x"])
             throw TestFailure(description: "unknown QA subcommands should fail")
@@ -4642,6 +4862,7 @@ struct ProtocolTests {
             ("diagnostic bounds and URL redaction", diagnosticsBoundAndRedacted),
             ("responses fit the protocol frame", responsesFitTheProtocolFrame),
             ("artifact listing stays bounded", artifactListingStaysBounded),
+            ("pagination cursor security and lifecycle", paginationCursorSecurityAndLifecycle),
             ("host logging security and bounds", hostLoggingIsPrivateBoundedAndRedacted),
             ("diagnostic services", diagnosticServices),
             ("diagnostic CLI", diagnosticCLI),

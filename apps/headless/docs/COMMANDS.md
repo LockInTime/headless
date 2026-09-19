@@ -52,6 +52,14 @@ schema
   bounded with explicit truncation flags, and page-derived fields are marked
   `untrustedContent`. Listing does not focus windows, enable agent control, or
   execute page JavaScript; one unavailable session does not fail the list.
+- `artifacts list`, `console list`, and `network list` accept `--limit N` and
+  `--cursor CURSOR`. Limits are integers from 1 through 250. Read
+  `nextCursor` until it is `null`; every page reports its returned and
+  available or total counts, `truncated`, and mutation state. Cursors are
+  opaque, expire after five minutes, are bound to the command, filters, and
+  owning store, and do not survive a host restart. If the collection changes,
+  or a cursor is invalid, expired, or used with another scope, restart the
+  listing without `--cursor`. Cursors contain no paths, page data, or secrets.
 - `start --supervised` is for SDK-owned lifecycle management. It refuses to
   attach to an existing host, verifies the launched host PID, and shuts the host
   down when the launcher input closes or the launcher exits. Normal starts
@@ -251,7 +259,7 @@ capture-info
 screenshot [REF | --role ROLE --name NAME | --full-page] [--format png|jpg|jpeg] [--output FILE] [--clipboard]
 screenshot --full-page --format pdf [--output FILE.pdf]
 screenshot --every-viewport|--by-section [--format png|jpg|jpeg] [--output PREFIX]
-artifacts list
+artifacts list [--limit N] [--cursor CURSOR]
 record start [--fps N] [--format mp4|mov|webm|gif] [--quality fast|balanced|high] [--output FILE]
 record status | record stop [--output FILE]
 qa report | qa clear
@@ -274,8 +282,8 @@ report create [--output REPORT.json]
 ## Diagnostics
 
 ```sh
-console list [--level LEVEL] [--limit N]
-network list [--failed] [--status CODE] [--limit N]
+console list [--level LEVEL] [--limit N] [--cursor CURSOR]
+network list [--failed] [--status CODE] [--limit N] [--cursor CURSOR]
 network get REQUEST_ID
 network emulate [--offline] [--latency MS] [--download-kbps N] [--upload-kbps N]
 network mock set URL --body BODY [--status CODE] [--content-type MIME]

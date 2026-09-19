@@ -140,11 +140,11 @@ final class ChromiumBrowserEngineSession: BrowserEngineSession {
     }
     func hostQAReport() throws -> JSONValue { try browserSession.qaReport() }
     func hostQAClear() throws -> JSONValue { browserSession.diagnostics.clear() }
-    func hostConsole(level: String, limit: Int) throws -> JSONValue {
-        browserSession.console(level: level, limit: limit)
+    func hostConsole(level: String, limit: Int, cursor: String?) throws -> JSONValue {
+        try browserSession.console(level: level, limit: limit, cursor: cursor)
     }
-    func hostNetwork(failedOnly: Bool, status: Int?, limit: Int) throws -> JSONValue {
-        browserSession.network(failedOnly: failedOnly, status: status, limit: limit)
+    func hostNetwork(failedOnly: Bool, status: Int?, limit: Int, cursor: String?) throws -> JSONValue {
+        try browserSession.network(failedOnly: failedOnly, status: status, limit: limit, cursor: cursor)
     }
     func hostNetworkDetail(requestID: String) throws -> JSONValue {
         browserSession.networkDetail(requestID: requestID)

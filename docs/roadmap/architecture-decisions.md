@@ -971,6 +971,44 @@ schema defines `SessionDetail` so clients do not need untyped casts.
 
 ---
 
+## 32. List pagination uses bounded server-side opaque cursors
+
+**Decision:** `artifact.list`, `console.list`, and `network.list` share one
+pagination implementation. Cursors are random UUID tokens backed by state in
+the owning host process. Tokens encode no offsets, paths, filters, session
+names, page data, or secrets. Records bind a token to its owning store,
+command, filter set, collection fingerprint, direction, and next position.
+They expire after five minutes, the registry retains at most 512 records, and
+all records disappear on host restart.
+
+Limits are integers from 1 through 250. Artifact pages are ordered newest
+first, then by name when creation times match. Diagnostic output keeps its
+existing behavior: the newest batch is returned first and entries within each
+batch remain chronological; subsequent pages walk older batches. Every page
+reserves at most 768 KiB for encoded list values so response metadata remains
+inside the 1 MiB frame. Pages report `returned`, truthful `total` or
+`available`, nullable `nextCursor`, `truncated`, and `mutation: "none"`.
+Existing fields and default limits remain.
+
+Collection fingerprints are computed from canonical bounded list values and
+kept only in private process memory. Mutation between pages fails with
+`PAGINATION_CURSOR_STALE`; expired, unknown or malformed, and wrong-command or
+wrong-filter tokens fail with distinct typed cursor errors. A cursor presented
+to a different session or artifact store is unknown and fails closed. Recovery
+for every cursor error is to restart without `--cursor`; data is never resumed
+against a changed snapshot.
+
+**Status:** implemented for
+[#195](https://github.com/LockInTime/headless/issues/195).
+
+**Consequences:** stable bounded collections can be traversed completely
+without increasing the 1 MiB frame limit. Callers that omit pagination options
+retain the prior first-page behavior. Cursor replay is safe until expiry, but
+cursors are intentionally not durable across host restarts and do not promise
+snapshot retention after source mutation.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -999,5 +1037,6 @@ schema defines `SessionDetail` so clients do not need untyped casts.
 | 29  | Detached hosts use a private bounded log writer             | Implemented                                               | 2026-09-19 |
 | 30  | Doctor is a read-only local readiness report                | Implemented                                               | 2026-09-19 |
 | 31  | Session metadata is a bounded read-only host snapshot       | Implemented                                               | 2026-09-19 |
+| 32  | List pagination uses bounded server-side opaque cursors     | Implemented                                               | 2026-09-19 |
 
 New decisions append here with the same format.

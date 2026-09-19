@@ -351,8 +351,10 @@ public func protocolResultDefinition(for command: CommandName) -> ProtocolResult
     case .artifactList:
         return result("ArtifactList", [
             resultField("directory", .string), resultField("artifacts", .array),
-            resultField("total", .number), resultField("omitted", .number),
-            resultField("truncated", .boolean),
+            resultField("returned", .number), resultField("total", .number),
+            resultField("omitted", .number), resultField("truncated", .boolean),
+            resultField("nextCursor", .stringOrNull),
+            resultField("mutation", .string, values: ["none"]),
         ])
     case .recordStart, .recordStatus, .recordStop:
         return result("Recording", [
@@ -371,11 +373,15 @@ public func protocolResultDefinition(for command: CommandName) -> ProtocolResult
         return result("ConsoleList", [
             resultField("untrustedContent", .boolean), resultField("messages", .array),
             resultField("returned", .number), resultField("available", .number),
+            resultField("truncated", .boolean), resultField("nextCursor", .stringOrNull),
+            resultField("mutation", .string, values: ["none"]),
         ])
     case .networkList:
         return result("NetworkList", [
             resultField("untrustedContent", .boolean), resultField("requests", .array),
             resultField("returned", .number), resultField("available", .number),
+            resultField("truncated", .boolean), resultField("nextCursor", .stringOrNull),
+            resultField("mutation", .string, values: ["none"]),
         ])
     case .networkGet:
         return result("NetworkDetail", [
@@ -733,7 +739,10 @@ public let protocolCommandDefinitions: [CommandName: ProtocolCommandDefinition] 
             "target, full-page, and series modes are mutually constrained",
             "PDF requires full-page mode and no clipboard",
         ]),
-        command(.artifactList),
+        command(.artifactList, [
+            integer("limit", minimum: 1, maximum: Double(PaginationCursorStore.maximumLimit)),
+            string("cursor", maximumBytes: PaginationCursorStore.cursorMaximumBytes),
+        ]),
         command(.recordStart, [
             string("output", maximumBytes: 128), number("fps", minimum: 1, maximum: 30),
             string(
@@ -751,11 +760,13 @@ public let protocolCommandDefinitions: [CommandName: ProtocolCommandDefinition] 
         command(.qaClear),
         command(.consoleList, [
             string("level", maximumBytes: 16, values: ["all", "log", "info", "debug", "warn", "error", "assert"]),
-            number("limit", minimum: 1, maximum: 200),
+            integer("limit", minimum: 1, maximum: Double(PaginationCursorStore.maximumLimit)),
+            string("cursor", maximumBytes: PaginationCursorStore.cursorMaximumBytes),
         ], untrusted: true),
         command(.networkList, [
             boolean("failed"), number("status", minimum: 100, maximum: 599),
-            number("limit", minimum: 1, maximum: 200),
+            integer("limit", minimum: 1, maximum: Double(PaginationCursorStore.maximumLimit)),
+            string("cursor", maximumBytes: PaginationCursorStore.cursorMaximumBytes),
         ], untrusted: true),
         command(.networkGet, [string("requestId", required: true, maximumBytes: 128)], untrusted: true),
         command(

@@ -984,12 +984,16 @@ final class LinuxBrowserSession: @unchecked Sendable {
         return diagnostics.report()
     }
 
-    func console(level: String, limit: Int) -> JSONValue {
-        diagnostics.console(level: level, limit: limit)
+    func console(level: String, limit: Int, cursor: String?) throws -> JSONValue {
+        try diagnostics.console(level: level, limit: limit, cursor: cursor)
     }
 
-    func network(failedOnly: Bool, status: Int?, limit: Int) -> JSONValue {
-        diagnostics.network(failedOnly: failedOnly, status: status, limit: limit)
+    func network(
+        failedOnly: Bool, status: Int?, limit: Int, cursor: String?
+    ) throws -> JSONValue {
+        try diagnostics.network(
+            failedOnly: failedOnly, status: status, limit: limit, cursor: cursor
+        )
     }
 
     func networkDetail(requestID: String) -> JSONValue {

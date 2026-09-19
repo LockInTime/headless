@@ -1327,10 +1327,20 @@ echo "$ACTION_SNAPSHOT" | grep -q '"task":"click Continue"'
 echo "$ACTION_SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$ACTION_SNAPSHOT" | grep -q '"actions":\["click"\]'
 echo "$ACTION_SNAPSHOT" | grep -q '"relevance"'
+"$CLI" --session qa reload >/dev/null
+"$CLI" --session qa reload >/dev/null
+CONSOLE_PAGE_ONE="$("$CLI" --session qa console list --level error --limit 1)"
+CONSOLE_CURSOR="$(echo "$CONSOLE_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
+test -n "$CONSOLE_CURSOR"
+"$CLI" --session qa console list --level error --limit 1 --cursor "$CONSOLE_CURSOR" | grep -q 'Next.js runtime error'
 CONSOLE="$("$CLI" --session qa console list --level error)"
 echo "$CONSOLE" | grep -q 'Next.js runtime error'
 NETWORK="$("$CLI" --session qa network list)"
 echo "$NETWORK" | grep -q '"requestId"'
+NETWORK_PAGE_ONE="$("$CLI" --session qa network list --limit 1)"
+NETWORK_CURSOR="$(echo "$NETWORK_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
+test -n "$NETWORK_CURSOR"
+"$CLI" --session qa network list --limit 1 --cursor "$NETWORK_CURSOR" | grep -q '"requestId"'
 NETWORK_ID="$(echo "$NETWORK" | sed -n 's/.*"requestId":"\([^"]*\)"[^}]*"url":"[^"]*\/api\/diagnostic".*/\1/p')"
 test -n "$NETWORK_ID"
 NETWORK_DETAIL="$("$CLI" --session qa network get "$NETWORK_ID")"
@@ -1493,6 +1503,10 @@ test -s "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mov"
 file "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mov" | grep -Eq 'ISO Media|QuickTime'
 "$CLI" artifacts list | grep -q '"name":"dashboard-flow.mp4"'
 "$CLI" artifacts list | grep -q '"name":"dashboard-flow.mov"'
+ARTIFACT_PAGE_ONE="$("$CLI" artifacts list --limit 1)"
+ARTIFACT_CURSOR="$(echo "$ARTIFACT_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
+test -n "$ARTIFACT_CURSOR"
+"$CLI" artifacts list --limit 1 --cursor "$ARTIFACT_CURSOR" | grep -q '"returned":1'
 "$CLI" --session qa back | grep -q 'Designers Dashboard'
 "$CLI" --session qa reload | grep -q 'Designers Dashboard'
 STEP="capture-hostile"

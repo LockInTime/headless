@@ -52,8 +52,8 @@ public protocol BrowserEngineSession: AnyObject {
     func hostScrollToCapturePoint(y: Double) throws -> JSONValue
     func hostQAReport() throws -> JSONValue
     func hostQAClear() throws -> JSONValue
-    func hostConsole(level: String, limit: Int) throws -> JSONValue
-    func hostNetwork(failedOnly: Bool, status: Int?, limit: Int) throws -> JSONValue
+    func hostConsole(level: String, limit: Int, cursor: String?) throws -> JSONValue
+    func hostNetwork(failedOnly: Bool, status: Int?, limit: Int, cursor: String?) throws -> JSONValue
     func hostNetworkDetail(requestID: String) throws -> JSONValue
     func hostStyles(parameters: [String: JSONValue]) throws -> JSONValue
     func hostCookies(includeValues: Bool) throws -> JSONValue
@@ -265,7 +265,10 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
                 return try clearProfile(request)
             }
             if request.command == .artifactList {
-                return .success(id: request.id, result: try artifacts.list())
+                return .success(id: request.id, result: try artifacts.list(
+                    limit: Int(request.parameters["limit"]?.numberValue ?? 250),
+                    cursor: request.parameters["cursor"]?.stringValue
+                ))
             }
             switch request.command {
             case .sessionCreate:
@@ -606,13 +609,15 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         case .consoleList:
             return try session.hostConsole(
                 level: request.parameters["level"]?.stringValue ?? "all",
-                limit: Int(request.parameters["limit"]?.numberValue ?? 100)
+                limit: Int(request.parameters["limit"]?.numberValue ?? 100),
+                cursor: request.parameters["cursor"]?.stringValue
             )
         case .networkList:
             return try session.hostNetwork(
                 failedOnly: request.parameters["failed"]?.boolValue ?? false,
                 status: request.parameters["status"]?.numberValue.map(Int.init),
-                limit: Int(request.parameters["limit"]?.numberValue ?? 100)
+                limit: Int(request.parameters["limit"]?.numberValue ?? 100),
+                cursor: request.parameters["cursor"]?.stringValue
             )
         case .networkGet:
             guard let requestID = request.parameters["requestId"]?.stringValue else {
