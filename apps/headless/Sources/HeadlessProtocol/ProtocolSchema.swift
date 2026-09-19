@@ -670,7 +670,9 @@ public let protocolCommandDefinitions: [CommandName: ProtocolCommandDefinition] 
         command(.shutdown),
         command(.profileClear),
         command(.sessionCreate, [string("name", required: true, maximumBytes: 64), boolean("isolated")]),
-        command(.sessionList, untrusted: true),
+        // Keep the compatibility name array directly accessible. Each detail
+        // record carries its own untrustedContent marker for page-derived data.
+        command(.sessionList),
         command(.sessionClose),
         command(.visit, [string("url", required: true)], untrusted: true),
         command(.inspect, [

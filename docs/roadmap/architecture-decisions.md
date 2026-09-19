@@ -942,7 +942,10 @@ behavior rather than trusting doctor's earlier result.
 **Decision:** `session.list` preserves its ordered `sessions` name array and
 adds one fixed-shape detail per session. Details contain the name, isolation,
 monotonic age in milliseconds, lifecycle status, nullable current HTTP(S) URL
-and title, independent truncation flags, and `untrustedContent: true`. URLs are
+and title, independent truncation flags, and `untrustedContent: true`. The
+mixed-trust result is not wrapped as wholly untrusted: the ordered `sessions`
+compatibility array stays directly accessible, while each detail record marks
+its page-derived URL and title as untrusted. URLs are
 limited to 8,192 UTF-8 bytes after userinfo removal; titles are limited to
 1,000 UTF-8 bytes. Non-web URLs are omitted.
 

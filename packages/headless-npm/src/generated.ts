@@ -7,7 +7,7 @@ export type Untrusted<T> = Readonly<{ readonly untrustedContent: true; readonly 
 export const PROTOCOL_VERSION = "0.5" as const;
 export const PROTOCOL_SCHEMA_VERSION = 1 as const;
 export const MAXIMUM_MESSAGE_BYTES = 1048576 as const;
-export const PROTOCOL_SCHEMA_SHA256 = "f74594367c0d762432876ac252b91bc2bc97fd1a9e71ba19f734283c7d654fd3" as const;
+export const PROTOCOL_SCHEMA_SHA256 = "b42ada9e237195df8ac612528759969ababae12ef6c4c72c56799764f2ac5608" as const;
 export const PROTOCOL_FIXTURES_SHA256 = "0b51ffaa2d3e3aaf0c32adcfeb02c180dcbe44face0d49e1c332b69f403ae062" as const;
 export const RESPONSE_ADDITIONAL_PROPERTIES = true as const;
 export const MAXIMUM_COMMAND_TIMEOUT_MS = 125000 as const;
@@ -760,7 +760,7 @@ export interface CommandResults {
   readonly "shutdown": Shutdown;
   readonly "profile.clear": ProfileClear;
   readonly "session.create": SessionCreate;
-  readonly "session.list": Untrusted<SessionList>;
+  readonly "session.list": SessionList;
   readonly "session.close": SessionClose;
   readonly "visit": Untrusted<PageState>;
   readonly "inspect": Untrusted<Inspection>;
@@ -972,7 +972,7 @@ export const COMMAND_METADATA = {
     "capabilityNegotiated": false,
     "parameters": [],
     "result": {
-      "mayContainUntrustedContent": true,
+      "mayContainUntrustedContent": false,
       "schema": {
         "additionalProperties": true,
         "fields": [

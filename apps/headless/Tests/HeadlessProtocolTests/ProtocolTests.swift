@@ -2885,9 +2885,12 @@ struct ProtocolTests {
         )
         try expect(
             protocolCommandDefinition(for: .visit).resultContainsUntrustedContent
-                && protocolCommandDefinition(for: .captureInfo).resultContainsUntrustedContent
-                && protocolCommandDefinition(for: .sessionList).resultContainsUntrustedContent,
+                && protocolCommandDefinition(for: .captureInfo).resultContainsUntrustedContent,
             "page-derived result contracts must remain marked as untrusted"
+        )
+        try expect(
+            !protocolCommandDefinition(for: .sessionList).resultContainsUntrustedContent,
+            "session list must preserve its directly accessible compatibility fields"
         )
         let sessionDetail: [String: JSONValue] = [
             "name": .string("default"), "isolated": .bool(false), "ageMs": .number(1),
