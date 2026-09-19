@@ -312,6 +312,8 @@ headless --session qa visit http://127.0.0.1:41739/next/ | grep -q 'Designer Det
 headless --session qa reload | grep -q 'Designer Details'
 headless --session qa back | grep -q 'Designers Dashboard'
 headless --session qa reload | grep -q 'Designers Dashboard'
+headless --session qa reload >/dev/null
+headless --session qa reload >/dev/null
 SNAPSHOT="$(headless --session qa inspect --interactive --text)"
 echo "$SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$SNAPSHOT" | grep -q '"name":"Reviewer"'
@@ -322,8 +324,6 @@ echo "$ACTION_SNAPSHOT" | grep -q '"task":"click Continue"'
 echo "$ACTION_SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$ACTION_SNAPSHOT" | grep -q '"actions":\["click"\]'
 echo "$ACTION_SNAPSHOT" | grep -q '"relevance"'
-headless --session qa reload >/dev/null
-headless --session qa reload >/dev/null
 CONSOLE_PAGE_ONE="$(headless --session qa console list --level error --limit 1)"
 CONSOLE_CURSOR="$(echo "$CONSOLE_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
 test -n "$CONSOLE_CURSOR"

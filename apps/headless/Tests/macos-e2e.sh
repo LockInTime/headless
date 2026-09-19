@@ -1313,23 +1313,23 @@ SESSION_METADATA="$("$CLI" session list)"
 echo "$SESSION_METADATA" | grep -q '"name":"qa"'
 echo "$SESSION_METADATA" | grep -q '"status":"available"'
 echo "$SESSION_METADATA" | grep -q '"url":"http://127.0.0.1:'"$PORT"'/designers/dashboard"'
-echo "$SESSION_METADATA" | grep -q '"title":"Designers Dashboard"'
-echo "$SESSION_METADATA" | grep -q '"untrustedContent":true'
-echo "$SESSION_METADATA" | grep -Eq '"ageMs":[0-9]'
-STEP="inspect-diagnostics"
-SNAPSHOT="$("$CLI" --session qa inspect --interactive --text)"
+	echo "$SESSION_METADATA" | grep -q '"title":"Designers Dashboard"'
+	echo "$SESSION_METADATA" | grep -q '"untrustedContent":true'
+	echo "$SESSION_METADATA" | grep -Eq '"ageMs":[0-9]'
+	STEP="inspect-diagnostics"
+	"$CLI" --session qa reload >/dev/null
+	"$CLI" --session qa reload >/dev/null
+	SNAPSHOT="$("$CLI" --session qa inspect --interactive --text)"
 echo "$SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$SNAPSHOT" | grep -q '"name":"Reviewer"'
 ! echo "$SNAPSHOT" | grep -q '"pwned":true'
 ACTION_SNAPSHOT="$("$CLI" --session qa inspect --context actions --task 'click Continue')"
 echo "$ACTION_SNAPSHOT" | grep -q '"contextMode":"actions"'
 echo "$ACTION_SNAPSHOT" | grep -q '"task":"click Continue"'
-echo "$ACTION_SNAPSHOT" | grep -q '"name":"Continue"'
-echo "$ACTION_SNAPSHOT" | grep -q '"actions":\["click"\]'
-echo "$ACTION_SNAPSHOT" | grep -q '"relevance"'
-"$CLI" --session qa reload >/dev/null
-"$CLI" --session qa reload >/dev/null
-CONSOLE_PAGE_ONE="$("$CLI" --session qa console list --level error --limit 1)"
+	echo "$ACTION_SNAPSHOT" | grep -q '"name":"Continue"'
+	echo "$ACTION_SNAPSHOT" | grep -q '"actions":\["click"\]'
+	echo "$ACTION_SNAPSHOT" | grep -q '"relevance"'
+	CONSOLE_PAGE_ONE="$("$CLI" --session qa console list --level error --limit 1)"
 CONSOLE_CURSOR="$(echo "$CONSOLE_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
 test -n "$CONSOLE_CURSOR"
 "$CLI" --session qa console list --level error --limit 1 --cursor "$CONSOLE_CURSOR" | grep -q 'Next.js runtime error'
