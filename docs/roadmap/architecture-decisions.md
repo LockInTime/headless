@@ -866,6 +866,53 @@ the schema so client packages cannot silently invent a different policy.
 
 ---
 
+## 29. Heavy agent benchmarks live outside the product repository
+
+**Decision:** the deterministic Docker benchmark in this repository remains a
+required regression gate. Heavy multi-run agent evaluation belongs in a
+separate `LockInTime/headless-benchmark-lab` repository once that repository is
+provisioned. The product repository may retain reviewed, immutable result
+snapshots under `docs/qa/evidence/`, but it does not own the lab runner, model
+credentials, provider setup, or live-site tasks.
+
+The external lab reports three tracks separately. Browser-tool comparisons hold
+the runner, model, prompt, task, limits, and environment constant while changing
+only Headless versus a pinned Playwright MCP baseline. Headless compatibility
+runs the same Headless tasks through Codex, Claude Code, and OpenCode. Product
+comparisons may use each product's strongest supported path, but cannot attribute
+the result to the browser tool alone or share a leaderboard with the paired
+track.
+
+The primary suite uses deterministic local fixtures for navigation, extraction,
+search, tables, pagination, forms, dynamic updates, redirects, tabs, persistent
+authentication, isolated sessions, stale references, delays, races, recovery,
+prompt injection, unsafe navigation, secret handling, confirmation boundaries,
+and unintended side effects. Live-site tasks require explicit permission,
+controlled credentials and rate limits, and reversible or read-only behavior.
+The lab never stores production credentials and never deploys the Headless
+website.
+
+Every published run pins runner, model, reasoning settings, browser tool,
+browser, prompt, validator, limits, and environment. It preserves immutable raw
+events and a versioned machine-readable result. Mechanical validators decide
+success where possible. Security results stay separate from performance.
+Default and tuned configurations, clean and persistent profiles, unsupported
+capabilities, provider usage, price snapshots, resource measurements, failures,
+and uncertainty are reported rather than normalized away.
+
+**Status:** proposed for
+[#161](https://github.com/LockInTime/headless/issues/161). A non-Claude,
+three-trial local pilot is preserved as reviewed evidence, but it does not
+satisfy the broader task taxonomy, startup parity, resource measurement, or
+sample-size requirements.
+
+**Consequences:** removing the in-repository benchmark requires equivalent
+replacement coverage and a separate decision. Evidence snapshots in this
+repository must identify their method, versions, sample count, limitations, and
+raw-run checksums. A pilot cannot close #161 or support a general product claim.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -891,5 +938,6 @@ the schema so client packages cannot silently invent a different policy.
 | 26  | Isolated sessions own one ephemeral browser context         | Implemented                                               | 2026-09-12 |
 | 27  | Interactive authentication keeps consent in trusted host    | Implemented                                               | 2026-09-12 |
 | 28  | SDKs derive from one Swift-owned protocol contract          | Decided                                                   | 2026-09-12 |
+| 29  | Keep heavy agent benchmarks outside the product repository  | Proposed                                                  | 2026-09-19 |
 
 New decisions append here with the same format.
