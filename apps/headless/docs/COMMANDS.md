@@ -218,6 +218,8 @@ inspect [--context summary|outline|text|actions|full] [--task TEXT]
         [--within @rN] [--limit N] [--budget TOKENS] [--depth N] [--text]
 click REF | click --role ROLE [--name NAME]
 fill REF TEXT | fill REF -- TEXT_WITH_LITERAL_FLAGS | press KEY
+select REF --label LABEL | select REF --value VALUE
+select --role ROLE [--name NAME] (--label LABEL | --value VALUE)
 upload REF --artifact FILE | upload --role ROLE [--name NAME] --artifact FILE
 scroll [up|down|top|bottom] [--amount PX]
 back | reload
@@ -237,11 +239,20 @@ back | reload
   the most recent inspection and are reissued on every inspect; region
   references (`@rN`) stay resolvable so you can outline first and scope later.
   See "Reference lifetime" in P1.md for the full contract.
-- `click`, `fill`, `upload`, and `press` accept either a reference or a semantic
-  target (`--role`/`--name`). On Linux these dispatch trusted CDP input events;
-  WebKit uses synthetic input, and capabilities declare the difference.
+- `click`, `select`, and `upload` accept either a reference or a semantic target
+  (`--role`/`--name`). `fill` accepts a reference; `press` acts on the focused
+  control. On Linux click, fill, and key input dispatch trusted CDP events;
+  WebKit uses synthetic input. Native select dispatch is a fixed synthetic DOM
+  operation on both engines, declared separately by capabilities.
 - `fill REF -- value` keeps leading dashes in the value. Flow recordings never
   record fill values.
+- `select` supports native single-selection HTML controls only. Choose exactly
+  one exact option `--label` after whitespace normalization or exact `--value`.
+  Disabled controls and options, disabled optgroups, multi-selects, custom ARIA
+  widgets, missing options, and ambiguous options fail without mutation. A
+  successful change dispatches `input` followed by `change`; selecting the
+  current option is idempotent. Responses do not echo option labels or values,
+  and flow recordings do not record select commands.
 - `upload` attaches a file that already lives in the private artifact store.
   `--artifact` is a validated basename only, never a filesystem path. File
   bytes never travel on the socket. Linux Chromium attaches through

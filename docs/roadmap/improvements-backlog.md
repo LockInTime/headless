@@ -293,7 +293,9 @@ uses trusted CDP mouse, key, and text input. Linux E2E proves page handlers see
 the difference.
 
 **C7. Considered-and-worth-designing (partially committed):** ([#35](https://github.com/LockInTime/headless/issues/35)) hover/drag verbs;
-`select` for dropdowns; scoped `evaluate` never (see what-is-excellent §3);
+~~`select` for dropdowns~~ ([#206](https://github.com/LockInTime/headless/issues/206))
+**Done:** native single-select controls support exact label/value selection with
+fail-before-mutation validation; scoped `evaluate` never (see what-is-excellent §3);
 ~~per-session isolated profiles (`session create --isolated`, architecture
 §26)~~ **Done:** each session owns one ephemeral native browser context and
 normal-profile credentials fail closed; response-body inspection stays denied
