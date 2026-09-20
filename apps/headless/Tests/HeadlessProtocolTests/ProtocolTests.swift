@@ -1180,6 +1180,85 @@ struct ProtocolTests {
     static func cliWaitDefaultsToSettled() throws {
         let invocation = try CLIParser().parse(["wait"])
         try expect(invocation.request?.parameters["settled"] == .bool(true), "wait should default to settled")
+        try expect(
+            invocation.request?.parameters["networkIdle"] == nil,
+            "bare wait should preserve the existing wire request"
+        )
+    }
+
+    static func networkIdleWaitContract() throws {
+        let invocation = try CLIParser().parse(["wait", "--network-idle"])
+        try expect(
+            invocation.request?.parameters["settled"] == .bool(false),
+            "network-idle alone should not silently add the settled predicate"
+        )
+        try expect(
+            invocation.request?.parameters["networkIdle"] == .bool(true),
+            "network-idle should set the protocol predicate"
+        )
+        try invocation.request?.validate()
+
+        let combined = try CLIParser().parse([
+            "wait", "--network-idle", "--settled", "--url", "/ready", "--text", "Complete",
+        ])
+        try expect(
+            combined.request?.parameters["settled"] == .bool(true)
+                && combined.request?.parameters["networkIdle"] == .bool(true),
+            "wait predicates should compose"
+        )
+        try combined.request?.validate()
+
+        try expectThrows("network-idle must remain boolean on the wire") {
+            try CommandRequest(
+                command: .wait, parameters: ["networkIdle": .string("true")]
+            ).validate()
+        }
+    }
+
+    static func networkIdleTrackerContract() throws {
+        let clock = TestMonotonicClock(10)
+        let tracker = NetworkIdleTracker(monotonicNow: { clock.now() })
+        let startedAt = tracker.beginWait()
+
+        try expect(!tracker.snapshot(since: startedAt).isIdle, "idle wait should observe its quiet window")
+        clock.advance(by: 0.501)
+        try expect(tracker.snapshot(since: startedAt).isIdle, "an empty quiet window should become idle")
+
+        tracker.requestDidStart(identifier: "request-1", resourceType: "XHR")
+        clock.advance(by: 0.6)
+        try expect(!tracker.snapshot(since: startedAt).isIdle, "an active request should block idle")
+        tracker.requestDidStart(identifier: "request-1", resourceType: "Document")
+        tracker.requestDidFinish(identifier: "request-1")
+        clock.advance(by: 0.499)
+        try expect(!tracker.snapshot(since: startedAt).isIdle, "a redirect completion should reset quiet time")
+        clock.advance(by: 0.002)
+        try expect(
+            tracker.snapshot(since: startedAt).isIdle,
+            "a reused redirect request identifier must require only one completion"
+        )
+
+        let persistentStartedAt = tracker.beginWait()
+        tracker.requestDidStart(identifier: "events", resourceType: "EventSource")
+        tracker.requestDidStart(identifier: "socket", resourceType: "WebSocket")
+        clock.advance(by: 0.501)
+        try expect(
+            tracker.snapshot(since: persistentStartedAt).isIdle,
+            "persistent connection types should not block network idle"
+        )
+
+        let failedStartedAt = tracker.beginWait()
+        tracker.requestDidStart(identifier: "failed", resourceType: "Fetch")
+        tracker.requestDidFinish(identifier: "failed")
+        clock.advance(by: 0.501)
+        try expect(
+            tracker.snapshot(since: failedStartedAt).isIdle,
+            "failed requests should complete the same way as successful requests"
+        )
+
+        tracker.requestDidStart(identifier: String(repeating: "x", count: 513), resourceType: "Fetch")
+        clock.advance(by: 1)
+        let overflow = tracker.snapshot(since: tracker.beginWait() - 1)
+        try expect(overflow.overflowed && !overflow.isIdle, "tracking overflow must fail closed")
     }
 
     static func cliRejectsUnboundedTimeout() throws {
@@ -2806,6 +2885,14 @@ struct ProtocolTests {
         try expect(
             chromiumFeatures["inputDispatch"] == .string("trusted-cdp"),
             "Chromium should declare trusted CDP input"
+        )
+        try expect(
+            webkitFeatures["networkIdleWait"] == .bool(false),
+            "WebKit should declare network-idle wait unsupported"
+        )
+        try expect(
+            chromiumFeatures["networkIdleWait"] == .bool(true),
+            "Chromium should declare CDP-backed network-idle wait"
         )
         try expect(
             webkitFeatures["fileUpload"] == .bool(false),
@@ -4830,6 +4917,8 @@ struct ProtocolTests {
             ("CLI inspect context and task", cliInspectContextAndTask),
             ("CLI conflicting target", cliRejectsConflictingClickTarget),
             ("CLI settled wait", cliWaitDefaultsToSettled),
+            ("network-idle wait contract", networkIdleWaitContract),
+            ("network-idle tracker contract", networkIdleTrackerContract),
             ("CLI timeout bound", cliRejectsUnboundedTimeout),
             ("client timeout parity", clientTimeoutsMatchCommandBounds),
             ("CLI P1 artifacts", cliP1Artifacts),

@@ -447,8 +447,12 @@ public struct CLIParser {
         let text = try removeOption("--text", from: &args)
         let timeoutText = try removeOption("--timeout", from: &args)
         let settled = removeFlag("--settled", from: &args)
+        let networkIdle = removeFlag("--network-idle", from: &args)
         try requireEmpty(args)
-        var parameters: [String: JSONValue] = ["settled": .bool(settled || (url == nil && text == nil))]
+        var parameters: [String: JSONValue] = [
+            "settled": .bool(settled || (url == nil && text == nil && !networkIdle)),
+        ]
+        if networkIdle { parameters["networkIdle"] = .bool(true) }
         if let url { parameters["url"] = .string(url) }
         if let text { parameters["text"] = .string(text) }
         if let timeoutText {
@@ -855,7 +859,7 @@ Commands:
   upload REF --artifact FILE | upload --role ROLE [--name NAME] --artifact FILE
   scroll [up|down|top|bottom] [--amount PX]
   back | reload
-  wait [--settled] [--url PATTERN] [--text TEXT] [--timeout MS]
+  wait [--settled] [--network-idle] [--url PATTERN] [--text TEXT] [--timeout MS]
   tour [--full-page] [--pace PX_PER_SECOND]
   capture-info
   screenshot [REF | --role ROLE --name NAME | --full-page] [--format png|jpg|jpeg] [--output FILE] [--clipboard]

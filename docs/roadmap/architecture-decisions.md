@@ -1060,6 +1060,40 @@ a general product claim.
 
 ---
 
+## 34. Network-idle wait is CDP-backed and explicitly engine-specific
+
+**Decision:** `wait --network-idle` adds one optional predicate to the portable
+wait command. Every requested URL, text, settled, and network-idle condition
+must hold at the same time. A bare `wait` preserves its existing settled-page
+default, while `wait --network-idle` alone does not silently add another
+predicate.
+
+Chromium tracks `Network.requestWillBeSent` identifiers until
+`Network.loadingFinished` or `Network.loadingFailed`. Idle means no qualifying
+request is active for 500 ms measured from command start or the latest
+qualifying event. Redirect reuse does not double-count an identifier.
+WebSocket and EventSource connections are excluded because they are expected
+to remain open; ordinary fetch/XHR long polling remains qualifying and may
+time out. Tracking is bounded to 4,096 identifiers with a 512-byte identifier
+limit, and overflow fails closed by preventing an idle result.
+
+WKWebView has no complete trusted network event stream. It returns
+`UNSUPPORTED_CAPABILITY` immediately rather than consulting the detectable,
+forgeable page diagnostics bridge. The engine capability matrix declares this
+difference. Wait output remains the existing bounded page state and never adds
+request URLs, identifiers, headers, bodies, or timing records.
+
+**Status:** implemented for
+[#204](https://github.com/LockInTime/headless/issues/204).
+
+**Consequences:** agents can replace blind sleeps after asynchronous Chromium
+work with a deterministic bounded predicate. Sites with qualifying long-lived
+requests must choose another semantic condition. macOS callers can negotiate
+the limitation before issuing the command and still receive a typed failure if
+they do not.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -1090,5 +1124,6 @@ a general product claim.
 | 31  | Session metadata is a bounded read-only host snapshot       | Implemented                                               | 2026-09-19 |
 | 32  | List pagination uses bounded server-side opaque cursors     | Implemented                                               | 2026-09-19 |
 | 33  | Keep heavy agent benchmarks outside the product repository  | Proposed                                                  | 2026-09-19 |
+| 34  | CDP-backed bounded network-idle wait                        | Implemented                                               | 2026-09-20 |
 
 New decisions append here with the same format.

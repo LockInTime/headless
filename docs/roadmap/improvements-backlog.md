@@ -484,8 +484,11 @@ get an architecture-decision entry:
   **Done:** the compatible ordered name array now includes typed, bounded
   details for age, isolation, lifecycle, sanitized URL, and title. Engine
   failures and close races are isolated to one unavailable detail.
-- **G5. `wait --network-idle`** — Chromium engine has the events; declared
-  capability on WKWebView.
+- **G5. `wait --network-idle`** ([#204](https://github.com/LockInTime/headless/issues/204)) —
+  ~~Chromium engine has the events; declared capability on WKWebView.~~
+  **Done:** Chromium tracks bounded in-flight CDP requests and requires a
+  500 ms quiet window; WebKit declares and returns an explicit unsupported
+  capability instead of approximating network state.
 - **G6. Element screenshot on Linux `--by-region @rN`** — region-scoped series
   capture, pairs naturally with the pruning ladder.
 - **G7. Trace export** — `capture-info` already returns an action trace;

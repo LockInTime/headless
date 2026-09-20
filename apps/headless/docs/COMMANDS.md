@@ -221,7 +221,7 @@ fill REF TEXT | fill REF -- TEXT_WITH_LITERAL_FLAGS | press KEY
 upload REF --artifact FILE | upload --role ROLE [--name NAME] --artifact FILE
 scroll [up|down|top|bottom] [--amount PX]
 back | reload
-wait [--settled] [--url PATTERN] [--text TEXT] [--timeout MS]
+wait [--settled] [--network-idle] [--url PATTERN] [--text TEXT] [--timeout MS]
 tour [--full-page] [--pace PX_PER_SECOND]
 ```
 
@@ -249,8 +249,13 @@ back | reload
   Downloads stay denied. Agent-facing surfaces cannot import local files;
   operator-file import remains deferred until Headless has a trusted native
   picker or broker that can prove explicit user approval.
-- `wait --timeout` and the tour duration are bounded; unbounded waits are
-  rejected at parse time.
+- `wait` combines every requested predicate. A bare wait retains the existing
+  settled-page behavior. On Chromium, `--network-idle` requires zero
+  qualifying requests for 500 ms; WebSocket and EventSource connections are
+  excluded, while ordinary long-polling requests can cause a bounded timeout.
+  WebKit returns `UNSUPPORTED_CAPABILITY` instead of approximating network
+  state through its page-world diagnostics bridge. `wait --timeout` and the
+  tour duration are bounded; unbounded waits are rejected at parse time.
 
 ## Capture and evidence
 

@@ -1428,6 +1428,11 @@ ANIMATIONS="$("$CLI" --session qa animations list)"
 echo "$ANIMATIONS" | grep -q '"animations"'
 echo "$ANIMATIONS" | grep -q '"iterations":null'
 STEP="network-emulate-unsupported"
+if NETWORK_IDLE_WAIT="$("$CLI" --session qa wait --network-idle --timeout 1000 2>&1)"; then
+  echo "WebKit network-idle wait was unexpectedly exposed" >&2
+  fail
+fi
+echo "$NETWORK_IDLE_WAIT" | grep -q 'UNSUPPORTED_CAPABILITY'
 if NETWORK_SIMULATION="$("$CLI" --session qa network emulate --latency 25)"; then
   echo "WebKit network emulation was unexpectedly exposed" >&2
   fail

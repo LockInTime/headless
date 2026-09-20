@@ -36,7 +36,7 @@ headless --session NAME press KEY
 headless --session NAME scroll up|down|top|bottom --amount PIXELS
 headless --session NAME back
 headless --session NAME reload
-headless --session NAME wait --settled --url PATTERN --text TEXT --timeout MS
+headless --session NAME wait --settled --network-idle --url PATTERN --text TEXT --timeout MS
 headless --session NAME tour --full-page --pace PIXELS_PER_SECOND
 ```
 
@@ -59,7 +59,12 @@ Use `wait` with the strongest expected condition available:
 1. expected URL plus expected text;
 2. expected text;
 3. settled state;
-4. a bounded timeout only when no semantic condition exists.
+4. Chromium network idle when asynchronous requests must finish;
+5. a bounded timeout only when no semantic condition exists.
+
+Network idle requires zero qualifying Chromium requests for 500 ms. Persistent
+WebSocket and EventSource connections are excluded, but ordinary long polling
+can time out. Check capabilities first because WebKit rejects this predicate.
 
 Never replace a semantic wait with a long blind sleep.
 
