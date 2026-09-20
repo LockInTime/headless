@@ -12,11 +12,12 @@ SUPERVISED_LAUNCHER_PID=""
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
-mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/file-upload" "$FIXTURE_ROOT/api" "$FIXTURE_ROOT/allowlist-exits" "$FIXTURE_ROOT/allowlist-redirect"
+mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/network-idle" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/file-upload" "$FIXTURE_ROOT/api" "$FIXTURE_ROOT/allowlist-exits" "$FIXTURE_ROOT/allowlist-redirect"
 cp /opt/headless/fixtures/dashboard.html "$FIXTURE_ROOT/designers/dashboard/index.html"
 cp /opt/headless/fixtures/next.html "$FIXTURE_ROOT/next/index.html"
 cp /opt/headless/fixtures/hostile.html "$FIXTURE_ROOT/hostile/index.html"
 cp /opt/headless/fixtures/large-document.html "$FIXTURE_ROOT/large-document/index.html"
+cp /opt/headless/fixtures/network-idle.html "$FIXTURE_ROOT/network-idle/index.html"
 cp /opt/headless/fixtures/trusted-input.html "$FIXTURE_ROOT/trusted-input/index.html"
 cp /opt/headless/fixtures/auth-state.html "$FIXTURE_ROOT/auth-state/index.html"
 cp /opt/headless/fixtures/auth-login.html "$FIXTURE_ROOT/auth-login/index.html"
@@ -372,6 +373,20 @@ TRUSTED_INPUT="$(headless --session qa inspect --text)"
 echo "$TRUSTED_INPUT" | grep -q 'input:true'
 echo "$TRUSTED_INPUT" | grep -q 'key:Enter:true'
 echo "$TRUSTED_INPUT" | grep -q 'click:true'
+STEP="network-idle-wait"
+headless --session qa visit http://127.0.0.1:41739/network-idle/ | grep -q 'Network idle fixture'
+if NETWORK_IDLE_TIMEOUT="$(headless --session qa wait --network-idle --timeout 100 2>&1)"; then
+  echo "network-idle wait ignored its bounded quiet window" >&2
+  exit 1
+fi
+echo "$NETWORK_IDLE_TIMEOUT" | grep -q 'TIMED_OUT'
+headless --session qa wait --network-idle --timeout 2000 | grep -q 'Network idle fixture'
+headless --session qa network emulate --latency 800 | grep -q '"latencyMs":800'
+headless --session qa inspect --interactive | grep -q 'Start network request'
+headless --session qa click --role button --name 'Start network request' | grep -q '"clicked"'
+NETWORK_IDLE_RESULT="$(headless --session qa wait --network-idle --timeout 5000)"
+echo "$NETWORK_IDLE_RESULT" | grep -q 'request complete'
+headless --session qa network emulate | grep -q '"latencyMs":0'
 STEP="file-upload"
 printf 'resume-fixture\n' > "$HEADLESS_ARTIFACT_DIR/resume.txt"
 chmod 600 "$HEADLESS_ARTIFACT_DIR/resume.txt"
