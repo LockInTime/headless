@@ -805,6 +805,15 @@ final class LinuxBrowserSession: @unchecked Sendable {
         ])
     }
 
+    func select(parameters: [String: JSONValue]) throws -> JSONValue {
+        var args = try browserTargetArguments(parameters)
+        if let label = parameters["label"]?.stringValue { args["label"] = label }
+        if let value = parameters["value"]?.stringValue { args["value"] = value }
+        return try evaluate(
+            "return globalThis.__headlessAgent.select(args);", input: ["args": args]
+        )
+    }
+
     func authenticationState() throws -> JSONValue {
         try evaluate("return globalThis.__headlessAgent.authentication();")
     }

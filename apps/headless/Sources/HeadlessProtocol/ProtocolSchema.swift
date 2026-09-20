@@ -320,6 +320,11 @@ public func protocolResultDefinition(for command: CommandName) -> ProtocolResult
         ])
     case .fill:
         return result("Fill", [resultField("filled", .string), resultField("valueLength", .number)])
+    case .select:
+        return result("Select", [
+            resultField("selected", .string), resultField("role", .string),
+            resultField("name", .string), resultField("optionIndex", .number),
+        ])
     case .upload:
         return result("Upload", [
             resultField("uploaded", .string), resultField("role", .string),
@@ -700,6 +705,19 @@ public let protocolCommandDefinitions: [CommandName: ProtocolCommandDefinition] 
             ],
             untrusted: true,
             constraints: ["exactly one target reference or semantic role/name target"]
+        ),
+        command(
+            .select,
+            targetParameters + [
+                string("label", maximumBytes: 1_000, sensitive: true),
+                string("value", maximumBytes: 1_000, sensitive: true),
+            ],
+            untrusted: true,
+            constraints: [
+                "exactly one target reference or semantic role/name target",
+                "exactly one option label or value",
+                "native single-selection HTML select controls only",
+            ]
         ),
         command(
             .upload,

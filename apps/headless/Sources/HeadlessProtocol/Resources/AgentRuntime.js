@@ -145,7 +145,7 @@ if (!globalThis.__headlessAgent) {
       const elementRole = role(element);
       // Only advertise verbs implemented by the public Headless protocol.
       // Unsupported controls can still appear for context, but must not route
-      // an agent toward nonexistent select/slide commands. File inputs advertise
+      // an agent toward nonexistent verbs. File inputs advertise
       // upload only when the host injected __headlessFileUpload, never fill or
       // click as the primary verb.
       if (element instanceof HTMLInputElement) {
@@ -161,6 +161,8 @@ if (!globalThis.__headlessAgent) {
       if (tag === 'a' && element.hasAttribute('href')) hints.push('click');
       if (tag === 'button' || elementRole === 'button') hints.push('click');
       if (tag === 'summary' || elementRole === 'tab' || elementRole === 'menuitem') hints.push('click');
+      if (element instanceof HTMLSelectElement && !element.multiple && !element.disabled
+          && element.getAttribute('aria-disabled') !== 'true') hints.push('select');
       if (element instanceof HTMLTextAreaElement || element.isContentEditable) hints.push('fill');
       if (element.tabIndex >= 0 && hints.length === 0) hints.push('click');
       return Array.from(new Set(hints));
@@ -743,6 +745,57 @@ if (!globalThis.__headlessAgent) {
       element.dispatchEvent(new Event('change', {bubbles: true}));
       return {filled: refFor(element), valueLength: String(args.value).length};
     };
+    const select = args => {
+      const element = target(args);
+      if (!(element instanceof HTMLSelectElement)) {
+        fail('INVALID_INPUT', 'INVALID_INPUT: target is not a native select');
+      }
+      if (element.multiple) {
+        fail('INVALID_INPUT', 'INVALID_INPUT: multi-select controls are not supported');
+      }
+      if (element.disabled || element.getAttribute('aria-disabled') === 'true') {
+        fail('INVALID_INPUT', 'INVALID_INPUT: select control is disabled');
+      }
+      const hasLabel = typeof args.label === 'string';
+      const hasValue = typeof args.value === 'string';
+      if (hasLabel === hasValue) {
+        fail('INVALID_INPUT', 'INVALID_INPUT: choose exactly one option label or value');
+      }
+      const wanted = hasLabel ? normalize(args.label) : args.value;
+      const matches = Array.from(element.options).filter(option =>
+        hasLabel ? normalize(option.label || option.textContent) === wanted : option.value === wanted
+      );
+      if (matches.length === 0) {
+        fail('INVALID_INPUT', 'INVALID_INPUT: matching option was not found');
+      }
+      if (matches.length > 1) {
+        fail('INVALID_INPUT', `INVALID_INPUT: option matcher is ambiguous (${matches.length} matches)`);
+      }
+      const option = matches[0];
+      const parentDisabled = option.parentElement instanceof HTMLOptGroupElement
+        && option.parentElement.disabled;
+      if (option.disabled || parentDisabled) {
+        fail('INVALID_INPUT', 'INVALID_INPUT: matching option is disabled');
+      }
+      const optionIndex = Array.from(element.options).indexOf(option);
+      if (optionIndex < 0) fail('INVALID_INPUT', 'INVALID_INPUT: matching option is detached');
+      if (element.selectedIndex !== optionIndex) {
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLSelectElement.prototype, 'selectedIndex'
+        )?.set;
+        if (!setter) fail('OPERATION_FAILED', 'OPERATION_FAILED: native select setter unavailable');
+        element.focus({preventScroll: false});
+        setter.call(element, optionIndex);
+        if (element.selectedIndex !== optionIndex) {
+          fail('OPERATION_FAILED', 'OPERATION_FAILED: native select did not accept the option');
+        }
+        element.dispatchEvent(new Event('input', {bubbles: true}));
+        element.dispatchEvent(new Event('change', {bubbles: true}));
+      }
+      return {
+        selected: refFor(element), role: role(element), name: name(element), optionIndex
+      };
+    };
     const credentialFill = args => {
       const initialOrigin = String(location.origin || '');
       if (initialOrigin !== args.origin) throw new Error('AUTH_ORIGIN_CHANGED');
@@ -1036,7 +1089,7 @@ if (!globalThis.__headlessAgent) {
       return {count: document.getAnimations().length, animations: all, truncated: document.getAnimations().length > all.length};
     };
     return {
-      snapshot, click, fill, credentialFill, finishCredentialFill, press, inputTarget, fileInput, fileInputMetadata,
+      snapshot, click, fill, select, credentialFill, finishCredentialFill, press, inputTarget, fileInput, fileInputMetadata,
       authentication, scroll, state, tour, screenshotPlan, scrollToCapturePoint, rectangle, styles, storage,
       performance: performanceSummary, animations
     };
