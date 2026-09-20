@@ -379,7 +379,7 @@ if NETWORK_IDLE_TIMEOUT="$(headless --session qa wait --network-idle --timeout 1
   echo "network-idle wait ignored its bounded quiet window" >&2
   exit 1
 fi
-echo "$NETWORK_IDLE_TIMEOUT" | grep -q 'TIMED_OUT'
+echo "$NETWORK_IDLE_TIMEOUT" | grep -q 'TIMEOUT'
 headless --session qa wait --network-idle --timeout 2000 | grep -q 'Network idle fixture'
 headless --session qa network emulate --latency 800 | grep -q '"latencyMs":800'
 headless --session qa inspect --interactive | grep -q 'Start network request'
