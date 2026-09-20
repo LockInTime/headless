@@ -7,7 +7,7 @@ export type Untrusted<T> = Readonly<{ readonly untrustedContent: true; readonly 
 export const PROTOCOL_VERSION = "0.5" as const;
 export const PROTOCOL_SCHEMA_VERSION = 1 as const;
 export const MAXIMUM_MESSAGE_BYTES = 1048576 as const;
-export const PROTOCOL_SCHEMA_SHA256 = "efe358f18879226631c1c67ec993eb29f33ee6ed24d7b20a849b13e1618ffe90" as const;
+export const PROTOCOL_SCHEMA_SHA256 = "f82b2ea0d7e8b5d2db0a841c5d22976aec6f774303cd81791921977899679f1e" as const;
 export const PROTOCOL_FIXTURES_SHA256 = "0b51ffaa2d3e3aaf0c32adcfeb02c180dcbe44face0d49e1c332b69f403ae062" as const;
 export const RESPONSE_ADDITIONAL_PROPERTIES = true as const;
 export const MAXIMUM_COMMAND_TIMEOUT_MS = 125000 as const;
@@ -169,6 +169,14 @@ export interface FillParameters {
   readonly "role"?: string;
   readonly "name"?: string;
   readonly "value": string;
+}
+
+export interface SelectParameters {
+  readonly "target"?: string;
+  readonly "role"?: string;
+  readonly "name"?: string;
+  readonly "label"?: string;
+  readonly "value"?: string;
 }
 
 export interface UploadParameters {
@@ -419,6 +427,14 @@ export interface Click {
 export interface Fill {
   readonly "filled": string;
   readonly "valueLength": number;
+  readonly [key: string]: JsonValue;
+}
+
+export interface Select {
+  readonly "selected": string;
+  readonly "role": string;
+  readonly "name": string;
+  readonly "optionIndex": number;
   readonly [key: string]: JsonValue;
 }
 
@@ -722,7 +738,7 @@ export const ERROR_DETAILS_METADATA = {
   }
 } as const;
 
-export type CommandName = "ping" | "shutdown" | "profile.clear" | "session.create" | "session.list" | "session.close" | "visit" | "inspect" | "click" | "fill" | "upload" | "press" | "scroll" | "back" | "reload" | "wait" | "tour" | "capture.info" | "screenshot" | "artifact.list" | "record.start" | "record.status" | "record.stop" | "qa.report" | "qa.clear" | "console.list" | "network.list" | "network.get" | "styles.get" | "cookies.list" | "storage.list" | "visual.compare" | "performance.get" | "animation.list" | "report.create" | "flow.start" | "flow.stop" | "flow.run" | "network.emulate" | "network.mock.set" | "network.mock.clear" | "auth.login";
+export type CommandName = "ping" | "shutdown" | "profile.clear" | "session.create" | "session.list" | "session.close" | "visit" | "inspect" | "click" | "fill" | "select" | "upload" | "press" | "scroll" | "back" | "reload" | "wait" | "tour" | "capture.info" | "screenshot" | "artifact.list" | "record.start" | "record.status" | "record.stop" | "qa.report" | "qa.clear" | "console.list" | "network.list" | "network.get" | "styles.get" | "cookies.list" | "storage.list" | "visual.compare" | "performance.get" | "animation.list" | "report.create" | "flow.start" | "flow.stop" | "flow.run" | "network.emulate" | "network.mock.set" | "network.mock.clear" | "auth.login";
 
 export interface CommandParameters {
   readonly "ping": PingParameters;
@@ -735,6 +751,7 @@ export interface CommandParameters {
   readonly "inspect": InspectParameters;
   readonly "click": ClickParameters;
   readonly "fill": FillParameters;
+  readonly "select": SelectParameters;
   readonly "upload": UploadParameters;
   readonly "press": PressParameters;
   readonly "scroll": ScrollParameters;
@@ -780,6 +797,7 @@ export interface CommandResults {
   readonly "inspect": Untrusted<Inspection>;
   readonly "click": Untrusted<Click>;
   readonly "fill": Untrusted<Fill>;
+  readonly "select": Untrusted<Select>;
   readonly "upload": Untrusted<Upload>;
   readonly "press": Untrusted<Press>;
   readonly "scroll": Untrusted<Scroll>;
@@ -1396,6 +1414,81 @@ export const COMMAND_METADATA = {
           }
         ],
         "name": "Fill",
+        "type": "object"
+      }
+    },
+    "scope": "session",
+    "timeout": {
+      "defaultMilliseconds": 15000,
+      "parameterPresentOverrides": {}
+    }
+  },
+  "select": {
+    "capabilityNegotiated": false,
+    "parameters": [
+      {
+        "maximumBytes": 16,
+        "name": "target",
+        "required": false,
+        "sensitive": false,
+        "type": "string"
+      },
+      {
+        "maximumBytes": 128,
+        "name": "role",
+        "required": false,
+        "sensitive": false,
+        "type": "string"
+      },
+      {
+        "maximumBytes": 1000,
+        "name": "name",
+        "required": false,
+        "sensitive": false,
+        "type": "string"
+      },
+      {
+        "maximumBytes": 1000,
+        "name": "label",
+        "required": false,
+        "sensitive": true,
+        "type": "string"
+      },
+      {
+        "maximumBytes": 1000,
+        "name": "value",
+        "required": false,
+        "sensitive": true,
+        "type": "string"
+      }
+    ],
+    "result": {
+      "mayContainUntrustedContent": true,
+      "schema": {
+        "additionalProperties": true,
+        "fields": [
+          {
+            "name": "selected",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "role",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "name",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "optionIndex",
+            "required": true,
+            "type": "number"
+          }
+        ],
+        "name": "Select",
         "type": "object"
       }
     },
@@ -3300,6 +3393,10 @@ export abstract class GeneratedCommandClient {
     return this.invoke("fill", parameters, options);
   }
 
+  select(parameters: SelectParameters = {}, options?: CommandOptions): Promise<CommandResult<"select">> {
+    return this.invoke("select", parameters, options);
+  }
+
   upload(parameters: UploadParameters, options?: CommandOptions): Promise<CommandResult<"upload">> {
     return this.invoke("upload", parameters, options);
   }
@@ -3455,6 +3552,10 @@ export abstract class GeneratedSessionCommandClient {
 
   fill(parameters: FillParameters, options?: CommandOptions): Promise<CommandResult<"fill">> {
     return this.invoke("fill", parameters, options);
+  }
+
+  select(parameters: SelectParameters = {}, options?: CommandOptions): Promise<CommandResult<"select">> {
+    return this.invoke("select", parameters, options);
   }
 
   upload(parameters: UploadParameters, options?: CommandOptions): Promise<CommandResult<"upload">> {

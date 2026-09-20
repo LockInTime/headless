@@ -12,11 +12,12 @@ SUPERVISED_LAUNCHER_PID=""
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
-mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/network-idle" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/file-upload" "$FIXTURE_ROOT/api" "$FIXTURE_ROOT/allowlist-exits" "$FIXTURE_ROOT/allowlist-redirect"
+mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/select" "$FIXTURE_ROOT/network-idle" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/file-upload" "$FIXTURE_ROOT/api" "$FIXTURE_ROOT/allowlist-exits" "$FIXTURE_ROOT/allowlist-redirect"
 cp /opt/headless/fixtures/dashboard.html "$FIXTURE_ROOT/designers/dashboard/index.html"
 cp /opt/headless/fixtures/next.html "$FIXTURE_ROOT/next/index.html"
 cp /opt/headless/fixtures/hostile.html "$FIXTURE_ROOT/hostile/index.html"
 cp /opt/headless/fixtures/large-document.html "$FIXTURE_ROOT/large-document/index.html"
+cp /opt/headless/fixtures/select.html "$FIXTURE_ROOT/select/index.html"
 cp /opt/headless/fixtures/network-idle.html "$FIXTURE_ROOT/network-idle/index.html"
 cp /opt/headless/fixtures/trusted-input.html "$FIXTURE_ROOT/trusted-input/index.html"
 cp /opt/headless/fixtures/auth-state.html "$FIXTURE_ROOT/auth-state/index.html"
@@ -373,6 +374,34 @@ TRUSTED_INPUT="$(headless --session qa inspect --text)"
 echo "$TRUSTED_INPUT" | grep -q 'input:true'
 echo "$TRUSTED_INPUT" | grep -q 'key:Enter:true'
 echo "$TRUSTED_INPUT" | grep -q 'click:true'
+STEP="native-select"
+headless --session qa visit http://127.0.0.1:41739/select/ | grep -q 'Native select fixture'
+SELECT_RESULT="$(headless --session qa select --role combobox --name Country --label Canada)"
+echo "$SELECT_RESULT" | grep -q '"optionIndex":1'
+if echo "$SELECT_RESULT" | grep -Eq 'Canada|"CA"'; then
+  echo "select response exposed option label or value" >&2
+  exit 1
+fi
+headless --session qa wait --text 'country=CA events=input,change' --timeout 2000 | grep -q 'country=CA events=input,change'
+headless --session qa select --role combobox --name Country --value US | grep -q '"optionIndex":2'
+headless --session qa wait --text 'events=input,change,input,change' --timeout 2000 | grep -q 'country=US'
+assert_select_rejected() {
+  SELECT_NAME="$1"
+  SELECT_MATCHER="$2"
+  SELECT_OPTION="$3"
+  if SELECT_ERROR="$(headless --session qa select --role combobox --name "$SELECT_NAME" "$SELECT_MATCHER" "$SELECT_OPTION" 2>&1)"; then
+    echo "invalid select case unexpectedly succeeded: $SELECT_NAME" >&2
+    exit 1
+  fi
+  echo "$SELECT_ERROR" | grep -q 'INVALID_INPUT'
+}
+assert_select_rejected 'Duplicate country' --label Canada
+assert_select_rejected 'Disabled country' --label Canada
+assert_select_rejected 'Disabled option' --label Canada
+assert_select_rejected 'Disabled group' --label Canada
+assert_select_rejected 'Many countries' --label Canada
+assert_select_rejected 'Custom country' --label Canada
+assert_select_rejected Country --label Missing
 STEP="network-idle-wait"
 headless --session qa visit http://127.0.0.1:41739/network-idle/ | grep -q 'Network idle fixture'
 if NETWORK_IDLE_TIMEOUT="$(headless --session qa wait --network-idle --timeout 100 2>&1)"; then
