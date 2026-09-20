@@ -13,7 +13,7 @@ PROTOCOL_VERSION = '0.5'
 PROTOCOL_SCHEMA_VERSION = 1
 MAXIMUM_MESSAGE_BYTES = 1048576
 MAXIMUM_COMMAND_TIMEOUT_SECONDS = 125.0
-PROTOCOL_SCHEMA_SHA256 = 'efe358f18879226631c1c67ec993eb29f33ee6ed24d7b20a849b13e1618ffe90'
+PROTOCOL_SCHEMA_SHA256 = 'f82b2ea0d7e8b5d2db0a841c5d22976aec6f774303cd81791921977899679f1e'
 PROTOCOL_FIXTURES_SHA256 = '0b51ffaa2d3e3aaf0c32adcfeb02c180dcbe44face0d49e1c332b69f403ae062'
 RESPONSE_ADDITIONAL_PROPERTIES = True
 COMMAND_ERROR_CODES = ('ARTIFACT_ERROR', 'AUTH_ACCOUNT_NOT_FOUND', 'AUTH_CHALLENGE_CONSUMED', 'AUTH_CHALLENGE_EXPIRED', 'AUTH_CHALLENGE_NOT_FOUND', 'AUTH_FORM_CHANGED', 'AUTH_ORIGIN_CHANGED', 'AUTH_REQUIRED', 'CREDENTIAL_ALIAS_EXISTS', 'ELEMENT_NOT_FOUND', 'FLOW_FAILED', 'HOST_STOPPING', 'HOST_UNAVAILABLE', 'INTERNAL_ERROR', 'INVALID_CAPTURE_FORMAT', 'INVALID_COMMAND', 'INVALID_FLOW', 'INVALID_INPUT', 'INVALID_REQUEST', 'INVALID_SESSION', 'MISSING_PARAMETER', 'OPERATION_FAILED', 'PAGINATION_CURSOR_EXPIRED', 'PAGINATION_CURSOR_INVALID', 'PAGINATION_CURSOR_SCOPE_MISMATCH', 'PAGINATION_CURSOR_STALE', 'PEER_DENIED', 'RECORDER_UNAVAILABLE', 'RECORDING_ACTIVE', 'RECORDING_FAILED', 'RECORDING_NOT_ACTIVE', 'REGION_NOT_FOUND', 'RESPONSE_TOO_LARGE', 'SENSITIVE_DIAGNOSTICS_DISABLED', 'SESSION_EXISTS', 'SESSION_NOT_FOUND', 'TIMEOUT', 'UNSAFE_NAVIGATION', 'UNSAFE_RESOURCE_TYPE', 'UNSUPPORTED_CAPABILITY', 'USER_PRESENCE_DENIED', 'USER_PRESENCE_UNAVAILABLE', 'VAULT_LOCKED', 'VAULT_OPERATION_FAILED', 'VAULT_RESPONSE_INVALID', 'VAULT_UNAVAILABLE')
@@ -22,7 +22,7 @@ LIFECYCLE_ERROR_CODES = ('HOST_START_FAILED', 'NAVIGATION_ALLOWLIST_CONFLICT', '
 LifecycleErrorCode = Literal['HOST_START_FAILED', 'NAVIGATION_ALLOWLIST_CONFLICT', 'UNSUPPORTED_BROWSER_RUNTIME', 'UNSUPPORTED_CAPABILITY']
 LAUNCH_PRESENTATIONS = ('background', 'foreground')
 LaunchPresentation = Literal['background', 'foreground']
-CommandName = Literal['ping', 'shutdown', 'profile.clear', 'session.create', 'session.list', 'session.close', 'visit', 'inspect', 'click', 'fill', 'upload', 'press', 'scroll', 'back', 'reload', 'wait', 'tour', 'capture.info', 'screenshot', 'artifact.list', 'record.start', 'record.status', 'record.stop', 'qa.report', 'qa.clear', 'console.list', 'network.list', 'network.get', 'styles.get', 'cookies.list', 'storage.list', 'visual.compare', 'performance.get', 'animation.list', 'report.create', 'flow.start', 'flow.stop', 'flow.run', 'network.emulate', 'network.mock.set', 'network.mock.clear', 'auth.login']
+CommandName = Literal['ping', 'shutdown', 'profile.clear', 'session.create', 'session.list', 'session.close', 'visit', 'inspect', 'click', 'fill', 'select', 'upload', 'press', 'scroll', 'back', 'reload', 'wait', 'tour', 'capture.info', 'screenshot', 'artifact.list', 'record.start', 'record.status', 'record.stop', 'qa.report', 'qa.clear', 'console.list', 'network.list', 'network.get', 'styles.get', 'cookies.list', 'storage.list', 'visual.compare', 'performance.get', 'animation.list', 'report.create', 'flow.start', 'flow.stop', 'flow.run', 'network.emulate', 'network.mock.set', 'network.mock.clear', 'auth.login']
 
 class PingParameters(TypedDict):
     pass
@@ -66,6 +66,13 @@ class FillParameters(TypedDict):
     role: NotRequired[str]
     name: NotRequired[str]
     value: str
+
+class SelectParameters(TypedDict):
+    target: NotRequired[str]
+    role: NotRequired[str]
+    name: NotRequired[str]
+    label: NotRequired[str]
+    value: NotRequired[str]
 
 class UploadParameters(TypedDict):
     target: NotRequired[str]
@@ -273,6 +280,12 @@ class Click(TypedDict, total=False):
 class Fill(TypedDict, total=False):
     filled: Required[str]
     valueLength: Required[int | float]
+
+class Select(TypedDict, total=False):
+    selected: Required[str]
+    role: Required[str]
+    name: Required[str]
+    optionIndex: Required[int | float]
 
 class Upload(TypedDict, total=False):
     uploaded: Required[str]
@@ -1403,6 +1416,49 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                                   'type': 'object'}},
             'scope': 'session',
             'timeout': {'defaultMilliseconds': 15000, 'parameterPresentOverrides': {}}},
+ 'select': {'capabilityNegotiated': False,
+            'constraints': ['exactly one target reference or semantic role/name target',
+                            'exactly one option label or value',
+                            'native single-selection HTML select controls only'],
+            'parameters': [{'maximumBytes': 16,
+                            'name': 'target',
+                            'required': False,
+                            'sensitive': False,
+                            'type': 'string'},
+                           {'maximumBytes': 128,
+                            'name': 'role',
+                            'required': False,
+                            'sensitive': False,
+                            'type': 'string'},
+                           {'maximumBytes': 1000,
+                            'name': 'name',
+                            'required': False,
+                            'sensitive': False,
+                            'type': 'string'},
+                           {'maximumBytes': 1000,
+                            'name': 'label',
+                            'required': False,
+                            'sensitive': True,
+                            'type': 'string'},
+                           {'maximumBytes': 1000,
+                            'name': 'value',
+                            'required': False,
+                            'sensitive': True,
+                            'type': 'string'}],
+            'result': {'mayContainUntrustedContent': True,
+                       'schema': {'additionalProperties': True,
+                                  'fields': [{'name': 'selected',
+                                              'required': True,
+                                              'type': 'string'},
+                                             {'name': 'role', 'required': True, 'type': 'string'},
+                                             {'name': 'name', 'required': True, 'type': 'string'},
+                                             {'name': 'optionIndex',
+                                              'required': True,
+                                              'type': 'number'}],
+                                  'name': 'Select',
+                                  'type': 'object'}},
+            'scope': 'session',
+            'timeout': {'defaultMilliseconds': 15000, 'parameterPresentOverrides': {}}},
  'session.close': {'capabilityNegotiated': False,
                    'constraints': [],
                    'parameters': [],
@@ -2001,6 +2057,31 @@ class SyncSessionCommands:
         if name is not None:
             parameters['name'] = cast(JsonValue, name)
         return cast(Untrusted[Fill], self._invoke_sync('fill', parameters, timeout, cancel))
+
+    def select(
+        self,
+        *,
+        target: str | None = None,
+        role: str | None = None,
+        name: str | None = None,
+        label: str | None = None,
+        value: str | None = None,
+        timeout: float | None = None,
+        cancel: SyncCancellation | None = None,
+    ) -> Untrusted[Select]:
+        parameters: dict[str, JsonValue] = {
+        }
+        if target is not None:
+            parameters['target'] = cast(JsonValue, target)
+        if role is not None:
+            parameters['role'] = cast(JsonValue, role)
+        if name is not None:
+            parameters['name'] = cast(JsonValue, name)
+        if label is not None:
+            parameters['label'] = cast(JsonValue, label)
+        if value is not None:
+            parameters['value'] = cast(JsonValue, value)
+        return cast(Untrusted[Select], self._invoke_sync('select', parameters, timeout, cancel))
 
     def upload(
         self,
@@ -2649,6 +2730,31 @@ class AsyncSessionCommands:
         if name is not None:
             parameters['name'] = cast(JsonValue, name)
         return cast(Untrusted[Fill], await self._invoke_async('fill', parameters, timeout, cancel))
+
+    async def select(
+        self,
+        *,
+        target: str | None = None,
+        role: str | None = None,
+        name: str | None = None,
+        label: str | None = None,
+        value: str | None = None,
+        timeout: float | None = None,
+        cancel: AsyncCancellation | None = None,
+    ) -> Untrusted[Select]:
+        parameters: dict[str, JsonValue] = {
+        }
+        if target is not None:
+            parameters['target'] = cast(JsonValue, target)
+        if role is not None:
+            parameters['role'] = cast(JsonValue, role)
+        if name is not None:
+            parameters['name'] = cast(JsonValue, name)
+        if label is not None:
+            parameters['label'] = cast(JsonValue, label)
+        if value is not None:
+            parameters['value'] = cast(JsonValue, value)
+        return cast(Untrusted[Select], await self._invoke_async('select', parameters, timeout, cancel))
 
     async def upload(
         self,

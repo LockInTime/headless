@@ -32,6 +32,8 @@ Chromium capabilities; macOS WebKit reports them as unsupported.
 4. Start with `inspect --context summary --task "..."`, then use an outline,
    scoped text, or scoped actions only when the task needs them.
 5. Prefer role/name targeting; otherwise use a ref from the latest inspection.
+   For native dropdowns, use `select` with exactly one exact `--label` or
+   `--value`; do not treat custom ARIA widgets as native selects.
 6. After navigation or a substantial rerender, wait for the expected URL, text,
    settled state, or Chromium network idle and inspect again before the next
    interaction.

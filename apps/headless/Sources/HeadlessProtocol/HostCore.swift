@@ -37,6 +37,7 @@ public protocol BrowserEngineSession: AnyObject {
     func hostInspect(parameters: [String: JSONValue]) throws -> JSONValue
     func hostClick(parameters: [String: JSONValue]) throws -> JSONValue
     func hostFill(parameters: [String: JSONValue]) throws -> JSONValue
+    func hostSelect(parameters: [String: JSONValue]) throws -> JSONValue
     func hostPress(parameters: [String: JSONValue]) throws -> JSONValue
     func hostScroll(parameters: [String: JSONValue]) throws -> JSONValue
     func hostWait(parameters: [String: JSONValue]) throws -> JSONValue
@@ -554,6 +555,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         case .inspect: return try session.hostInspect(parameters: request.parameters)
         case .click: return try session.hostClick(parameters: request.parameters)
         case .fill: return try session.hostFill(parameters: request.parameters)
+        case .select: return try session.hostSelect(parameters: request.parameters)
         case .upload:
             guard let artifact = request.parameters["artifact"]?.stringValue else {
                 throw HostError(code: .missingParameter, message: "Artifact name is required.")
