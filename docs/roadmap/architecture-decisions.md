@@ -1060,6 +1060,36 @@ a general product claim.
 
 ---
 
+## 35. Select is a fixed native-control operation, not general evaluation
+
+**Decision:** add one portable `select` command for native single-selection
+HTML `<select>` controls. It reuses the click/fill target grammar and requires
+exactly one option matcher: a whitespace-normalized exact label or an exact
+value. Missing, ambiguous, disabled, multi-select, custom ARIA, and stale-target
+cases fail before mutation. A changed selection dispatches `input` followed by
+`change`; selecting the active option is idempotent. Responses include bounded
+target metadata and the option index, never the option label or value.
+
+Both engines run the same fixed operation inside the isolated agent world.
+Chromium does not claim trusted CDP dispatch for native popup selection because
+keyboard navigation differs across platforms and disabled option groups. A
+separate `selectDispatch: synthetic-dom` capability preserves the accuracy of
+the existing click/fill/key `inputDispatch` claim. This does not expose caller
+JavaScript or expand the arbitrary-evaluation boundary.
+
+Custom comboboxes, listboxes, multi-select, hover, drag, and arbitrary
+evaluation remain out of scope. Select commands are not replayable flow steps.
+
+**Status:** implemented for
+[#206](https://github.com/LockInTime/headless/issues/206).
+
+**Consequences:** agents get deterministic dropdown selection without brittle
+key sequences, while unsupported widgets remain explicit instead of receiving
+partial behavior. Option matchers are treated as sensitive protocol parameters
+for logging, even though callers still control their own CLI process arguments.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -1090,5 +1120,6 @@ a general product claim.
 | 31  | Session metadata is a bounded read-only host snapshot       | Implemented                                               | 2026-09-19 |
 | 32  | List pagination uses bounded server-side opaque cursors     | Implemented                                               | 2026-09-19 |
 | 33  | Keep heavy agent benchmarks outside the product repository  | Proposed                                                  | 2026-09-19 |
+| 35  | Fixed native single-select operation                        | Implemented                                               | 2026-09-20 |
 
 New decisions append here with the same format.

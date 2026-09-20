@@ -66,6 +66,15 @@ extension BrowserWindowController {
         return try callAgent("return globalThis.__headlessAgent.fill(args);", arguments: ["args": args])
     }
 
+    func agentSelect(parameters: [String: JSONValue]) throws -> JSONValue {
+        var args = try browserTargetArguments(parameters)
+        if let label = parameters["label"]?.stringValue { args["label"] = label }
+        if let value = parameters["value"]?.stringValue { args["value"] = value }
+        return try callAgent(
+            "return globalThis.__headlessAgent.select(args);", arguments: ["args": args]
+        )
+    }
+
     func agentAuthenticationState() throws -> JSONValue {
         try callAgent("return globalThis.__headlessAgent.authentication();")
     }
@@ -543,6 +552,9 @@ extension BrowserWindowController: BrowserEngineSession {
     }
     func hostFill(parameters: [String: JSONValue]) throws -> JSONValue {
         try agentFill(parameters: parameters)
+    }
+    func hostSelect(parameters: [String: JSONValue]) throws -> JSONValue {
+        try agentSelect(parameters: parameters)
     }
     func hostPress(parameters: [String: JSONValue]) throws -> JSONValue {
         try agentPress(parameters: parameters)

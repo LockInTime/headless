@@ -64,6 +64,7 @@ public enum CommandName: String, Codable, CaseIterable, Sendable {
     case inspect
     case click
     case fill
+    case select
     case upload
     case press
     case scroll
@@ -265,6 +266,15 @@ public struct CommandRequest: Codable, Equatable, Sendable {
             try target(allowValue: false)
         case .fill:
             try target(allowValue: true)
+        case .select:
+            try target(allowValue: false)
+            let label = try string("label", maximumBytes: 1_000)
+            let value = try string("value", maximumBytes: 1_000)
+            guard (label == nil) != (value == nil) else {
+                throw ProtocolValidationError.invalidParameter(
+                    "Choose exactly one option label or value"
+                )
+            }
         case .upload:
             try target(allowValue: false)
             if let artifact = try string("artifact", required: true, maximumBytes: 128) {

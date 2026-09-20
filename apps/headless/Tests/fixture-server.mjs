@@ -9,6 +9,7 @@ const routes = new Map([
   ['/next', 'next.html'],
   ['/hostile', 'hostile.html'],
   ['/large-document', 'large-document.html'],
+  ['/select', 'select.html'],
   ['/auth-state', 'auth-state.html'],
   ['/auth-login', 'auth-login.html'],
   ['/file-upload', 'file-upload.html'],

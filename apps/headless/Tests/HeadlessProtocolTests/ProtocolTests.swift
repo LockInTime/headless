@@ -336,6 +336,11 @@ private final class TestBrowserSession: BrowserEngineSession {
     }
     func hostClick(parameters: [String: JSONValue]) throws -> JSONValue { .object(["clicked": .bool(true)]) }
     func hostFill(parameters: [String: JSONValue]) throws -> JSONValue { .object(["filled": .bool(true)]) }
+    private(set) var lastSelectParameters: [String: JSONValue]?
+    func hostSelect(parameters: [String: JSONValue]) throws -> JSONValue {
+        lastSelectParameters = parameters
+        return .object(["selected": .bool(true), "parameters": .object(parameters)])
+    }
     private(set) var lastUploadPath: String?
     func hostUpload(parameters: [String: JSONValue], artifactURL: URL) throws -> JSONValue {
         lastUploadPath = artifactURL.path
@@ -960,6 +965,34 @@ struct ProtocolTests {
                 parameters: ["target": .string("@e../1")]
             ).validate()
         }
+        try CommandRequest(
+            id: "valid-select", command: .select,
+            parameters: ["target": .string("@e1"), "label": .string("Canada")]
+        ).validate()
+        try expectThrows("select should require one option matcher") {
+            try CommandRequest(
+                id: "select-without-option", command: .select,
+                parameters: ["target": .string("@e1")]
+            ).validate()
+        }
+        try expectThrows("select should reject conflicting option matchers") {
+            try CommandRequest(
+                id: "select-conflicting-option", command: .select,
+                parameters: [
+                    "target": .string("@e1"), "label": .string("Canada"),
+                    "value": .string("CA"),
+                ]
+            ).validate()
+        }
+        try expectThrows("select option matchers should stay bounded") {
+            try CommandRequest(
+                id: "select-unbounded-option", command: .select,
+                parameters: [
+                    "target": .string("@e1"),
+                    "label": .string(String(repeating: "x", count: 1_001)),
+                ]
+            ).validate()
+        }
         try expectThrows("screenshot traversal should be rejected") {
             try CommandRequest(
                 id: "bad-output", command: .screenshot,
@@ -1143,6 +1176,46 @@ struct ProtocolTests {
             invocation.request?.parameters == ["role": .string("button"), "name": .string("Continue")],
             "semantic target should parse"
         )
+    }
+
+    static func cliSemanticSelect() throws {
+        let byLabel = try CLIParser().parse([
+            "select", "--role", "combobox", "--name", "Country",
+            "--label", "Canada",
+        ])
+        try expect(byLabel.request?.command == .select, "select command should parse")
+        try expect(
+            byLabel.request?.parameters == [
+                "role": .string("combobox"), "name": .string("Country"),
+                "label": .string("Canada"),
+            ],
+            "semantic select target and label should parse"
+        )
+        let byValue = try CLIParser().parse(["select", "@e4", "--value", "CA"])
+        try expect(
+            byValue.request?.parameters == [
+                "target": .string("@e4"), "value": .string("CA"),
+            ],
+            "ref select target and value should parse"
+        )
+        let literal = try CLIParser().parse(["select", "@e4", "--label", "--", "--json"])
+        try expect(
+            literal.request?.parameters["label"] == .string("--json") && !literal.jsonOutput,
+            "select labels after the sentinel should remain literal"
+        )
+        try expectThrows("select should require an option matcher") {
+            _ = try CLIParser().parse(["select", "@e4"])
+        }
+        try expectThrows("select should reject two option matchers") {
+            _ = try CLIParser().parse([
+                "select", "@e4", "--label", "Canada", "--value", "CA",
+            ])
+        }
+        try expectThrows("select should reject conflicting target forms") {
+            _ = try CLIParser().parse([
+                "select", "@e4", "--role", "combobox", "--label", "Canada",
+            ])
+        }
     }
 
     static func cliInspectContextAndTask() throws {
@@ -2456,6 +2529,11 @@ struct ProtocolTests {
             parameters: ["target": .string("@e1"), "value": .string(secret)]
         )
         try expect(fill == nil, "fill values must never become replayable flow steps")
+        let select = flowStepIfSafe(
+            command: .select,
+            parameters: ["target": .string("@e1"), "value": .string(secret)]
+        )
+        try expect(select == nil, "select option matchers must not become replayable flow steps")
         let uploadStep = flowStepIfSafe(
             command: .upload,
             parameters: ["target": .string("@e1"), "artifact": .string("resume.pdf")]
@@ -2476,7 +2554,10 @@ struct ProtocolTests {
             flowStepIfSafe(command: $0, parameters: safeParameters)
         }
         let encoded = try ProtocolCodec.encoder.encode(RecordedFlow(commands: commands))
-        try expect(!String(decoding: encoded, as: UTF8.self).contains(secret), "serialized flows must omit fill values")
+        try expect(
+            !String(decoding: encoded, as: UTF8.self).contains(secret),
+            "serialized flows must omit fill values and select matchers"
+        )
     }
 
     static func visualComparisonInvokesBoundedTool() throws {
@@ -2806,6 +2887,11 @@ struct ProtocolTests {
         try expect(
             chromiumFeatures["inputDispatch"] == .string("trusted-cdp"),
             "Chromium should declare trusted CDP input"
+        )
+        try expect(
+            webkitFeatures["selectDispatch"] == .string("synthetic-dom")
+                && chromiumFeatures["selectDispatch"] == .string("synthetic-dom"),
+            "both engines should declare fixed isolated-world select dispatch"
         )
         try expect(
             webkitFeatures["fileUpload"] == .bool(false),
@@ -3256,7 +3342,10 @@ struct ProtocolTests {
             "partial series reservations should be removed after a later collision"
         )
         try expect(RecordingFormat.webm.videoCodec == "vp9", "recording metadata should report the codec, not encoder")
-        try expect(!agentRuntimeJavaScript.contains("hints.push('select')"), "inspect must not advertise a missing select command")
+        try expect(
+            agentRuntimeJavaScript.contains("hints.push('select')"),
+            "inspect must advertise the implemented native select command"
+        )
         try expect(
             agentRuntimeJavaScript.contains("__headlessFileUpload"),
             "upload hints must be gated on engine file-upload support"
@@ -4625,6 +4714,19 @@ struct ProtocolTests {
             "agent control should be enabled at creation and before command execution"
         )
 
+        let selectParameters: [String: JSONValue] = [
+            "role": .string("combobox"), "name": .string("Country"),
+            "label": .string("Canada"),
+        ]
+        let selected = core.handle(CommandRequest(
+            command: .select, session: "secondary", parameters: selectParameters
+        ))
+        try expect(selected.ok, "shared host select dispatch should succeed")
+        try expect(
+            engine.createdSessions[1].lastSelectParameters == selectParameters,
+            "HostCore should pass validated select parameters to the engine"
+        )
+
         let capture = core.handle(CommandRequest(command: .captureInfo, session: "secondary"))
         guard capture.ok, case .object(let captureResult) = capture.result else {
             throw TestFailure(description: "shared capture info should succeed")
@@ -4827,6 +4929,7 @@ struct ProtocolTests {
             ("CLI visit", cliVisit),
             ("CLI fill literal value", cliFillPreservesLiteralValue),
             ("CLI semantic click", cliSemanticClick),
+            ("CLI semantic select", cliSemanticSelect),
             ("CLI inspect context and task", cliInspectContextAndTask),
             ("CLI conflicting target", cliRejectsConflictingClickTarget),
             ("CLI settled wait", cliWaitDefaultsToSettled),

@@ -158,6 +158,8 @@ public struct CLIParser {
             return remote(.fill, session: session, parameters: [
                 "target": .string(arguments[0]), "value": .string(arguments[1]),
             ], jsonOutput: jsonOutput)
+        case "select":
+            return try parseSelect(arguments, session: session, jsonOutput: jsonOutput)
         case "press":
             guard arguments.count == 1 else { throw CLIParseError.missingArgument("KEY") }
             return remote(.press, session: session, parameters: ["key": .string(arguments[0])], jsonOutput: jsonOutput)
@@ -399,6 +401,24 @@ public struct CLIParser {
         var parameters = invocation.request?.parameters ?? [:]
         parameters["artifact"] = .string(artifact)
         return remote(.upload, session: session, parameters: parameters, jsonOutput: jsonOutput)
+    }
+
+    private func parseSelect(
+        _ arguments: [String], session: String?, jsonOutput: Bool
+    ) throws -> CLIInvocation {
+        var args = arguments
+        let label = try removeOption("--label", from: &args)
+        let value = try removeOption("--value", from: &args)
+        guard (label == nil) != (value == nil) else {
+            throw CLIParseError.missingArgument("exactly one of --label or --value")
+        }
+        let invocation = try parseTargeted(
+            .select, arguments: args, session: session, jsonOutput: jsonOutput
+        )
+        var parameters = invocation.request?.parameters ?? [:]
+        if let label { parameters["label"] = .string(label) }
+        if let value { parameters["value"] = .string(value) }
+        return remote(.select, session: session, parameters: parameters, jsonOutput: jsonOutput)
     }
 
     private func parseTargeted(
@@ -852,6 +872,8 @@ Commands:
           [--within @rN] [--limit N] [--budget TOKENS] [--depth N] [--text]
   click REF | click --role ROLE [--name NAME]
   fill REF TEXT | fill REF -- TEXT_WITH_LITERAL_FLAGS | press KEY
+  select REF --label LABEL | select REF --value VALUE
+  select --role ROLE [--name NAME] (--label LABEL | --value VALUE)
   upload REF --artifact FILE | upload --role ROLE [--name NAME] --artifact FILE
   scroll [up|down|top|bottom] [--amount PX]
   back | reload
