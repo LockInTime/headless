@@ -176,21 +176,47 @@ const controls = window.document.createElement('section');
 controls.innerHTML = `
   <button type="button" aria-label="Runtime action">Run</button>
   <input aria-label="Runtime input">
+  <label for="runtime-country">Country</label>
+  <select id="runtime-country">
+    <option value="">Choose a country</option>
+    <option value="CA">  Canada  </option>
+    <option value="US">United States</option>
+  </select>
+  <select aria-label="Duplicate country">
+    <option value="first">Canada</option>
+    <option value="second"> Canada </option>
+  </select>
+  <select aria-label="Disabled country" disabled><option>Canada</option></select>
+  <select aria-label="Disabled option"><option>Choose</option><option disabled>Canada</option></select>
+  <select aria-label="Disabled group">
+    <option>Choose</option><optgroup label="Unavailable" disabled><option>Canada</option></optgroup>
+  </select>
+  <select aria-label="Many countries" multiple><option>Canada</option></select>
+  <div role="combobox" aria-label="Custom country">Canada</div>
   <a href="javascript:alert(1)" aria-label="Unsafe runtime link">Unsafe</a>
   <div role="button" aria-label="Read only runtime control" tabindex="0">Read only</div>
 `;
 window.document.body.prepend(controls);
 const button = controls.querySelector('button');
 const input = controls.querySelector('input');
+const country = controls.querySelector('#runtime-country');
+const duplicateCountry = controls.querySelector('[aria-label="Duplicate country"]');
+const disabledCountry = controls.querySelector('[aria-label="Disabled country"]');
+const disabledOption = controls.querySelector('[aria-label="Disabled option"]');
+const disabledGroup = controls.querySelector('[aria-label="Disabled group"]');
+const manyCountries = controls.querySelector('[aria-label="Many countries"]');
 button.getBoundingClientRect = () => ({x: 20, y: 20, top: 20, left: 20, right: 120, bottom: 60, width: 100, height: 40});
 input.getBoundingClientRect = () => ({x: 20, y: 80, top: 80, left: 20, right: 220, bottom: 120, width: 200, height: 40});
 let clicks = 0;
 let inputs = 0;
 let changes = 0;
+const selectionEvents = [];
 const pressed = [];
 button.addEventListener('click', () => { clicks += 1; });
 input.addEventListener('input', () => { inputs += 1; });
 input.addEventListener('change', () => { changes += 1; });
+country.addEventListener('input', event => selectionEvents.push(`input:${event.isTrusted}`));
+country.addEventListener('change', event => selectionEvents.push(`change:${event.isTrusted}`));
 input.addEventListener('keydown', event => pressed.push(`down:${event.key}`));
 input.addEventListener('keyup', event => pressed.push(`up:${event.key}`));
 
@@ -217,6 +243,74 @@ assert.equal(filled.value, undefined, 'fill responses must not echo values');
 assert.equal(input.value, 'private value');
 assert.equal(inputs, 1);
 assert.equal(changes, 1);
+const selectActions = agent.snapshot(false, false, {
+  context: 'actions', task: 'Country', limit: 20,
+});
+const countryAction = selectActions.elements.find(element => element.name === 'Country');
+assert.deepEqual(Array.from(countryAction?.actions || []), ['select']);
+assert(!selectActions.elements.find(element => element.name === 'Disabled country')?.actions.includes('select'));
+assert(!selectActions.elements.find(element => element.name === 'Many countries')?.actions.includes('select'));
+
+const selectedByLabel = agent.select({role: 'combobox', name: 'Country', label: 'Canada'});
+assert.equal(selectedByLabel.selected, countryAction.ref);
+assert.equal(selectedByLabel.optionIndex, 1);
+assert.equal(selectedByLabel.label, undefined, 'select responses must not echo option labels');
+assert.equal(selectedByLabel.value, undefined, 'select responses must not echo option values');
+assert.equal(country.value, 'CA');
+assert.deepEqual(selectionEvents, ['input:false', 'change:false']);
+
+const selectedByValue = agent.select({target: countryAction.ref, value: 'CA'});
+assert.equal(selectedByValue.optionIndex, 1);
+assert.deepEqual(
+  selectionEvents,
+  ['input:false', 'change:false'],
+  'selecting the active option should be idempotent and emit no duplicate events',
+);
+assert.throws(
+  () => agent.select({role: 'combobox', name: 'Duplicate country', label: 'Canada'}),
+  error => error.headlessCode === 'INVALID_INPUT' && /ambiguous/.test(error.message),
+);
+assert.equal(duplicateCountry.selectedIndex, 0, 'ambiguous selection must not mutate the control');
+assert.throws(
+  () => agent.select({role: 'combobox', name: 'Disabled country', label: 'Canada'}),
+  error => error.headlessCode === 'INVALID_INPUT' && /control is disabled/.test(error.message),
+);
+assert.equal(disabledCountry.selectedIndex, 0);
+assert.throws(
+  () => agent.select({role: 'combobox', name: 'Disabled option', label: 'Canada'}),
+  error => error.headlessCode === 'INVALID_INPUT' && /option is disabled/.test(error.message),
+);
+assert.equal(disabledOption.selectedIndex, 0);
+assert.throws(
+  () => agent.select({role: 'combobox', name: 'Disabled group', label: 'Canada'}),
+  error => error.headlessCode === 'INVALID_INPUT' && /option is disabled/.test(error.message),
+);
+assert.equal(disabledGroup.selectedIndex, 0);
+const manyCountriesBefore = manyCountries.selectedIndex;
+assert.throws(
+  () => agent.select({role: 'combobox', name: 'Many countries', label: 'Canada'}),
+  error => error.headlessCode === 'INVALID_INPUT' && /multi-select/.test(error.message),
+);
+assert.equal(manyCountries.selectedIndex, manyCountriesBefore);
+assert.throws(
+  () => agent.select({role: 'combobox', name: 'Custom country', label: 'Canada'}),
+  error => error.headlessCode === 'INVALID_INPUT' && /not a native select/.test(error.message),
+);
+assert.throws(
+  () => agent.select({role: 'combobox', name: 'Country', label: 'Missing'}),
+  error => error.headlessCode === 'INVALID_INPUT' && /not found/.test(error.message),
+);
+assert.equal(country.selectedIndex, 1, 'failed option matching must preserve the prior selection');
+
+country.style.display = 'none';
+agent.snapshot(false, false, {context: 'actions', limit: 8});
+country.style.display = '';
+assert.throws(
+  () => agent.select({target: countryAction.ref, value: 'US'}),
+  error => error.headlessCode === 'ELEMENT_NOT_FOUND' && /expired/.test(error.message),
+);
+assert.equal(country.selectedIndex, 1, 'stale refs must fail before selection');
+input.focus();
 assert.equal(agent.press('A').pressed, 'A');
 assert.deepEqual(pressed, ['down:A', 'up:A']);
 assert.throws(
