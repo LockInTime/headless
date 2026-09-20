@@ -21,7 +21,7 @@ headless <command> -- --value       # stop option parsing; literal values
 
 ```sh
 version | --version
-start [--background|--foreground] [--allow PATTERN]... [--supervised] | status | stop | runtime
+start [--background|--foreground] [--allow PATTERN]... [--supervised] | status | stop | runtime | doctor
 profile clear
 config list | config describe KEY | config get KEY
 config set KEY VALUE | config reset KEY
@@ -38,10 +38,38 @@ schema
   `start --allow` with the same hosts in any order is a no-op. `stop`
   controls the host afterwards. `runtime` reports which engine is active and
   where it came from.
+- `doctor` runs a read-only, offline installation check. It reports bounded
+  JSON with stable check identifiers for the executable, browser engine,
+  FFmpeg, runtime directory and socket, artifact and settings storage, host
+  log, and platform sandbox. Warnings identify optional or not-yet-created
+  facilities; its exit status is nonzero only when a failed check blocks a
+  supported operation. It never starts a browser, repairs storage, removes a
+  stale socket, or prints environment values and file contents.
+- `session list` preserves the ordered `sessions` name array and includes a
+  typed `details` entry for each session. Details report isolation, monotonic
+  age, `available`, `navigating`, or `unavailable` status, and nullable current
+  HTTP(S) URL and title. URL userinfo is removed, URL and title lengths are
+  bounded with explicit truncation flags, and page-derived fields are marked
+  `untrustedContent`. Listing does not focus windows, enable agent control, or
+  execute page JavaScript; one unavailable session does not fail the list.
+- `artifacts list`, `console list`, and `network list` accept `--limit N` and
+  `--cursor CURSOR`. Limits are integers from 1 through 250. Read
+  `nextCursor` until it is `null`; every page reports its returned and
+  available or total counts, `truncated`, and mutation state. Cursors are
+  opaque, expire after five minutes, are bound to the command, filters, and
+  owning store, and do not survive a host restart. If the collection changes,
+  or a cursor is invalid, expired, or used with another scope, restart the
+  listing without `--cursor`. Cursors contain no paths, page data, or secrets.
 - `start --supervised` is for SDK-owned lifecycle management. It refuses to
   attach to an existing host, verifies the launched host PID, and shuts the host
   down when the launcher input closes or the launcher exits. Normal starts
   remain shared and detached.
+- Detached hosts write bounded structured output to
+  `/tmp/headless-<uid>/host.log`, with one rotated `host.log.1` generation.
+  Both files are private regular files capped at 1 MiB each. An operator or
+  test may set `HEADLESS_HOST_LOG` to an absolute path; unsafe files, symlinks,
+  hard links, and relative overrides are rejected. Startup failures report the
+  selected path and a bounded redacted tail.
 - `schema` prints the versioned SDK contract generated from the Swift request
   definitions. It is local-only and includes request and response envelopes,
   command parameters and bounds, errors, compatibility, cancellation, and
@@ -193,7 +221,7 @@ fill REF TEXT | fill REF -- TEXT_WITH_LITERAL_FLAGS | press KEY
 upload REF --artifact FILE | upload --role ROLE [--name NAME] --artifact FILE
 scroll [up|down|top|bottom] [--amount PX]
 back | reload
-wait [--settled] [--url PATTERN] [--text TEXT] [--timeout MS]
+wait [--settled] [--network-idle] [--url PATTERN] [--text TEXT] [--timeout MS]
 tour [--full-page] [--pace PX_PER_SECOND]
 ```
 
@@ -221,8 +249,13 @@ back | reload
   Downloads stay denied. Agent-facing surfaces cannot import local files;
   operator-file import remains deferred until Headless has a trusted native
   picker or broker that can prove explicit user approval.
-- `wait --timeout` and the tour duration are bounded; unbounded waits are
-  rejected at parse time.
+- `wait` combines every requested predicate. A bare wait retains the existing
+  settled-page behavior. On Chromium, `--network-idle` requires zero
+  qualifying requests for 500 ms; WebSocket and EventSource connections are
+  excluded, while ordinary long-polling requests can cause a bounded timeout.
+  WebKit returns `UNSUPPORTED_CAPABILITY` instead of approximating network
+  state through its page-world diagnostics bridge. `wait --timeout` and the
+  tour duration are bounded; unbounded waits are rejected at parse time.
 
 ## Capture and evidence
 
@@ -231,7 +264,7 @@ capture-info
 screenshot [REF | --role ROLE --name NAME | --full-page] [--format png|jpg|jpeg] [--output FILE] [--clipboard]
 screenshot --full-page --format pdf [--output FILE.pdf]
 screenshot --every-viewport|--by-section [--format png|jpg|jpeg] [--output PREFIX]
-artifacts list
+artifacts list [--limit N] [--cursor CURSOR]
 record start [--fps N] [--format mp4|mov|webm|gif] [--quality fast|balanced|high] [--output FILE]
 record status | record stop [--output FILE]
 qa report | qa clear
@@ -254,8 +287,8 @@ report create [--output REPORT.json]
 ## Diagnostics
 
 ```sh
-console list [--level LEVEL] [--limit N]
-network list [--failed] [--status CODE] [--limit N]
+console list [--level LEVEL] [--limit N] [--cursor CURSOR]
+network list [--failed] [--status CODE] [--limit N] [--cursor CURSOR]
 network get REQUEST_ID
 network emulate [--offline] [--latency MS] [--download-kbps N] [--upload-kbps N]
 network mock set URL --body BODY [--status CODE] [--content-type MIME]

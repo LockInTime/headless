@@ -50,8 +50,13 @@ jobs:
           exit "$status"
       - name: QA evidence checksums
         # docs/qa/evidence is the only binary media allowed in git; prove the
-        # committed bundle still matches its manifest.
-        run: cd docs/qa/evidence && sha256sum -c SHA256SUMS
+        # committed bundles still match their manifests.
+        run: |
+          find docs/qa/evidence -name SHA256SUMS -print0 \
+            | sort -z \
+            | while IFS= read -r -d '' manifest; do
+                (cd "$(dirname "$manifest")" && sha256sum -c SHA256SUMS)
+              done
       - name: Whitespace
         if: github.event_name == 'pull_request'
         run: git diff --check "origin/${{ github.base_ref }}...HEAD"

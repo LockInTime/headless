@@ -512,6 +512,10 @@ public final class FileSettingsBackend: @unchecked Sendable, SettingsBackend {
     public convenience init(
         environment: [String: String], registry: SettingsRegistry = .shared
     ) throws {
+        try self.init(rootURL: Self.resolvedRootURL(environment: environment), registry: registry)
+    }
+
+    public static func resolvedRootURL(environment: [String: String]) throws -> URL {
         let base: URL
         if let configured = environment["XDG_CONFIG_HOME"] {
             guard configured.hasPrefix("/") else { throw SettingsError.insecureStorage }
@@ -519,7 +523,7 @@ public final class FileSettingsBackend: @unchecked Sendable, SettingsBackend {
         } else {
             base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config", isDirectory: true)
         }
-        try self.init(rootURL: base.appendingPathComponent("headless", isDirectory: true), registry: registry)
+        return base.appendingPathComponent("headless", isDirectory: true)
     }
 
     public init(rootURL: URL, registry: SettingsRegistry = .shared) throws {
@@ -549,6 +553,29 @@ public final class FileSettingsBackend: @unchecked Sendable, SettingsBackend {
         }
     }
 
+    public func validateReadOnly() throws -> Bool {
+        var rootInfo = stat()
+        guard lstat(rootURL.path, &rootInfo) == 0 else {
+            if errno == ENOENT { return false }
+            throw SettingsError.insecureStorage
+        }
+        guard (rootInfo.st_mode & S_IFMT) == S_IFDIR, rootInfo.st_uid == geteuid(),
+              (rootInfo.st_mode & 0o077) == 0 else { throw SettingsError.insecureStorage }
+        let directory = open(rootURL.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_DIRECTORY)
+        guard directory >= 0 else { throw SettingsError.insecureStorage }
+        defer { close(directory) }
+
+        let lock = openat(directory, Self.lockName, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        if lock >= 0 {
+            defer { close(lock) }
+            try Self.validatePrivateRegularFile(lock, repairPermissions: false)
+        } else if errno != ENOENT {
+            throw SettingsError.insecureStorage
+        }
+        _ = try read(from: directory, repairPermissions: false)
+        return true
+    }
+
     private func withLockedValues<T>(
         _ body: (inout [String: String], Int32) throws -> T
     ) throws -> T {
@@ -564,14 +591,14 @@ public final class FileSettingsBackend: @unchecked Sendable, SettingsBackend {
         return try body(&values, directory)
     }
 
-    private func read(from directory: Int32) throws -> [String: String] {
+    private func read(from directory: Int32, repairPermissions: Bool = true) throws -> [String: String] {
         let descriptor = openat(directory, Self.fileName, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
         if descriptor < 0 {
             if errno == ENOENT { return [:] }
             throw SettingsError.insecureStorage
         }
         defer { close(descriptor) }
-        try Self.validatePrivateRegularFile(descriptor)
+        try Self.validatePrivateRegularFile(descriptor, repairPermissions: repairPermissions)
         var info = stat()
         guard fstat(descriptor, &info) == 0, info.st_size >= 0,
               info.st_size <= Self.maximumFileBytes else { throw SettingsError.corruptStorage }
@@ -686,13 +713,17 @@ public final class FileSettingsBackend: @unchecked Sendable, SettingsBackend {
         return -1
     }
 
-    private static func validatePrivateRegularFile(_ descriptor: Int32) throws {
+    private static func validatePrivateRegularFile(
+        _ descriptor: Int32, repairPermissions: Bool = true
+    ) throws {
         var info = stat()
         guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
               info.st_uid == geteuid(), info.st_nlink == 1, (info.st_mode & 0o077) == 0 else {
             throw SettingsError.insecureStorage
         }
-        guard fchmod(descriptor, 0o600) == 0 else { throw SettingsError.operationFailed("permissions") }
+        if repairPermissions {
+            guard fchmod(descriptor, 0o600) == 0 else { throw SettingsError.operationFailed("permissions") }
+        }
     }
 }
 

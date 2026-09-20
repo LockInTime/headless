@@ -62,8 +62,13 @@ function parameterType(parameter) {
   }
 }
 
-function resultType(type) {
-  switch (type) {
+function resultType(field) {
+  if (Array.isArray(field.values)) return field.values.map(literal).join(" | ");
+  if (field.type === "array" && field.items) {
+    if (field.items.type === "object") return `readonly ${field.items.name}[]`;
+    return `readonly ${resultType({ type: field.items.type })}[]`;
+  }
+  switch (field.type) {
   case "array": return "readonly JsonValue[]";
   case "boolean": return "boolean";
   case "json": return "JsonValue";
@@ -79,6 +84,11 @@ const resultSchemas = new Map();
 function registerResultSchema(result, label) {
   const name = result?.name;
   if (!name || !Array.isArray(result.fields)) throw new Error(`invalid result schema: ${label}`);
+  for (const field of result.fields) {
+    if (field.items?.type === "object") {
+      registerResultSchema(field.items, `${label}.${field.name}`);
+    }
+  }
   const encoded = JSON.stringify(result);
   const previous = resultSchemas.get(name);
   if (previous && previous !== encoded) throw new Error(`conflicting result schema: ${name}`);
@@ -144,7 +154,7 @@ for (const encoded of resultSchemas.values()) {
   const result = JSON.parse(encoded);
   lines.push(`export interface ${result.name} {`);
   for (const field of result.fields) {
-    lines.push(`  readonly ${JSON.stringify(field.name)}${field.required ? "" : "?"}: ${resultType(field.type)};`);
+    lines.push(`  readonly ${JSON.stringify(field.name)}${field.required ? "" : "?"}: ${resultType(field)};`);
   }
   if (result.additionalProperties) lines.push("  readonly [key: string]: JsonValue;");
   lines.push("}", "");
