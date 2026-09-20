@@ -10,6 +10,7 @@ public func diagnosticStringHeaders(_ headers: [String: Any]?) -> [String: Strin
 
 public final class QADiagnosticStore: @unchecked Sendable {
     private let lock = NSLock()
+    private let pagination = PaginationCursorStore()
     private var events: [JSONValue] = []
     private var didTruncate = false
     private let maximumEvents = 500
@@ -142,23 +143,30 @@ public final class QADiagnosticStore: @unchecked Sendable {
         return data.count
     }
 
-    public func console(level: String, limit: Int) -> JSONValue {
+    public func console(level: String, limit: Int, cursor: String? = nil) throws -> JSONValue {
         lock.lock(); let snapshot = events; lock.unlock()
         let items = snapshot.filter { event in
             guard case .object(let object) = event, object["kind"] == .string("console") else { return false }
             return level == "all" || object["level"] == .string(level)
         }
-        let boundedLimit = max(1, min(limit, 200))
-        let boundedItems = Array(items.suffix(boundedLimit))
+        let page = try pagination.page(
+            values: items, context: "console.list|level=\(level)", limit: limit,
+            cursor: cursor, direction: .newestBatchFirst
+        )
         return .object([
             "untrustedContent": .bool(true),
-            "messages": .array(boundedItems),
-            "returned": .number(Double(boundedItems.count)),
+            "messages": .array(page.values),
+            "returned": .number(Double(page.values.count)),
             "available": .number(Double(items.count)),
+            "truncated": .bool(page.truncated),
+            "nextCursor": page.nextCursor.map(JSONValue.string) ?? .null,
+            "mutation": .string("none"),
         ])
     }
 
-    public func network(failedOnly: Bool, status: Int?, limit: Int) -> JSONValue {
+    public func network(
+        failedOnly: Bool, status: Int?, limit: Int, cursor: String? = nil
+    ) throws -> JSONValue {
         lock.lock(); let snapshot = events; lock.unlock()
         let matching = snapshot.filter { event in
             guard case .object(let object) = event,
@@ -169,12 +177,19 @@ public final class QADiagnosticStore: @unchecked Sendable {
             if let status, Int(object["status"]?.numberValue ?? 0) != status { return false }
             return true
         }.map(networkSummary(_:))
-        let bounded = Array(matching.suffix(max(1, min(limit, 200))))
+        let context = "network.list|failed=\(failedOnly)|status=\(status.map(String.init) ?? "any")"
+        let page = try pagination.page(
+            values: matching, context: context, limit: limit,
+            cursor: cursor, direction: .newestBatchFirst
+        )
         return .object([
             "untrustedContent": .bool(true),
-            "requests": .array(bounded),
-            "returned": .number(Double(bounded.count)),
+            "requests": .array(page.values),
+            "returned": .number(Double(page.values.count)),
             "available": .number(Double(matching.count)),
+            "truncated": .bool(page.truncated),
+            "nextCursor": page.nextCursor.map(JSONValue.string) ?? .null,
+            "mutation": .string("none"),
         ])
     }
 

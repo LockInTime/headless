@@ -26,6 +26,7 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
         -target "$(uname -m)-apple-macos13.0" -typecheck \
         Sources/HeadlessProtocol/Protocol.swift \
         Sources/HeadlessProtocol/ProtocolSchema.swift \
+        Sources/HeadlessProtocol/Pagination.swift \
         Sources/HeadlessProtocol/SupervisedHost.swift \
         Sources/HeadlessProtocol/CredentialCommands.swift \
         Sources/HeadlessProtocol/HostError.swift \
@@ -81,6 +82,29 @@ fi
   echo "headless tests: CLI product version does not match $EXPECTED_VERSION" >&2
   exit 1
 }
+set +e
+DOCTOR_OUTPUT="$("$BIN_PATH/headless" doctor)"
+DOCTOR_STATUS=$?
+set -e
+case "$DOCTOR_STATUS" in
+  0|69) ;;
+  *)
+    echo "headless tests: doctor returned unexpected status $DOCTOR_STATUS" >&2
+    exit 1
+    ;;
+esac
+grep -q '"schemaVersion":1' <<<"$DOCTOR_OUTPUT" || {
+  echo "headless tests: doctor did not return its versioned JSON report" >&2
+  exit 1
+}
+grep -q '"id":"runtime.socket"' <<<"$DOCTOR_OUTPUT" || {
+  echo "headless tests: doctor omitted the socket check" >&2
+  exit 1
+}
+if "$BIN_PATH/headless" doctor repair >/dev/null 2>&1; then
+  echo "headless tests: doctor accepted an unknown argument" >&2
+  exit 1
+fi
 "$BIN_PATH/headless" schema > "$TEST_SCRATCH/protocol-schema.json"
 cmp "$TEST_SCRATCH/protocol-schema.json" ../../sdk/protocol-schema.json || {
   echo "headless tests: sdk/protocol-schema.json is stale; regenerate it with headless schema" >&2

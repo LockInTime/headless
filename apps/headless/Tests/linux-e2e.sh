@@ -12,11 +12,12 @@ SUPERVISED_LAUNCHER_PID=""
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
-mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/file-upload" "$FIXTURE_ROOT/api" "$FIXTURE_ROOT/allowlist-exits" "$FIXTURE_ROOT/allowlist-redirect"
+mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/network-idle" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/file-upload" "$FIXTURE_ROOT/api" "$FIXTURE_ROOT/allowlist-exits" "$FIXTURE_ROOT/allowlist-redirect"
 cp /opt/headless/fixtures/dashboard.html "$FIXTURE_ROOT/designers/dashboard/index.html"
 cp /opt/headless/fixtures/next.html "$FIXTURE_ROOT/next/index.html"
 cp /opt/headless/fixtures/hostile.html "$FIXTURE_ROOT/hostile/index.html"
 cp /opt/headless/fixtures/large-document.html "$FIXTURE_ROOT/large-document/index.html"
+cp /opt/headless/fixtures/network-idle.html "$FIXTURE_ROOT/network-idle/index.html"
 cp /opt/headless/fixtures/trusted-input.html "$FIXTURE_ROOT/trusted-input/index.html"
 cp /opt/headless/fixtures/auth-state.html "$FIXTURE_ROOT/auth-state/index.html"
 cp /opt/headless/fixtures/auth-login.html "$FIXTURE_ROOT/auth-login/index.html"
@@ -47,7 +48,7 @@ cleanup() {
   rm -rf "$HEADLESS_ARTIFACT_DIR"
   rm -rf "$XDG_DATA_HOME"
   rm -rf "$XDG_CONFIG_HOME"
-  rm -f "$HEADLESS_HOST_LOG"
+  rm -f "$HEADLESS_HOST_LOG" "$HEADLESS_HOST_LOG.1" "$HEADLESS_HOST_LOG.lock"
   [ -z "$SUPERVISED_FIFO" ] || rm -f "$SUPERVISED_FIFO"
   [ -z "$SUPERVISED_OUTPUT" ] || rm -f "$SUPERVISED_OUTPUT"
   exit "$status"
@@ -82,6 +83,10 @@ test ! -e "$HOME/.local/share/headless/credential-vault/credentials-index.json"
 STEP="runtime-discovery"
 headless runtime | grep -q '"executable":"/usr/lib/chromium/chromium"'
 headless runtime | grep -q '"transport":"inherited-devtools-pipe"'
+DOCTOR_OUTPUT="$(headless doctor)"
+echo "$DOCTOR_OUTPUT" | grep -q '"ok":true'
+echo "$DOCTOR_OUTPUT" | grep -q '"id":"browser.runtime"'
+echo "$DOCTOR_OUTPUT" | grep -q '"id":"runtime.socket"'
 if SNAP_RUNTIME="$(HEADLESS_CHROMIUM_EXECUTABLE=/snap/bin/chromium headless runtime 2>&1)"; then
   echo "Snap Chromium was accepted by runtime selection" >&2
   exit 1
@@ -155,6 +160,11 @@ SUPERVISED_OUTPUT=""
 
 STEP="host-start"
 headless start | grep -q '"ready":true'
+test -f "$HEADLESS_HOST_LOG"
+test ! -L "$HEADLESS_HOST_LOG"
+test "$(stat -c %a "$HEADLESS_HOST_LOG")" = "600"
+test "$(stat -c %u "$HEADLESS_HOST_LOG")" = "$(id -u)"
+test "$(stat -c %h "$HEADLESS_HOST_LOG")" = "1"
 test "$(stat -c %a "$XDG_DATA_HOME/headless")" = "700"
 test "$(stat -c %a "$XDG_DATA_HOME/headless/chromium-profile")" = "700"
 if RUNNING_PRESENTATION_START="$(headless start --foreground 2>&1)"; then
@@ -290,12 +300,21 @@ HEADLESS_CONFORMANCE_BASE_URL=http://127.0.0.1:41739 \
 headless session create qa | grep -q '"session":"qa"'
 headless session list | grep -q '"qa"'
 headless --session qa visit http://127.0.0.1:41739/designers/dashboard/ | grep -q 'Designers Dashboard'
+SESSION_METADATA="$(headless session list)"
+echo "$SESSION_METADATA" | grep -q '"name":"qa"'
+echo "$SESSION_METADATA" | grep -q '"status":"available"'
+echo "$SESSION_METADATA" | grep -q '"url":"http://127.0.0.1:41739/designers/dashboard/"'
+echo "$SESSION_METADATA" | grep -q '"title":"Designers Dashboard"'
+echo "$SESSION_METADATA" | grep -q '"untrustedContent":true'
+echo "$SESSION_METADATA" | grep -Eq '"ageMs":[0-9]'
 # Exercise the control-channel regression directly: the same session must
 # survive a second document, reload that document, go back, and reload again.
 headless --session qa visit http://127.0.0.1:41739/next/ | grep -q 'Designer Details'
 headless --session qa reload | grep -q 'Designer Details'
 headless --session qa back | grep -q 'Designers Dashboard'
 headless --session qa reload | grep -q 'Designers Dashboard'
+headless --session qa reload >/dev/null
+headless --session qa reload >/dev/null
 SNAPSHOT="$(headless --session qa inspect --interactive --text)"
 echo "$SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$SNAPSHOT" | grep -q '"name":"Reviewer"'
@@ -306,10 +325,18 @@ echo "$ACTION_SNAPSHOT" | grep -q '"task":"click Continue"'
 echo "$ACTION_SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$ACTION_SNAPSHOT" | grep -q '"actions":\["click"\]'
 echo "$ACTION_SNAPSHOT" | grep -q '"relevance"'
+CONSOLE_PAGE_ONE="$(headless --session qa console list --level error --limit 1)"
+CONSOLE_CURSOR="$(echo "$CONSOLE_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
+test -n "$CONSOLE_CURSOR"
+headless --session qa console list --level error --limit 1 --cursor "$CONSOLE_CURSOR" | grep -q 'Next.js runtime error'
 CONSOLE="$(headless --session qa console list --level error)"
 echo "$CONSOLE" | grep -q 'Next.js runtime error'
 NETWORK="$(headless --session qa network list)"
 echo "$NETWORK" | grep -q '"requestId"'
+NETWORK_PAGE_ONE="$(headless --session qa network list --limit 1)"
+NETWORK_CURSOR="$(echo "$NETWORK_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
+test -n "$NETWORK_CURSOR"
+headless --session qa network list --limit 1 --cursor "$NETWORK_CURSOR" | grep -q '"requestId"'
 NETWORK_ID="$(echo "$NETWORK" | sed -n 's/.*"requestId":"\([^"]*\)"[^}]*"url":"[^"]*\/api\/diagnostic".*/\1/p')"
 test -n "$NETWORK_ID"
 NETWORK_DETAIL="$(headless --session qa network get "$NETWORK_ID")"
@@ -346,6 +373,20 @@ TRUSTED_INPUT="$(headless --session qa inspect --text)"
 echo "$TRUSTED_INPUT" | grep -q 'input:true'
 echo "$TRUSTED_INPUT" | grep -q 'key:Enter:true'
 echo "$TRUSTED_INPUT" | grep -q 'click:true'
+STEP="network-idle-wait"
+headless --session qa visit http://127.0.0.1:41739/network-idle/ | grep -q 'Network idle fixture'
+if NETWORK_IDLE_TIMEOUT="$(headless --session qa wait --network-idle --timeout 100 2>&1)"; then
+  echo "network-idle wait ignored its bounded quiet window" >&2
+  exit 1
+fi
+echo "$NETWORK_IDLE_TIMEOUT" | grep -q 'TIMEOUT'
+headless --session qa wait --network-idle --timeout 2000 | grep -q 'Network idle fixture'
+headless --session qa network emulate --latency 800 | grep -q '"latencyMs":800'
+headless --session qa inspect --interactive | grep -q 'Start network request'
+headless --session qa click --role button --name 'Start network request' | grep -q '"clicked"'
+NETWORK_IDLE_RESULT="$(headless --session qa wait --network-idle --timeout 5000)"
+echo "$NETWORK_IDLE_RESULT" | grep -q 'request complete'
+headless --session qa network emulate | grep -q '"latencyMs":0'
 STEP="file-upload"
 printf 'resume-fixture\n' > "$HEADLESS_ARTIFACT_DIR/resume.txt"
 chmod 600 "$HEADLESS_ARTIFACT_DIR/resume.txt"
@@ -554,6 +595,10 @@ head -c 6 "$HEADLESS_ARTIFACT_DIR/dashboard-flow.gif" | grep -Eq 'GIF8[79]a'
 headless artifacts list | grep -q '"name":"dashboard-flow.mp4"'
 headless artifacts list | grep -q '"name":"dashboard-flow.webm"'
 headless artifacts list | grep -q '"name":"dashboard-flow.gif"'
+ARTIFACT_PAGE_ONE="$(headless artifacts list --limit 1)"
+ARTIFACT_CURSOR="$(echo "$ARTIFACT_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
+test -n "$ARTIFACT_CURSOR"
+headless artifacts list --limit 1 --cursor "$ARTIFACT_CURSOR" | grep -q '"returned":1'
 headless --session qa back | grep -q 'Designers Dashboard'
 headless --session qa reload | grep -q 'Designers Dashboard'
 headless --session qa capture-info | grep -q '"engine":"chromium"'

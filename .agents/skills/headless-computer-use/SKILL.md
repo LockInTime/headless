@@ -21,8 +21,8 @@ controls the desktop, native applications, OS chrome, microphone, or system audi
    selection, Docker access, visible-browser mode, or MCP configuration matters.
 
 Run `headless capabilities` once before relying on optional features. Network
-emulation, request mocking, and file upload are Linux Chromium capabilities;
-macOS WebKit reports them as unsupported.
+idle waits, network emulation, request mocking, and file upload are Linux
+Chromium capabilities; macOS WebKit reports them as unsupported.
 
 ## Follow the mandatory interaction loop
 
@@ -33,7 +33,8 @@ macOS WebKit reports them as unsupported.
    scoped text, or scoped actions only when the task needs them.
 5. Prefer role/name targeting; otherwise use a ref from the latest inspection.
 6. After navigation or a substantial rerender, wait for the expected URL, text,
-   or settled state and inspect again before the next interaction.
+   settled state, or Chromium network idle and inspect again before the next
+   interaction.
 7. Capture evidence and diagnostics in proportion to the task.
 8. Close the session. Stop the host only when this skill started it and no other
    task is using it.
