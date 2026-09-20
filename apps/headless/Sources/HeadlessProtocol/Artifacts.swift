@@ -26,16 +26,24 @@ public enum ArtifactError: Error, CustomStringConvertible {
 public final class ArtifactStore: @unchecked Sendable {
     public let rootURL: URL
     private let lock = NSLock()
+    private let pagination = PaginationCursorStore()
 
     public init(environment: [String: String] = ProcessInfo.processInfo.environment) throws {
+        rootURL = try Self.resolvedRootURL(environment: environment, platform: .current)
+        try prepareRoot()
+    }
+
+    public static func resolvedRootURL(
+        environment: [String: String], platform: SettingPlatform = .current
+    ) throws -> URL {
         if let override = environment["HEADLESS_ARTIFACT_DIR"] {
             guard override.hasPrefix("/") else { throw ArtifactError.invalidRoot }
-            rootURL = URL(fileURLWithPath: override, isDirectory: true).standardizedFileURL
+            return URL(fileURLWithPath: override, isDirectory: true).standardizedFileURL
         } else {
-            #if os(macOS)
-            rootURL = FileManager.default.homeDirectoryForCurrentUser
+            if platform == .macOS {
+                return FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Application Support/Headless/Artifacts", isDirectory: true)
-            #else
+            }
             let base: URL
             if let stateHome = environment["XDG_STATE_HOME"], stateHome.hasPrefix("/") {
                 base = URL(fileURLWithPath: stateHome, isDirectory: true)
@@ -43,10 +51,8 @@ public final class ArtifactStore: @unchecked Sendable {
                 base = FileManager.default.homeDirectoryForCurrentUser
                     .appendingPathComponent(".local/state", isDirectory: true)
             }
-            rootURL = base.appendingPathComponent("headless/artifacts", isDirectory: true)
-            #endif
+            return base.appendingPathComponent("headless/artifacts", isDirectory: true)
         }
-        try prepareRoot()
     }
 
     public func reserve(
@@ -174,7 +180,7 @@ public final class ArtifactStore: @unchecked Sendable {
         return try metadata(for: finalURL)
     }
 
-    public func list() throws -> JSONValue {
+    public func list(limit: Int = 250, cursor: String? = nil) throws -> JSONValue {
         lock.lock(); defer { lock.unlock() }
         let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .creationDateKey]
         let urls = try FileManager.default.contentsOfDirectory(
@@ -187,22 +193,26 @@ public final class ArtifactStore: @unchecked Sendable {
             return try metadata(for: url)
         }.sorted { left, right in
             guard case .object(let lhs) = left, case .object(let rhs) = right else { return false }
-            return (lhs["createdAt"]?.numberValue ?? 0) > (rhs["createdAt"]?.numberValue ?? 0)
+            let leftCreated = lhs["createdAt"]?.numberValue ?? 0
+            let rightCreated = rhs["createdAt"]?.numberValue ?? 0
+            if leftCreated != rightCreated { return leftCreated > rightCreated }
+            return (lhs["name"]?.stringValue ?? "") < (rhs["name"]?.stringValue ?? "")
         }
-        // The store grows without bound across a long session, and the listing
-        // has to survive the 1 MiB protocol frame. Newest first, bounded, and
-        // explicit about what was left out.
-        let listed = Array(artifacts.prefix(Self.maximumListedArtifacts))
+        let page = try pagination.page(
+            values: artifacts, context: "artifact.list", limit: limit,
+            cursor: cursor, direction: .fromStart
+        )
         return .object([
             "directory": .string(rootURL.path),
-            "artifacts": .array(listed),
+            "artifacts": .array(page.values),
+            "returned": .number(Double(page.values.count)),
             "total": .number(Double(artifacts.count)),
-            "omitted": .number(Double(artifacts.count - listed.count)),
-            "truncated": .bool(listed.count < artifacts.count),
+            "omitted": .number(Double(artifacts.count - page.consumed)),
+            "truncated": .bool(page.truncated),
+            "nextCursor": page.nextCursor.map(JSONValue.string) ?? .null,
+            "mutation": .string("none"),
         ])
     }
-
-    private static let maximumListedArtifacts = 250
 
     private static let listedExtensions: Set<String> =
         ScreenshotFormat.artifactExtensions
@@ -212,7 +222,11 @@ public final class ArtifactStore: @unchecked Sendable {
     private func metadata(for url: URL) throws -> JSONValue {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let bytes = (attributes[.size] as? NSNumber)?.doubleValue ?? 0
-        let created = (attributes[.creationDate] as? Date ?? Date()).timeIntervalSince1970
+        let created = (
+            (attributes[.creationDate] as? Date)
+                ?? (attributes[.modificationDate] as? Date)
+                ?? Date(timeIntervalSince1970: 0)
+        ).timeIntervalSince1970
         return .object([
             "name": .string(url.lastPathComponent),
             "path": .string(url.path),

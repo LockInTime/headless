@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "${0:a:h}/.."
 
-for tool in node curl defaults lsof osascript perl; do
+for tool in node curl defaults lsof osascript perl swift; do
   command -v "$tool" >/dev/null 2>&1 || { echo "macOS E2E tests require $tool" >&2; exit 69; }
 done
 
@@ -195,6 +195,75 @@ on run argv
   end tell
 end run
 APPLESCRIPT
+}
+
+ax_address_field_count() {
+  local pid="$1"
+  osascript_with_timeout - "$pid" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      if (count of windows) is 0 then error "Headless has no accessible windows"
+      return count of text fields of front window
+    end tell
+  end tell
+end run
+APPLESCRIPT
+}
+
+ax_click_front_window_content() {
+  local pid="$1"
+  local coordinates x y
+  coordinates="$(osascript_with_timeout - "$pid" <<'APPLESCRIPT'
+on run argv
+  set targetPID to item 1 of argv as integer
+  tell application "System Events"
+    set targetProcesses to every application process whose unix id is targetPID
+    if (count of targetProcesses) is not 1 then error "Headless accessibility process was not found"
+    tell item 1 of targetProcesses
+      set frontmost to true
+      if (count of windows) is 0 then error "Headless has no accessible windows"
+      set windowPosition to position of front window
+      set windowSize to size of front window
+      return {(item 1 of windowPosition) + 10, (item 2 of windowPosition) + (item 2 of windowSize) - 10}
+    end tell
+  end tell
+end run
+APPLESCRIPT
+  )"
+  x="$(printf '%s' "$coordinates" | cut -d, -f1 | tr -d ' ')"
+  y="$(printf '%s' "$coordinates" | cut -d, -f2 | tr -d ' ')"
+  swift - "$x" "$y" <<'SWIFT'
+import CoreGraphics
+import Foundation
+
+guard CommandLine.arguments.count == 3,
+      let x = Double(CommandLine.arguments[1]),
+      let y = Double(CommandLine.arguments[2]) else {
+    fputs("invalid click coordinates\n", stderr)
+    exit(64)
+}
+let point = CGPoint(
+    x: x,
+    y: y
+)
+CGEvent(
+    mouseEventSource: nil,
+    mouseType: .leftMouseDown,
+    mouseCursorPosition: point,
+    mouseButton: .left
+)?.post(tap: .cghidEventTap)
+usleep(50_000)
+CGEvent(
+    mouseEventSource: nil,
+    mouseType: .leftMouseUp,
+    mouseCursorPosition: point,
+    mouseButton: .left
+)?.post(tap: .cghidEventTap)
+SWIFT
 }
 
 ax_named_window_count() {
@@ -586,7 +655,7 @@ cleanup() {
   fi
   rm -rf "$HEADLESS_ARTIFACT_DIR"
   rm -rf "$MENU_SNAPSHOT_DIR"
-  rm -f "$HEADLESS_SOCKET" "$LOG" "$HOST_LOG" "$RESTORE_LOG"
+  rm -f "$HEADLESS_SOCKET" "$LOG" "$HOST_LOG" "$HOST_LOG.1" "$HOST_LOG.lock" "$RESTORE_LOG"
   [[ -z "$SUPERVISED_FIFO" ]] || rm -f "$SUPERVISED_FIFO"
   [[ -z "$SUPERVISED_OUTPUT" ]] || rm -f "$SUPERVISED_OUTPUT"
   if [[ "$CLIPBOARD_SAVED" == 0 ]]; then
@@ -730,10 +799,108 @@ echo "$START_RESULT" | grep -q '"ready":true' || {
 echo "▸ host ready"
 HOST_PID="$(echo "$START_RESULT" | sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p')"
 test -n "$HOST_PID"
+test -f "$HOST_LOG"
+test ! -L "$HOST_LOG"
+test "$(stat -f %Lp "$HOST_LOG")" = "600"
+test "$(stat -f %u "$HOST_LOG")" = "$(id -u)"
+test "$(stat -f %l "$HOST_LOG")" = "1"
 if [[ "$(frontmost_pid)" == "$HOST_PID" ]]; then
   echo "default agent startup stole focus" >&2
   fail
 fi
+
+STEP="start-page-themes"
+for _ in {1..100}; do
+  NORMAL_START_PAGE="$("$CLI" inspect --text 2>/dev/null || true)"
+  echo "$NORMAL_START_PAGE" | grep -q "QUICK CONTROLS" && break
+  sleep 0.05
+done
+echo "$NORMAL_START_PAGE" | grep -q "QUICK CONTROLS"
+if echo "$NORMAL_START_PAGE" | grep -q "the browser that isn"; then
+  echo "normal start page retained the removed tagline" >&2
+  fail
+fi
+if echo "$NORMAL_START_PAGE" | grep -q "PRIVATE SESSION"; then
+  echo "normal start page was marked private" >&2
+  fail
+fi
+"$CLI" session create start-page-private --isolated | grep -q '"isolated":true'
+for _ in {1..100}; do
+  PRIVATE_START_PAGE="$("$CLI" --session start-page-private inspect --text 2>/dev/null || true)"
+  echo "$PRIVATE_START_PAGE" | grep -q "PRIVATE SESSION" && break
+  sleep 0.05
+done
+echo "$PRIVATE_START_PAGE" | grep -q "Private browsing data is erased when this session closes."
+if echo "$PRIVATE_START_PAGE" | grep -q "the browser that isn"; then
+  echo "private start page inherited the normal tagline" >&2
+  fail
+fi
+"$CLI" session close start-page-private | grep -q '"closed":"start-page-private"'
+
+STEP="start-page-address-hud"
+ax_press_menu_item "$HOST_PID" File "Open Location…"
+for _ in {1..100}; do
+  [[ "$(ax_address_field_count "$HOST_PID" 2>/dev/null)" == 1 ]] && break
+  sleep 0.05
+done
+if [[ "$(ax_address_field_count "$HOST_PID")" != 1 ]]; then
+  echo "start page address field did not open" >&2
+  fail
+fi
+ax_click_front_window_content "$HOST_PID"
+sleep 0.2
+if [[ "$(ax_address_field_count "$HOST_PID")" != 1 ]]; then
+  echo "start page click dismissed the address field" >&2
+  fail
+fi
+ax_keystroke "$HOST_PID" l command
+ax_escape "$HOST_PID"
+for _ in {1..100}; do
+  [[ "$(ax_address_field_count "$HOST_PID" 2>/dev/null)" == 0 ]] && break
+  sleep 0.05
+done
+if [[ "$(ax_address_field_count "$HOST_PID")" != 0 ]]; then
+  echo "Escape did not dismiss the focused start page address field" >&2
+  fail
+fi
+
+STEP="website-address-hud"
+"$CLI" visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'
+ax_press_menu_item "$HOST_PID" File "Open Location…"
+for _ in {1..100}; do
+  [[ "$(ax_address_field_count "$HOST_PID" 2>/dev/null)" == 1 ]] && break
+  sleep 0.05
+done
+if [[ "$(ax_address_field_count "$HOST_PID")" != 1 ]]; then
+  echo "website address field did not open" >&2
+  fail
+fi
+ax_escape "$HOST_PID"
+ax_press_menu_item "$HOST_PID" File "Open Location…"
+for _ in {1..100}; do
+  [[ "$(ax_address_field_count "$HOST_PID" 2>/dev/null)" == 1 ]] && break
+  sleep 0.05
+done
+if [[ "$(ax_address_field_count "$HOST_PID")" != 1 ]]; then
+  echo "website address field did not reopen after dismissal" >&2
+  fail
+fi
+ax_click_front_window_content "$HOST_PID"
+for _ in {1..100}; do
+  [[ "$(ax_address_field_count "$HOST_PID" 2>/dev/null)" == 0 ]] && break
+  sleep 0.05
+done
+if [[ "$(ax_address_field_count "$HOST_PID")" != 0 ]]; then
+  echo "website click did not dismiss the address field" >&2
+  fail
+fi
+ax_escape "$HOST_PID"
+for _ in {1..100}; do
+  NORMAL_START_PAGE="$("$CLI" inspect --text 2>/dev/null || true)"
+  echo "$NORMAL_START_PAGE" | grep -q "QUICK CONTROLS" && break
+  sleep 0.05
+done
+echo "$NORMAL_START_PAGE" | grep -q "QUICK CONTROLS"
 
 STEP="settings-window-workflow"
 ax_press_menu_item "$HOST_PID" Headless "Settings…"
@@ -1142,7 +1309,16 @@ if [[ "$(frontmost_pid)" == "$HOST_PID" ]]; then
 fi
 "$CLI" session list | grep -q '"qa"'
 "$CLI" --session qa visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'
+SESSION_METADATA="$("$CLI" session list)"
+echo "$SESSION_METADATA" | grep -q '"name":"qa"'
+echo "$SESSION_METADATA" | grep -q '"status":"available"'
+echo "$SESSION_METADATA" | grep -q '"url":"http://127.0.0.1:'"$PORT"'/designers/dashboard"'
+echo "$SESSION_METADATA" | grep -q '"title":"Designers Dashboard"'
+echo "$SESSION_METADATA" | grep -q '"untrustedContent":true'
+echo "$SESSION_METADATA" | grep -Eq '"ageMs":[0-9]'
 STEP="inspect-diagnostics"
+"$CLI" --session qa reload >/dev/null
+"$CLI" --session qa reload >/dev/null
 SNAPSHOT="$("$CLI" --session qa inspect --interactive --text)"
 echo "$SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$SNAPSHOT" | grep -q '"name":"Reviewer"'
@@ -1153,10 +1329,18 @@ echo "$ACTION_SNAPSHOT" | grep -q '"task":"click Continue"'
 echo "$ACTION_SNAPSHOT" | grep -q '"name":"Continue"'
 echo "$ACTION_SNAPSHOT" | grep -q '"actions":\["click"\]'
 echo "$ACTION_SNAPSHOT" | grep -q '"relevance"'
+CONSOLE_PAGE_ONE="$("$CLI" --session qa console list --level error --limit 1)"
+CONSOLE_CURSOR="$(echo "$CONSOLE_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
+test -n "$CONSOLE_CURSOR"
+"$CLI" --session qa console list --level error --limit 1 --cursor "$CONSOLE_CURSOR" | grep -q 'Next.js runtime error'
 CONSOLE="$("$CLI" --session qa console list --level error)"
 echo "$CONSOLE" | grep -q 'Next.js runtime error'
 NETWORK="$("$CLI" --session qa network list)"
 echo "$NETWORK" | grep -q '"requestId"'
+NETWORK_PAGE_ONE="$("$CLI" --session qa network list --limit 1)"
+NETWORK_CURSOR="$(echo "$NETWORK_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
+test -n "$NETWORK_CURSOR"
+"$CLI" --session qa network list --limit 1 --cursor "$NETWORK_CURSOR" | grep -q '"requestId"'
 NETWORK_ID="$(echo "$NETWORK" | sed -n 's/.*"requestId":"\([^"]*\)"[^}]*"url":"[^"]*\/api\/diagnostic".*/\1/p')"
 test -n "$NETWORK_ID"
 NETWORK_DETAIL="$("$CLI" --session qa network get "$NETWORK_ID")"
@@ -1244,6 +1428,11 @@ ANIMATIONS="$("$CLI" --session qa animations list)"
 echo "$ANIMATIONS" | grep -q '"animations"'
 echo "$ANIMATIONS" | grep -q '"iterations":null'
 STEP="network-emulate-unsupported"
+if NETWORK_IDLE_WAIT="$("$CLI" --session qa wait --network-idle --timeout 1000 2>&1)"; then
+  echo "WebKit network-idle wait was unexpectedly exposed" >&2
+  fail
+fi
+echo "$NETWORK_IDLE_WAIT" | grep -q 'UNSUPPORTED_CAPABILITY'
 if NETWORK_SIMULATION="$("$CLI" --session qa network emulate --latency 25)"; then
   echo "WebKit network emulation was unexpectedly exposed" >&2
   fail
@@ -1319,6 +1508,10 @@ test -s "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mov"
 file "$HEADLESS_ARTIFACT_DIR/dashboard-flow.mov" | grep -Eq 'ISO Media|QuickTime'
 "$CLI" artifacts list | grep -q '"name":"dashboard-flow.mp4"'
 "$CLI" artifacts list | grep -q '"name":"dashboard-flow.mov"'
+ARTIFACT_PAGE_ONE="$("$CLI" artifacts list --limit 1)"
+ARTIFACT_CURSOR="$(echo "$ARTIFACT_PAGE_ONE" | sed -n 's/.*"nextCursor":"\([^"]*\)".*/\1/p')"
+test -n "$ARTIFACT_CURSOR"
+"$CLI" artifacts list --limit 1 --cursor "$ARTIFACT_CURSOR" | grep -q '"returned":1'
 "$CLI" --session qa back | grep -q 'Designers Dashboard'
 "$CLI" --session qa reload | grep -q 'Designers Dashboard'
 STEP="capture-hostile"

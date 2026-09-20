@@ -61,6 +61,7 @@ if [[ -z "${SDKROOT:-}" ]]; then
         -target "$NATIVE_ARCH-apple-macos13.0" -typecheck \
       Sources/HeadlessProtocol/Protocol.swift \
       Sources/HeadlessProtocol/ProtocolSchema.swift \
+      Sources/HeadlessProtocol/Pagination.swift \
       Sources/HeadlessProtocol/SupervisedHost.swift \
       Sources/HeadlessProtocol/CredentialCommands.swift \
         Sources/HeadlessProtocol/HostError.swift \
@@ -81,7 +82,7 @@ fi
 export CLANG_MODULE_CACHE_PATH="$PWD/build/module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/build/swiftpm-module-cache"
 
-if [[ ! -f "$ICON" ]]; then
+if [[ ! -f "$ICON" || tools/make-icon.swift -nt "$ICON" ]]; then
   echo "▸ rendering icon"
   rm -rf build/AppIcon.iconset
   mkdir -p build

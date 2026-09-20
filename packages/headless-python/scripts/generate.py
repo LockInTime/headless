@@ -45,7 +45,16 @@ def parameter_type(parameter: dict[str, Any]) -> str:
     }[parameter["type"]]
 
 
-def result_type(field_type: str) -> str:
+def result_type(field: dict[str, Any]) -> str:
+    values = field.get("values")
+    if isinstance(values, list):
+        return literal_union(values)
+    field_type = field["type"]
+    items = field.get("items")
+    if field_type == "array" and isinstance(items, dict):
+        if items.get("type") == "object":
+            return f"list[{items['name']}]"
+        return f"list[{result_type({'type': items['type']})}]"
     return {
         "array": "list[JsonValue]",
         "boolean": "bool",
@@ -72,6 +81,10 @@ def register_result_schema(
     name = result.get("name")
     if not isinstance(name, str) or not name:
         raise ValueError(f"invalid result schema name: {source}")
+    for field in result["fields"]:
+        items = field.get("items")
+        if isinstance(items, dict) and items.get("type") == "object":
+            register_result_schema(result_schemas, items, f"{source}.{field['name']}")
     previous = result_schemas.get(name)
     if previous is not None and previous != result:
         raise ValueError(f"conflicting result schema: {name}")
@@ -95,7 +108,7 @@ def emit_result(lines: list[str], schema: dict[str, Any]) -> None:
     lines.append(f"class {schema['name']}(TypedDict, total=False):")
     for field in schema["fields"]:
         wrapper = "Required" if field["required"] else "NotRequired"
-        lines.append(f"    {field['name']}: {wrapper}[{result_type(field['type'])}]")
+        lines.append(f"    {field['name']}: {wrapper}[{result_type(field)}]")
     if not schema["fields"]:
         lines.append("    pass")
     lines.append("")

@@ -208,8 +208,13 @@ public struct CommandRequest: Codable, Equatable, Sendable {
 
         switch command {
         case .ping, .shutdown, .profileClear, .sessionList, .sessionClose, .back, .reload,
-             .captureInfo, .artifactList, .recordStatus, .qaReport, .qaClear:
+             .captureInfo, .recordStatus, .qaReport, .qaClear:
             break
+        case .artifactList:
+            _ = try number(
+                "limit", minimum: 1, maximum: Double(PaginationCursorStore.maximumLimit)
+            )
+            _ = try string("cursor", maximumBytes: PaginationCursorStore.cursorMaximumBytes)
         case .authLogin:
             if let challenge = try string("challenge", maximumBytes: 64),
                UUID(uuidString: challenge) == nil {
@@ -278,6 +283,7 @@ public struct CommandRequest: Codable, Equatable, Sendable {
             )
         case .wait:
             try boolean("settled")
+            try boolean("networkIdle")
             _ = try string("url")
             _ = try string("text", maximumBytes: 30_000)
             _ = try number("timeoutMs", minimum: 100, maximum: 120_000)
@@ -349,11 +355,17 @@ public struct CommandRequest: Codable, Equatable, Sendable {
                !["all", "log", "info", "debug", "warn", "error", "assert"].contains(level) {
                 throw ProtocolValidationError.invalidParameter("Invalid console level")
             }
-            _ = try number("limit", minimum: 1, maximum: 200)
+            _ = try number(
+                "limit", minimum: 1, maximum: Double(PaginationCursorStore.maximumLimit)
+            )
+            _ = try string("cursor", maximumBytes: PaginationCursorStore.cursorMaximumBytes)
         case .networkList:
             try boolean("failed")
             _ = try number("status", minimum: 100, maximum: 599)
-            _ = try number("limit", minimum: 1, maximum: 200)
+            _ = try number(
+                "limit", minimum: 1, maximum: Double(PaginationCursorStore.maximumLimit)
+            )
+            _ = try string("cursor", maximumBytes: PaginationCursorStore.cursorMaximumBytes)
         case .networkGet:
             _ = try string("requestId", required: true, maximumBytes: 128)
         case .stylesGet:
