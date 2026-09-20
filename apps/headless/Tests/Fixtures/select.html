@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Native select fixture</title>
+</head>
+<body>
+  <main>
+    <h1>Native select fixture</h1>
+    <label for="country">Country</label>
+    <select id="country">
+      <option value="">Choose a country</option>
+      <option value="CA">  Canada  </option>
+      <option value="US">United States</option>
+    </select>
+
+    <select aria-label="Duplicate country">
+      <option value="first">Canada</option>
+      <option value="second"> Canada </option>
+    </select>
+    <select aria-label="Disabled country" disabled><option>Canada</option></select>
+    <select aria-label="Disabled option"><option>Choose</option><option disabled>Canada</option></select>
+    <select aria-label="Disabled group">
+      <option>Choose</option>
+      <optgroup label="Unavailable" disabled><option>Canada</option></optgroup>
+    </select>
+    <select aria-label="Many countries" multiple><option>Canada</option></select>
+    <div role="combobox" aria-label="Custom country">Canada</div>
+    <output aria-label="Selection state">country=none events=none</output>
+  </main>
+  <script>
+    const country = document.querySelector('#country');
+    const output = document.querySelector('output');
+    const events = [];
+    const update = () => {
+      output.textContent = `country=${country.value || 'none'} events=${events.join(',') || 'none'}`;
+    };
+    country.addEventListener('input', () => { events.push('input'); update(); });
+    country.addEventListener('change', () => { events.push('change'); update(); });
+  </script>
+</body>
+</html>

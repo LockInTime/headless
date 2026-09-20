@@ -30,6 +30,8 @@ headless --session NAME click REF
 headless --session NAME click --role ROLE --name NAME
 headless --session NAME fill REF "TEXT"
 headless --session NAME fill REF -- "--json  stays literal"
+headless --session NAME select REF --label LABEL
+headless --session NAME select --role combobox --name NAME --value VALUE
 headless --session NAME upload REF --artifact FILE
 headless --session NAME upload --role textbox --name NAME --artifact FILE
 headless --session NAME press KEY
@@ -46,9 +48,10 @@ large pages, request `outline`, select a returned `@rN` region, then use
 bound the result; check `omitted` before assuming it describes the whole page.
 Use `click --role ... --name ...` for unique accessible controls. Use an `@eN`
 ref from the latest inspection when role/name is ambiguous. Inspect again after
-navigation or a large rerender. File inputs advertise `upload` for an existing
-private artifact-store basename. Upload never accepts or imports a filesystem
-path. Ask before uploading, as in [safety.md](safety.md).
+navigation or a large rerender. Native single-select controls advertise
+`select`; use exactly one exact `--label` or `--value`. File inputs advertise
+`upload` for an existing private artifact-store basename. Upload never accepts
+or imports a filesystem path. Ask before uploading, as in [safety.md](safety.md).
 
 Pass fill text as one quoted shell argument so whitespace is preserved. Put
 `--` before a value that contains a literal global flag such as `--json` or
