@@ -7,7 +7,7 @@ export type Untrusted<T> = Readonly<{ readonly untrustedContent: true; readonly 
 export const PROTOCOL_VERSION = "0.5" as const;
 export const PROTOCOL_SCHEMA_VERSION = 1 as const;
 export const MAXIMUM_MESSAGE_BYTES = 1048576 as const;
-export const PROTOCOL_SCHEMA_SHA256 = "882634187c7ef02ec4ed51fff0e747114eadeff308c10bb9b3274b3630fad11d" as const;
+export const PROTOCOL_SCHEMA_SHA256 = "efe358f18879226631c1c67ec993eb29f33ee6ed24d7b20a849b13e1618ffe90" as const;
 export const PROTOCOL_FIXTURES_SHA256 = "0b51ffaa2d3e3aaf0c32adcfeb02c180dcbe44face0d49e1c332b69f403ae062" as const;
 export const RESPONSE_ADDITIONAL_PROPERTIES = true as const;
 export const MAXIMUM_COMMAND_TIMEOUT_MS = 125000 as const;
@@ -195,6 +195,7 @@ export interface ReloadParameters {
 
 export interface WaitParameters {
   readonly "settled"?: boolean;
+  readonly "networkIdle"?: boolean;
   readonly "url"?: string;
   readonly "text"?: string;
   readonly "timeoutMs"?: number;
@@ -221,6 +222,8 @@ export interface ScreenshotParameters {
 }
 
 export interface ArtifactListParameters {
+  readonly "limit"?: number;
+  readonly "cursor"?: string;
 }
 
 export interface RecordStartParameters {
@@ -246,12 +249,14 @@ export interface QaClearParameters {
 export interface ConsoleListParameters {
   readonly "level"?: "all" | "log" | "info" | "debug" | "warn" | "error" | "assert";
   readonly "limit"?: number;
+  readonly "cursor"?: string;
 }
 
 export interface NetworkListParameters {
   readonly "failed"?: boolean;
   readonly "status"?: number;
   readonly "limit"?: number;
+  readonly "cursor"?: string;
 }
 
 export interface NetworkGetParameters {
@@ -355,9 +360,22 @@ export interface SessionCreate {
   readonly [key: string]: JsonValue;
 }
 
+export interface SessionDetail {
+  readonly "name": string;
+  readonly "isolated": boolean;
+  readonly "ageMs": number;
+  readonly "status": "available" | "navigating" | "unavailable";
+  readonly "url": string | null;
+  readonly "title": string | null;
+  readonly "urlTruncated": boolean;
+  readonly "titleTruncated": boolean;
+  readonly "untrustedContent": boolean;
+  readonly [key: string]: JsonValue;
+}
+
 export interface SessionList {
-  readonly "sessions": readonly JsonValue[];
-  readonly "details": readonly JsonValue[];
+  readonly "sessions": readonly string[];
+  readonly "details": readonly SessionDetail[];
   readonly [key: string]: JsonValue;
 }
 
@@ -452,9 +470,12 @@ export interface Screenshot {
 export interface ArtifactList {
   readonly "directory": string;
   readonly "artifacts": readonly JsonValue[];
+  readonly "returned": number;
   readonly "total": number;
   readonly "omitted": number;
   readonly "truncated": boolean;
+  readonly "nextCursor": string | null;
+  readonly "mutation": "none";
   readonly [key: string]: JsonValue;
 }
 
@@ -486,6 +507,9 @@ export interface ConsoleList {
   readonly "messages": readonly JsonValue[];
   readonly "returned": number;
   readonly "available": number;
+  readonly "truncated": boolean;
+  readonly "nextCursor": string | null;
+  readonly "mutation": "none";
   readonly [key: string]: JsonValue;
 }
 
@@ -494,6 +518,9 @@ export interface NetworkList {
   readonly "requests": readonly JsonValue[];
   readonly "returned": number;
   readonly "available": number;
+  readonly "truncated": boolean;
+  readonly "nextCursor": string | null;
+  readonly "mutation": "none";
   readonly [key: string]: JsonValue;
 }
 
@@ -617,7 +644,7 @@ export interface AuthenticationRequired {
   readonly [key: string]: JsonValue;
 }
 
-export type CommandErrorCode = "ARTIFACT_ERROR" | "AUTH_ACCOUNT_NOT_FOUND" | "AUTH_CHALLENGE_CONSUMED" | "AUTH_CHALLENGE_EXPIRED" | "AUTH_CHALLENGE_NOT_FOUND" | "AUTH_FORM_CHANGED" | "AUTH_ORIGIN_CHANGED" | "AUTH_REQUIRED" | "CREDENTIAL_ALIAS_EXISTS" | "ELEMENT_NOT_FOUND" | "FLOW_FAILED" | "HOST_STOPPING" | "HOST_UNAVAILABLE" | "INTERNAL_ERROR" | "INVALID_CAPTURE_FORMAT" | "INVALID_COMMAND" | "INVALID_FLOW" | "INVALID_INPUT" | "INVALID_REQUEST" | "INVALID_SESSION" | "MISSING_PARAMETER" | "OPERATION_FAILED" | "PEER_DENIED" | "RECORDER_UNAVAILABLE" | "RECORDING_ACTIVE" | "RECORDING_FAILED" | "RECORDING_NOT_ACTIVE" | "REGION_NOT_FOUND" | "RESPONSE_TOO_LARGE" | "SENSITIVE_DIAGNOSTICS_DISABLED" | "SESSION_EXISTS" | "SESSION_NOT_FOUND" | "TIMEOUT" | "UNSAFE_NAVIGATION" | "UNSAFE_RESOURCE_TYPE" | "UNSUPPORTED_CAPABILITY" | "USER_PRESENCE_DENIED" | "USER_PRESENCE_UNAVAILABLE" | "VAULT_LOCKED" | "VAULT_OPERATION_FAILED" | "VAULT_RESPONSE_INVALID" | "VAULT_UNAVAILABLE";
+export type CommandErrorCode = "ARTIFACT_ERROR" | "AUTH_ACCOUNT_NOT_FOUND" | "AUTH_CHALLENGE_CONSUMED" | "AUTH_CHALLENGE_EXPIRED" | "AUTH_CHALLENGE_NOT_FOUND" | "AUTH_FORM_CHANGED" | "AUTH_ORIGIN_CHANGED" | "AUTH_REQUIRED" | "CREDENTIAL_ALIAS_EXISTS" | "ELEMENT_NOT_FOUND" | "FLOW_FAILED" | "HOST_STOPPING" | "HOST_UNAVAILABLE" | "INTERNAL_ERROR" | "INVALID_CAPTURE_FORMAT" | "INVALID_COMMAND" | "INVALID_FLOW" | "INVALID_INPUT" | "INVALID_REQUEST" | "INVALID_SESSION" | "MISSING_PARAMETER" | "OPERATION_FAILED" | "PAGINATION_CURSOR_EXPIRED" | "PAGINATION_CURSOR_INVALID" | "PAGINATION_CURSOR_SCOPE_MISMATCH" | "PAGINATION_CURSOR_STALE" | "PEER_DENIED" | "RECORDER_UNAVAILABLE" | "RECORDING_ACTIVE" | "RECORDING_FAILED" | "RECORDING_NOT_ACTIVE" | "REGION_NOT_FOUND" | "RESPONSE_TOO_LARGE" | "SENSITIVE_DIAGNOSTICS_DISABLED" | "SESSION_EXISTS" | "SESSION_NOT_FOUND" | "TIMEOUT" | "UNSAFE_NAVIGATION" | "UNSAFE_RESOURCE_TYPE" | "UNSUPPORTED_CAPABILITY" | "USER_PRESENCE_DENIED" | "USER_PRESENCE_UNAVAILABLE" | "VAULT_LOCKED" | "VAULT_OPERATION_FAILED" | "VAULT_RESPONSE_INVALID" | "VAULT_UNAVAILABLE";
 
 export type LifecycleErrorCode = "HOST_START_FAILED" | "NAVIGATION_ALLOWLIST_CONFLICT" | "UNSUPPORTED_BROWSER_RUNTIME" | "UNSUPPORTED_CAPABILITY";
 
@@ -964,11 +991,71 @@ export const COMMAND_METADATA = {
         "additionalProperties": true,
         "fields": [
           {
+            "items": {
+              "type": "string"
+            },
             "name": "sessions",
             "required": true,
             "type": "array"
           },
           {
+            "items": {
+              "additionalProperties": true,
+              "fields": [
+                {
+                  "name": "name",
+                  "required": true,
+                  "type": "string"
+                },
+                {
+                  "name": "isolated",
+                  "required": true,
+                  "type": "boolean"
+                },
+                {
+                  "name": "ageMs",
+                  "required": true,
+                  "type": "number"
+                },
+                {
+                  "name": "status",
+                  "required": true,
+                  "type": "string",
+                  "values": [
+                    "available",
+                    "navigating",
+                    "unavailable"
+                  ]
+                },
+                {
+                  "name": "url",
+                  "required": true,
+                  "type": "string-or-null"
+                },
+                {
+                  "name": "title",
+                  "required": true,
+                  "type": "string-or-null"
+                },
+                {
+                  "name": "urlTruncated",
+                  "required": true,
+                  "type": "boolean"
+                },
+                {
+                  "name": "titleTruncated",
+                  "required": true,
+                  "type": "boolean"
+                },
+                {
+                  "name": "untrustedContent",
+                  "required": true,
+                  "type": "boolean"
+                }
+              ],
+              "name": "SessionDetail",
+              "type": "object"
+            },
             "name": "details",
             "required": true,
             "type": "array"
@@ -1597,6 +1684,12 @@ export const COMMAND_METADATA = {
         "type": "boolean"
       },
       {
+        "name": "networkIdle",
+        "required": false,
+        "sensitive": false,
+        "type": "boolean"
+      },
+      {
         "maximumBytes": 8192,
         "name": "url",
         "required": false,
@@ -1898,7 +1991,23 @@ export const COMMAND_METADATA = {
   },
   "artifact.list": {
     "capabilityNegotiated": false,
-    "parameters": [],
+    "parameters": [
+      {
+        "maximum": 250,
+        "minimum": 1,
+        "name": "limit",
+        "required": false,
+        "sensitive": false,
+        "type": "integer"
+      },
+      {
+        "maximumBytes": 64,
+        "name": "cursor",
+        "required": false,
+        "sensitive": false,
+        "type": "string"
+      }
+    ],
     "result": {
       "mayContainUntrustedContent": false,
       "schema": {
@@ -1915,6 +2024,11 @@ export const COMMAND_METADATA = {
             "type": "array"
           },
           {
+            "name": "returned",
+            "required": true,
+            "type": "number"
+          },
+          {
             "name": "total",
             "required": true,
             "type": "number"
@@ -1928,6 +2042,19 @@ export const COMMAND_METADATA = {
             "name": "truncated",
             "required": true,
             "type": "boolean"
+          },
+          {
+            "name": "nextCursor",
+            "required": true,
+            "type": "string-or-null"
+          },
+          {
+            "name": "mutation",
+            "required": true,
+            "type": "string",
+            "values": [
+              "none"
+            ]
           }
         ],
         "name": "ArtifactList",
@@ -2201,12 +2328,19 @@ export const COMMAND_METADATA = {
         ]
       },
       {
-        "maximum": 200,
+        "maximum": 250,
         "minimum": 1,
         "name": "limit",
         "required": false,
         "sensitive": false,
-        "type": "number"
+        "type": "integer"
+      },
+      {
+        "maximumBytes": 64,
+        "name": "cursor",
+        "required": false,
+        "sensitive": false,
+        "type": "string"
       }
     ],
     "result": {
@@ -2233,6 +2367,24 @@ export const COMMAND_METADATA = {
             "name": "available",
             "required": true,
             "type": "number"
+          },
+          {
+            "name": "truncated",
+            "required": true,
+            "type": "boolean"
+          },
+          {
+            "name": "nextCursor",
+            "required": true,
+            "type": "string-or-null"
+          },
+          {
+            "name": "mutation",
+            "required": true,
+            "type": "string",
+            "values": [
+              "none"
+            ]
           }
         ],
         "name": "ConsoleList",
@@ -2263,12 +2415,19 @@ export const COMMAND_METADATA = {
         "type": "number"
       },
       {
-        "maximum": 200,
+        "maximum": 250,
         "minimum": 1,
         "name": "limit",
         "required": false,
         "sensitive": false,
-        "type": "number"
+        "type": "integer"
+      },
+      {
+        "maximumBytes": 64,
+        "name": "cursor",
+        "required": false,
+        "sensitive": false,
+        "type": "string"
       }
     ],
     "result": {
@@ -2295,6 +2454,24 @@ export const COMMAND_METADATA = {
             "name": "available",
             "required": true,
             "type": "number"
+          },
+          {
+            "name": "truncated",
+            "required": true,
+            "type": "boolean"
+          },
+          {
+            "name": "nextCursor",
+            "required": true,
+            "type": "string-or-null"
+          },
+          {
+            "name": "mutation",
+            "required": true,
+            "type": "string",
+            "values": [
+              "none"
+            ]
           }
         ],
         "name": "NetworkList",
@@ -3159,8 +3336,8 @@ export abstract class GeneratedCommandClient {
     return this.invoke("screenshot", parameters, options);
   }
 
-  artifactList(options?: CommandOptions): Promise<CommandResult<"artifact.list">> {
-    return this.invoke("artifact.list", {}, options);
+  artifactList(parameters: ArtifactListParameters = {}, options?: CommandOptions): Promise<CommandResult<"artifact.list">> {
+    return this.invoke("artifact.list", parameters, options);
   }
 
   recordStart(parameters: RecordStartParameters = {}, options?: CommandOptions): Promise<CommandResult<"record.start">> {

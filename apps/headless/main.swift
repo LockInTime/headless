@@ -144,43 +144,86 @@ let launchOptions = parseLaunchOptions()
 
 // MARK: - Start page
 
-let startPageHTML = """
-<!doctype html>
-<html><head><meta charset="utf-8"><title>headless</title>
-<style>
-  html, body { height: 100%; margin: 0; }
-  body { background: #0a0a0e; color: #e8e8ee; font: 15px/1.6 -apple-system, system-ui;
-         display: flex; align-items: center; justify-content: center;
-         -webkit-user-select: none; cursor: default; }
-  main { text-align: center; max-width: 680px; padding: 48px; animation: in .6s ease-out; }
-  @keyframes in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; } }
-  h1 { font-size: 46px; font-weight: 650; letter-spacing: -.02em; margin: 0 0 6px; color: #fff; }
-  p.tag { color: #85858f; margin: 0 0 46px; font-size: 16px; }
-  .keys { display: grid; grid-template-columns: auto auto; gap: 11px 22px;
-          justify-content: center; text-align: left; font-size: 13.5px; color: #b9b9c4; }
-  .k { text-align: right; }
-  kbd { font: 600 12px ui-monospace, "SF Mono", monospace; background: #1b1b22;
-        border: 1px solid #2c2c36; border-bottom-width: 2px; border-radius: 6px;
-        padding: 2.5px 8px; color: #e8e8ee; white-space: nowrap; }
-  footer { margin-top: 48px; color: #55555e; font-size: 12px; }
-</style></head>
-<body><main>
-  <h1>headless</h1>
-  <p class="tag">the browser that isn&rsquo;t there</p>
-  <div class="keys">
-    <div class="k"><kbd>&#8984; L</kbd></div>       <div>search or enter a url</div>
-    <div class="k"><kbd>&#8984; drag</kbd></div>    <div>move the window</div>
-    <div class="k"><kbd>&#8963;&#8984; F</kbd></div><div>fullscreen</div>
-    <div class="k"><kbd>&#8679;&#8984; S</kbd></div><div>snapshot the page &rarr; desktop</div>
-    <div class="k"><kbd>&#8997;&#8984; P</kbd></div> <div>pin on top of every window</div>
-    <div class="k"><kbd>&#8984; [</kbd> <kbd>&#8984; ]</kbd></div><div>back / forward</div>
-    <div class="k"><kbd>esc</kbd></div>             <div>bail out &mdash; back to this page</div>
-    <div class="k"><kbd>&#8984; =</kbd> <kbd>&#8984; &minus;</kbd> <kbd>&#8984; 0</kbd></div><div>zoom</div>
-    <div class="k"><kbd>&#8679;&#8984; C</kbd></div><div>copy current url</div>
-  </div>
-  <footer>&#8984;N new window &nbsp;&middot;&nbsp; &#8984;R reload &nbsp;&middot;&nbsp; &#8984;W close</footer>
-</main></body></html>
-"""
+func startPageHTML(isIsolated: Bool) -> String {
+    let top = isIsolated ? "#2C2C2C" : "#2C5745"
+    let middle = isIsolated ? "#A3A2A2" : "#0F3040"
+    let bottom = isIsolated ? "#2C2C2C" : "#853953"
+    let panel = isIsolated ? "rgba(26, 26, 26, .82)" : "rgba(8, 33, 43, .78)"
+    let mode = isIsolated
+        ? "<div class=\"mode\">PRIVATE SESSION</div>"
+        : ""
+    let privacyNote = isIsolated
+        ? "<p class=\"privacy-note\">Private browsing data is erased when this session closes.</p>"
+        : ""
+
+    return """
+    <!doctype html>
+    <html><head><meta charset="utf-8"><title>headless</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+    <style>
+      html, body { height: 100%; margin: 0; }
+      body { background: \(bottom); color: #FBF7EF; font: 15px/1.6 -apple-system, system-ui;
+             display: flex; align-items: center; justify-content: center; overflow: auto;
+             -webkit-user-select: none; cursor: default; }
+      .waves { position: fixed; inset: 0; width: 100%; height: 100%; }
+      main { position: relative; width: min(680px, calc(100% - 48px)); box-sizing: border-box;
+             text-align: center; padding: 38px 48px 34px; border: 1px solid rgba(255,255,255,.14);
+             border-radius: 30px; background: \(panel); box-shadow: 0 24px 80px rgba(0,0,0,.2);
+             -webkit-backdrop-filter: blur(22px); animation: in .6s ease-out; }
+      @keyframes in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; } }
+      .section-title { margin: 0 0 24px; color: rgba(251,247,239,.62); font: 700 11px/1.5
+                       ui-monospace, "SF Mono", monospace; letter-spacing: .14em; }
+      .mode { display: inline-block; margin: 0 0 10px; padding: 3px 9px; border-radius: 999px;
+              background: rgba(255,255,255,.12); color: #FBF7EF; font: 700 10px/1.5 ui-monospace,
+              "SF Mono", monospace; letter-spacing: .12em; }
+      .privacy-note { color: rgba(251,247,239,.72); margin: 0 0 22px; font-size: 13px; }
+      .keys { display: grid; grid-template-columns: auto auto; gap: 9px 22px;
+              justify-content: center; text-align: left; font-size: 13.5px; color: rgba(251,247,239,.82); }
+      .k { text-align: right; }
+      kbd { font: 600 12px ui-monospace, "SF Mono", monospace; background: rgba(7,20,25,.72);
+            border: 1px solid rgba(255,255,255,.2); border-bottom-width: 2px; border-radius: 6px;
+            padding: 2.5px 8px; color: #FBF7EF; white-space: nowrap; }
+      footer { margin-top: 30px; color: rgba(251,247,239,.52); font-size: 12px; }
+      @media (max-height: 620px) {
+        body { align-items: flex-start; }
+        main { flex: none; margin: 16px 0; padding-top: 24px; padding-bottom: 22px; }
+        .section-title { margin-bottom: 18px; }
+        .privacy-note { margin-bottom: 16px; }
+        .keys { gap: 6px 18px; }
+        footer { margin-top: 20px; }
+      }
+      @media (max-width: 520px) {
+        main { width: calc(100% - 24px); padding-left: 20px; padding-right: 20px; }
+        .keys { column-gap: 12px; font-size: 12.5px; }
+      }
+      @media (prefers-reduced-motion: reduce) { main { animation: none; } }
+    </style></head>
+    <body data-session-kind="\(isIsolated ? "private" : "normal")">
+      <svg class="waves" viewBox="0 0 1000 650" preserveAspectRatio="none" aria-hidden="true">
+        <rect width="1000" height="650" fill="\(bottom)"/>
+        <path fill="\(middle)" d="M0 237L148 262C164 265 172 260 188 253L474 139C495 130 509 135 529 143L808 254C824 261 834 265 850 262L1000 233V466L850 491C834 494 824 490 808 484L529 382C509 374 495 370 474 379L188 487C172 494 164 498 148 495L0 466Z"/>
+        <path fill="\(top)" d="M0 0H1000V233L850 262C834 265 824 261 808 254L529 143C509 135 495 130 474 139L188 253C172 260 164 265 148 262L0 237Z"/>
+      </svg>
+      <main>
+        \(mode)
+        <div class="section-title">QUICK CONTROLS</div>
+        \(privacyNote)
+        <div class="keys">
+          <div class="k"><kbd>&#8984; L</kbd></div>       <div>search or enter a url</div>
+          <div class="k"><kbd>&#8984; drag</kbd></div>    <div>move the window</div>
+          <div class="k"><kbd>&#8963;&#8984; F</kbd></div><div>fullscreen</div>
+          <div class="k"><kbd>&#8679;&#8984; S</kbd></div><div>snapshot the page &rarr; desktop</div>
+          <div class="k"><kbd>&#8997;&#8984; P</kbd></div> <div>pin on top of every window</div>
+          <div class="k"><kbd>&#8984; [</kbd> <kbd>&#8984; ]</kbd></div><div>back / forward</div>
+          <div class="k"><kbd>esc</kbd></div>             <div>bail out, back to this page</div>
+          <div class="k"><kbd>&#8984; =</kbd> <kbd>&#8984; &minus;</kbd> <kbd>&#8984; 0</kbd></div><div>zoom</div>
+          <div class="k"><kbd>&#8679;&#8984; C</kbd></div><div>copy current url</div>
+        </div>
+        <footer>&#8984;N new window &nbsp;&middot;&nbsp; &#8984;R reload &nbsp;&middot;&nbsp; &#8984;W close</footer>
+      </main>
+    </body></html>
+    """
+}
 
 // MARK: - Views
 
@@ -232,8 +275,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     let qaBridge: WebKitQABridge
     let isIsolatedSession: Bool
     private let progressBar = NSView()
+    private let hudBackdrop = NSVisualEffectView()
     private let hud = NSVisualEffectView()
     private let hudField = NSTextField()
+    private var hudTransitionGeneration: UInt = 0
     private let toastView = NSVisualEffectView()
     private let toastLabel = NSTextField(labelWithString: "")
     private var observations: [NSKeyValueObservation] = []
@@ -415,15 +460,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
 
     private func installMouseMonitor() {
         mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown]) { [weak self] event in
-            guard let self, event.window === self.window else { return event }
+            guard let self, let window = self.window else { return event }
             if event.type == .mouseMoved {
-                // Reveal the traffic lights only when hovering the top-left corner.
-                guard let contentView = self.window?.contentView else { return event }
+                guard event.window === window, let contentView = window.contentView else { return event }
                 let p = event.locationInWindow
                 let nearCorner = p.y > contentView.bounds.height - 44 && p.x < 96
                 self.setTrafficLights(visible: self.isFullScreen || nearCorner)
-            } else if !self.hud.isHidden {
-                let p = self.window!.contentView!.convert(event.locationInWindow, from: nil)
+            } else if !self.hud.isHidden, !self.onStartPage, window.isKeyWindow,
+                      let contentView = window.contentView {
+                // Accessibility-generated clicks can arrive without an attached window.
+                let windowPoint = event.window === window
+                    ? event.locationInWindow
+                    : window.convertPoint(fromScreen: NSEvent.mouseLocation)
+                let p = contentView.convert(windowPoint, from: nil)
                 if !self.hud.frame.contains(p) { self.hideHUD() }
             }
             return event
@@ -435,6 +484,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
         progressBar.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
         progressBar.alphaValue = 0
         container.addSubview(progressBar)
+
+        hudBackdrop.material = .hudWindow
+        hudBackdrop.blendingMode = .withinWindow
+        hudBackdrop.state = .active
+        hudBackdrop.wantsLayer = true
+        hudBackdrop.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.20).cgColor
+        hudBackdrop.isHidden = true
+        hudBackdrop.alphaValue = 0
+        container.addSubview(hudBackdrop)
 
         hud.material = .hudWindow
         hud.blendingMode = .withinWindow
@@ -452,8 +510,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
         hudField.drawsBackground = false
         hudField.focusRingType = .none
         hudField.font = .systemFont(ofSize: 16)
-        hudField.textColor = .labelColor
-        hudField.placeholderString = "Search or enter address"
+        let addressTextColor = NSColor(calibratedWhite: 0.98, alpha: 1)
+        hudField.textColor = addressTextColor
+        hudField.placeholderAttributedString = NSAttributedString(
+            string: "Search or enter address",
+            attributes: [.foregroundColor: addressTextColor]
+        )
         hudField.usesSingleLineMode = true
         hudField.cell?.isScrollable = true
         hudField.cell?.wraps = false
@@ -479,6 +541,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     private func layoutOverlays() {
         guard let contentView = window?.contentView else { return }
         let b = contentView.bounds
+        hudBackdrop.frame = b
         let hudW = min(620, max(280, b.width - 48))
         let hudH: CGFloat = 52
         hud.frame = NSRect(x: (b.width - hudW) / 2, y: b.height - hudH - 84, width: hudW, height: hudH)
@@ -574,7 +637,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     func loadStartPage() {
         pendingRestoredStartupURL = nil
         onStartPage = true
-        webView.loadHTMLString(startPageHTML, baseURL: nil)
+        hudBackdrop.alphaValue = 0
+        hudBackdrop.isHidden = true
+        webView.loadHTMLString(startPageHTML(isIsolated: isIsolatedSession), baseURL: nil)
     }
 
     private func escapeToStart() -> Bool {
@@ -586,26 +651,36 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate,
     // MARK: HUD (the ⌘L address bar)
 
     func showHUD() {
+        hudTransitionGeneration &+= 1
         if let u = webView.url, !onStartPage, u.absoluteString != "about:blank" {
             hudField.stringValue = u.absoluteString
         } else {
             hudField.stringValue = ""
         }
+        let showsBackdrop = !onStartPage
+        hudBackdrop.isHidden = !showsBackdrop
+        hudBackdrop.alphaValue = 0
         hud.isHidden = false
         layoutOverlays()
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.15
+            if showsBackdrop { hudBackdrop.animator().alphaValue = 0.40 }
             hud.animator().alphaValue = 1
         }
         hudField.selectText(nil)
     }
 
     func hideHUD() {
+        hudTransitionGeneration &+= 1
+        let transitionGeneration = hudTransitionGeneration
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.15
+            self.hudBackdrop.animator().alphaValue = 0
             self.hud.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             guard let self else { return }
+            guard self.hudTransitionGeneration == transitionGeneration else { return }
+            self.hudBackdrop.isHidden = true
             self.hud.isHidden = true
             self.window?.makeFirstResponder(self.webView)
         })

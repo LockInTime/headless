@@ -12,6 +12,10 @@ public enum HostErrorCode: String, CaseIterable, Sendable {
     case invalidFlow = "INVALID_FLOW"
     case flowFailed = "FLOW_FAILED"
     case invalidCommand = "INVALID_COMMAND"
+    case paginationCursorInvalid = "PAGINATION_CURSOR_INVALID"
+    case paginationCursorExpired = "PAGINATION_CURSOR_EXPIRED"
+    case paginationCursorScopeMismatch = "PAGINATION_CURSOR_SCOPE_MISMATCH"
+    case paginationCursorStale = "PAGINATION_CURSOR_STALE"
     case operationFailed = "OPERATION_FAILED"
 }
 
@@ -46,6 +50,9 @@ public struct HostError: Error, CustomStringConvertible, Sendable {
             return "Use an engine that declares support for this capability."
         case .missingParameter, .invalidFlow, .flowFailed, .invalidCommand:
             return nil
+        case .paginationCursorInvalid, .paginationCursorExpired,
+             .paginationCursorScopeMismatch, .paginationCursorStale:
+            return "Restart pagination without --cursor."
         case .operationFailed:
             return nil
         }

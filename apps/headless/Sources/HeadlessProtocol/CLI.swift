@@ -19,6 +19,7 @@ public enum LocalCommand: Equatable, Sendable {
     case capabilities
     case schema
     case runtime
+    case doctor
     case start(
         presentation: AgentStartupPresentation?, allowlist: NavigationAllowlist,
         supervised: Bool
@@ -102,6 +103,10 @@ public struct CLIParser {
         case "runtime":
             try requireEmpty(arguments)
             return CLIInvocation(local: .runtime, jsonOutput: true)
+        case "doctor":
+            guard session == nil else { throw CLIParseError.invalidOption("--session") }
+            try requireEmpty(arguments)
+            return CLIInvocation(local: .doctor, jsonOutput: true)
         case "start":
             return try parseStart(arguments, jsonOutput: jsonOutput)
         case "config":
@@ -174,8 +179,17 @@ public struct CLIParser {
         case "screenshot":
             return try parseScreenshot(arguments, session: session, jsonOutput: jsonOutput)
         case "artifacts":
-            guard arguments == ["list"] else { throw CLIParseError.missingArgument("artifacts list") }
-            return remote(.artifactList, session: session, jsonOutput: jsonOutput)
+            guard arguments.first == "list" else { throw CLIParseError.missingArgument("artifacts list") }
+            var args = Array(arguments.dropFirst())
+            let limit = try removeOption("--limit", from: &args)
+            let cursor = try removeOption("--cursor", from: &args)
+            try requireEmpty(args)
+            var parameters: [String: JSONValue] = [:]
+            if let limit { parameters["limit"] = .number(try paginationLimit(limit)) }
+            if let cursor { parameters["cursor"] = .string(cursor) }
+            return remote(
+                .artifactList, session: session, parameters: parameters, jsonOutput: jsonOutput
+            )
         case "record":
             return try parseRecord(arguments, session: session, jsonOutput: jsonOutput)
         case "qa":
@@ -433,8 +447,12 @@ public struct CLIParser {
         let text = try removeOption("--text", from: &args)
         let timeoutText = try removeOption("--timeout", from: &args)
         let settled = removeFlag("--settled", from: &args)
+        let networkIdle = removeFlag("--network-idle", from: &args)
         try requireEmpty(args)
-        var parameters: [String: JSONValue] = ["settled": .bool(settled || (url == nil && text == nil))]
+        var parameters: [String: JSONValue] = [
+            "settled": .bool(settled || (url == nil && text == nil && !networkIdle)),
+        ]
+        if networkIdle { parameters["networkIdle"] = .bool(true) }
         if let url { parameters["url"] = .string(url) }
         if let text { parameters["text"] = .string(text) }
         if let timeoutText {
@@ -612,12 +630,14 @@ public struct CLIParser {
         var args = Array(arguments.dropFirst())
         let level = try removeOption("--level", from: &args) ?? "all"
         let limit = try removeOption("--limit", from: &args)
+        let cursor = try removeOption("--cursor", from: &args)
         try requireEmpty(args)
         guard ["all", "log", "info", "debug", "warn", "error", "assert"].contains(level) else {
             throw CLIParseError.invalidOption(level)
         }
         var parameters: [String: JSONValue] = ["level": .string(level)]
-        if let limit { parameters["limit"] = .number(try diagnosticLimit(limit)) }
+        if let limit { parameters["limit"] = .number(try paginationLimit(limit)) }
+        if let cursor { parameters["cursor"] = .string(cursor) }
         return remote(.consoleList, session: session, parameters: parameters, jsonOutput: jsonOutput)
     }
 
@@ -629,13 +649,15 @@ public struct CLIParser {
             let failed = removeFlag("--failed", from: &args)
             let status = try removeOption("--status", from: &args)
             let limit = try removeOption("--limit", from: &args)
+            let cursor = try removeOption("--cursor", from: &args)
             try requireEmpty(args)
             var parameters: [String: JSONValue] = ["failed": .bool(failed)]
             if let status {
                 guard let code = Double(status), code >= 100, code <= 599 else { throw CLIParseError.invalidNumber(status) }
                 parameters["status"] = .number(code)
             }
-            if let limit { parameters["limit"] = .number(try diagnosticLimit(limit)) }
+            if let limit { parameters["limit"] = .number(try paginationLimit(limit)) }
+            if let cursor { parameters["cursor"] = .string(cursor) }
             return remote(.networkList, session: session, parameters: parameters, jsonOutput: jsonOutput)
         case "get":
             guard args.count == 1 else { throw CLIParseError.missingArgument("network get REQUEST_ID") }
@@ -755,8 +777,11 @@ public struct CLIParser {
         }
     }
 
-    private func diagnosticLimit(_ value: String) throws -> Double {
-        guard let number = Double(value), number >= 1, number <= 200 else { throw CLIParseError.invalidNumber(value) }
+    private func paginationLimit(_ value: String) throws -> Double {
+        guard let number = Double(value), number.isFinite, number.rounded() == number,
+              number >= 1, number <= Double(PaginationCursorStore.maximumLimit) else {
+            throw CLIParseError.invalidNumber(value)
+        }
         return number
     }
 
@@ -816,7 +841,7 @@ Core workflow:
 
 Commands:
   version | --version
-  start [--background|--foreground] [--allow PATTERN]... [--supervised] | status | stop | runtime
+  start [--background|--foreground] [--allow PATTERN]... [--supervised] | status | stop | runtime | doctor
   profile clear
   config list | config describe KEY | config get KEY
   config set KEY VALUE | config reset KEY
@@ -834,18 +859,18 @@ Commands:
   upload REF --artifact FILE | upload --role ROLE [--name NAME] --artifact FILE
   scroll [up|down|top|bottom] [--amount PX]
   back | reload
-  wait [--settled] [--url PATTERN] [--text TEXT] [--timeout MS]
+  wait [--settled] [--network-idle] [--url PATTERN] [--text TEXT] [--timeout MS]
   tour [--full-page] [--pace PX_PER_SECOND]
   capture-info
   screenshot [REF | --role ROLE --name NAME | --full-page] [--format png|jpg|jpeg] [--output FILE] [--clipboard]
   screenshot --full-page --format pdf [--output FILE.pdf]
   screenshot --every-viewport|--by-section [--format png|jpg|jpeg] [--output PREFIX]
-  artifacts list
+  artifacts list [--limit N] [--cursor CURSOR]
   record start [--fps N] [--format mp4|mov|webm|gif] [--quality fast|balanced|high] [--output FILE]
   record status | record stop [--output FILE]
   qa report | qa clear
-  console list [--level LEVEL] [--limit N]
-  network list [--failed] [--status CODE] [--limit N]
+  console list [--level LEVEL] [--limit N] [--cursor CURSOR]
+  network list [--failed] [--status CODE] [--limit N] [--cursor CURSOR]
   network get REQUEST_ID
   network emulate [--offline] [--latency MS] [--download-kbps N] [--upload-kbps N]
   network mock set URL --body BODY [--status CODE] [--content-type MIME]
@@ -867,4 +892,8 @@ Global options:
 Settings:
   macOS Command-, opens Settings; `config` is the portable path on every platform.
 \(SettingsRegistry.shared.helpLines.joined(separator: "\n"))
+
+Host logs:
+  Detached hosts write bounded private logs to /tmp/headless-<uid>/host.log.
+  HEADLESS_HOST_LOG=/absolute/path overrides the destination for operators and tests.
 """

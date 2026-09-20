@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Network idle fixture</title>
+</head>
+<body>
+  <main>
+    <h1>Network idle fixture</h1>
+    <button type="button">Start network request</button>
+    <output aria-label="Network request state">not started</output>
+  </main>
+  <script>
+    const button = document.querySelector('button');
+    const output = document.querySelector('output');
+    button.addEventListener('click', async () => {
+      output.textContent = 'request pending';
+      try {
+        await fetch('/api/diagnostic?network-idle=1', {cache: 'no-store'});
+        output.textContent = 'request complete';
+      } catch (_) {
+        output.textContent = 'request failed';
+      }
+    });
+  </script>
+</body>
+</html>

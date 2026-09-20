@@ -866,6 +866,234 @@ the schema so client packages cannot silently invent a different policy.
 
 ---
 
+## 29. Detached hosts use a private bounded log writer
+
+**Decision:** a detached host no longer sends stdout and stderr to
+`/dev/null`. The CLI starts a minimal writer process and connects the host to
+it through an inherited pipe. The writer emits bounded JSON lines to
+`/tmp/headless-<uid>/host.log`, keeps one `host.log.1` generation, and caps
+each file at 1 MiB. A pipe is required instead of launch-time rotation because
+only a live consumer can enforce a disk bound across a long host lifetime.
+
+The runtime directory remains the default trust boundary: it is an
+owner-checked `0700` directory, while the active log, archive, and lock are
+owner-owned regular files with one link and mode `0600`. Opens use
+`O_NOFOLLOW`; rotation is serialized with a private file lock. Unsafe files,
+symlinks, hard links, and relative overrides fail closed. The existing
+`HEADLESS_HOST_LOG` absolute-path override remains for operators and tests,
+but receives the same final-file checks, redaction, rotation, and bounds.
+
+The writer records only native host stdout and stderr. It does not receive
+protocol requests, page snapshots, fill values, credentials, cookies, or
+storage. Every line is byte-bounded and common secret assignments and URL
+userinfo are redacted before persistence. Startup exit and timeout responses
+may include only the selected path and an 8 KiB tail that has already passed
+through that writer. Logging adds no protocol command, listener, or browser
+capability.
+
+**Status:** implemented for
+[#193](https://github.com/LockInTime/headless/issues/193).
+
+**Consequences:** normal failures are diagnosable without a special
+environment variable, disk use is bounded to two generations, and logging
+survives the launching CLI process without keeping that CLI resident. The
+writer exits on pipe EOF when the host exits. Log content remains diagnostic
+data, not trusted evidence, and must not be exposed through the agent-facing
+protocol.
+
+---
+
+## 30. Doctor is a read-only local readiness report
+
+**Decision:** `headless doctor` is an offline local command with a versioned,
+bounded JSON report. Checks have stable identifiers, one of `healthy`,
+`warning`, `unsupported`, or `failed`, a severity, a short controlled detail,
+and an optional actionable suggestion. The report includes product, protocol,
+and platform versions. Output stays below the protocol frame budget even
+though doctor does not use the host protocol.
+
+Doctor inspects the running CLI, browser runtime, FFmpeg, private runtime and
+socket, artifact storage, typed settings, bounded host log, and applicable
+Linux sandbox constraints. It may send the existing non-disruptive `ping` to
+an owned private socket, but it never launches a browser, contacts the network,
+creates or repairs storage, changes configuration, removes stale sockets, or
+reads arbitrary file contents. Settings parsing is bounded to the existing
+settings-file limit. Reports use controlled messages and never include
+environment values, page data, credentials, cookies, storage values, URLs, or
+file contents.
+
+Missing optional tools and storage that has not been initialized are warnings.
+Unsafe storage, corrupt settings, stale or unsafe sockets, missing required
+Linux Chromium, an unresolved CLI, and running the Linux host as root are
+failures. The command exits nonzero only when at least one check failed.
+
+**Status:** implemented for
+[#194](https://github.com/LockInTime/headless/issues/194).
+
+**Consequences:** users and agents get one deterministic installation report
+without changing the machine they are diagnosing. Repair remains an explicit
+operator action, and startup keeps its existing validation and failure
+behavior rather than trusting doctor's earlier result.
+
+---
+
+## 31. Session metadata is a bounded read-only host snapshot
+
+**Decision:** `session.list` preserves its ordered `sessions` name array and
+adds one fixed-shape detail per session. Details contain the name, isolation,
+monotonic age in milliseconds, lifecycle status, nullable current HTTP(S) URL
+and title, independent truncation flags, and `untrustedContent: true`. The
+mixed-trust result is not wrapped as wholly untrusted: the ordered `sessions`
+compatibility array stays directly accessible, while each detail record marks
+its page-derived URL and title as untrusted. URLs are
+limited to 8,192 UTF-8 bytes after userinfo removal; titles are limited to
+1,000 UTF-8 bytes. Non-web URLs are omitted.
+
+The core snapshots session references and creation times under its state lock,
+then releases that lock before asking either engine for metadata. WebKit reads
+`WKWebView` URL, title, and loading state on the main thread. Chromium uses the
+read-only `Page.getNavigationHistory` CDP command plus host-owned navigation
+state. Neither adapter activates a window, enables agent control, evaluates
+page JavaScript, takes a semantic snapshot, or changes navigation. A session
+that closes or fails while being queried remains in that response with status
+`unavailable`; it does not fail metadata for other sessions and disappears
+from the next snapshot.
+
+**Status:** implemented for
+[#196](https://github.com/LockInTime/headless/issues/196).
+
+**Consequences:** agents can choose an existing session without inspecting or
+focusing every page. Page-controlled titles and URLs remain explicitly
+untrusted and bounded. No cookies, storage, credential aliases, authentication
+state, native window identifiers, process identifiers, or filesystem paths are
+exposed. The fields are additive at protocol version `0.5`; the generated SDK
+schema defines `SessionDetail` so clients do not need untyped casts.
+
+---
+
+## 32. List pagination uses bounded server-side opaque cursors
+
+**Decision:** `artifact.list`, `console.list`, and `network.list` share one
+pagination implementation. Cursors are random UUID tokens backed by state in
+the owning host process. Tokens encode no offsets, paths, filters, session
+names, page data, or secrets. Records bind a token to its owning store,
+command, filter set, collection fingerprint, direction, and next position.
+They expire after five minutes, the registry retains at most 512 records, and
+all records disappear on host restart.
+
+Limits are integers from 1 through 250. Artifact pages are ordered newest
+first, then by name when creation times match. Diagnostic output keeps its
+existing behavior: the newest batch is returned first and entries within each
+batch remain chronological; subsequent pages walk older batches. Every page
+reserves at most 768 KiB for encoded list values so response metadata remains
+inside the 1 MiB frame. Pages report `returned`, truthful `total` or
+`available`, nullable `nextCursor`, `truncated`, and `mutation: "none"`.
+Existing fields and default limits remain.
+
+Collection fingerprints are computed from canonical bounded list values and
+kept only in private process memory. Mutation between pages fails with
+`PAGINATION_CURSOR_STALE`; expired, unknown or malformed, and wrong-command or
+wrong-filter tokens fail with distinct typed cursor errors. A cursor presented
+to a different session or artifact store is unknown and fails closed. Recovery
+for every cursor error is to restart without `--cursor`; data is never resumed
+against a changed snapshot.
+
+**Status:** implemented for
+[#195](https://github.com/LockInTime/headless/issues/195).
+
+**Consequences:** stable bounded collections can be traversed completely
+without increasing the 1 MiB frame limit. Callers that omit pagination options
+retain the prior first-page behavior. Cursor replay is safe until expiry, but
+cursors are intentionally not durable across host restarts and do not promise
+snapshot retention after source mutation.
+
+---
+
+## 33. Heavy agent benchmarks live outside the product repository
+
+**Decision:** the deterministic Docker benchmark in this repository remains a
+required regression gate. Heavy multi-run agent evaluation belongs in a
+separate `LockInTime/headless-benchmark-lab` repository once that repository is
+provisioned. The product repository may retain reviewed, immutable result
+snapshots under `docs/qa/evidence/`, but it does not own the lab runner, model
+credentials, provider setup, or live-site tasks.
+
+The external lab reports three tracks separately. Browser-tool comparisons hold
+the runner, model, prompt, task, limits, and environment constant while changing
+only Headless versus a pinned Playwright MCP baseline. Headless compatibility
+runs the same Headless tasks through Codex, Claude Code, and OpenCode. Product
+comparisons may use each product's strongest supported path, but cannot attribute
+the result to the browser tool alone or share a leaderboard with the paired
+track.
+
+The primary suite uses deterministic local fixtures for navigation, extraction,
+search, tables, pagination, forms, dynamic updates, redirects, tabs, persistent
+authentication, isolated sessions, stale references, delays, races, recovery,
+prompt injection, unsafe navigation, secret handling, confirmation boundaries,
+and unintended side effects. Live-site tasks require explicit permission,
+controlled credentials and rate limits, and reversible or read-only behavior.
+The lab never stores production credentials and never deploys the Headless
+website.
+
+Every published run pins runner, model, reasoning settings, browser tool,
+browser, prompt, validator, limits, and environment. It preserves immutable
+sanitized event streams and a versioned machine-readable result. Publication
+removes contributor-specific paths, credentials, and unrelated local file
+contents without changing event order, tool calls, metrics, or scoring data.
+Unsanitized logs remain restricted lab artifacts. Mechanical validators decide
+success where possible. Security results stay separate from performance.
+Default and tuned configurations, clean and persistent profiles, unsupported
+capabilities, provider usage, price snapshots, resource measurements, failures,
+and uncertainty are reported rather than normalized away.
+
+**Status:** proposed for
+[#161](https://github.com/LockInTime/headless/issues/161). A non-Claude,
+three-trial local pilot is preserved as reviewed evidence, but it does not
+satisfy the broader task taxonomy, startup parity, resource measurement, or
+sample-size requirements.
+
+**Consequences:** removing the in-repository benchmark requires equivalent
+replacement coverage and a separate decision. Evidence snapshots in this
+repository must identify their method, versions, sample count, limitations,
+sanitization, and published-run checksums. A pilot cannot close #161 or support
+a general product claim.
+
+---
+
+## 34. Network-idle wait is CDP-backed and explicitly engine-specific
+
+**Decision:** `wait --network-idle` adds one optional predicate to the portable
+wait command. Every requested URL, text, settled, and network-idle condition
+must hold at the same time. A bare `wait` preserves its existing settled-page
+default, while `wait --network-idle` alone does not silently add another
+predicate.
+
+Chromium tracks `Network.requestWillBeSent` identifiers until
+`Network.loadingFinished` or `Network.loadingFailed`. Idle means no qualifying
+request is active for 500 ms measured from command start or the latest
+qualifying event. Redirect reuse does not double-count an identifier.
+WebSocket and EventSource connections are excluded because they are expected
+to remain open; ordinary fetch/XHR long polling remains qualifying and may
+time out. Tracking is bounded to 4,096 identifiers with a 512-byte identifier
+limit, and overflow fails closed by preventing an idle result.
+
+WKWebView has no complete trusted network event stream. It returns
+`UNSUPPORTED_CAPABILITY` immediately rather than consulting the detectable,
+forgeable page diagnostics bridge. The engine capability matrix declares this
+difference. Wait output remains the existing bounded page state and never adds
+request URLs, identifiers, headers, bodies, or timing records.
+
+**Status:** implemented for
+[#204](https://github.com/LockInTime/headless/issues/204).
+
+**Consequences:** agents can replace blind sleeps after asynchronous Chromium
+work with a deterministic bounded predicate. Sites with qualifying long-lived
+requests must choose another semantic condition. macOS callers can negotiate
+the limitation before issuing the command and still receive a typed failure if
+they do not.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -891,5 +1119,11 @@ the schema so client packages cannot silently invent a different policy.
 | 26  | Isolated sessions own one ephemeral browser context         | Implemented                                               | 2026-09-12 |
 | 27  | Interactive authentication keeps consent in trusted host    | Implemented                                               | 2026-09-12 |
 | 28  | SDKs derive from one Swift-owned protocol contract          | Decided                                                   | 2026-09-12 |
+| 29  | Detached hosts use a private bounded log writer             | Implemented                                               | 2026-09-19 |
+| 30  | Doctor is a read-only local readiness report                | Implemented                                               | 2026-09-19 |
+| 31  | Session metadata is a bounded read-only host snapshot       | Implemented                                               | 2026-09-19 |
+| 32  | List pagination uses bounded server-side opaque cursors     | Implemented                                               | 2026-09-19 |
+| 33  | Keep heavy agent benchmarks outside the product repository  | Proposed                                                  | 2026-09-19 |
+| 34  | CDP-backed bounded network-idle wait                        | Implemented                                               | 2026-09-20 |
 
 New decisions append here with the same format.
