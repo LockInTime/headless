@@ -1405,6 +1405,30 @@ STEP="safe-input-download-report"
 echo "$BLOCKED_DOWNLOAD_REPORT" | grep -q '"kind":"download-blocked"'
 echo "$BLOCKED_DOWNLOAD_REPORT" | grep -q '/download.txt'
 "$CLI" --session qa qa clear | grep -q '"cleared"'
+STEP="native-select"
+"$CLI" --session qa visit "http://127.0.0.1:$PORT/select" | grep -q 'Native select fixture'
+SELECT_RESULT="$("$CLI" --session qa select --role combobox --name Country --label Canada)"
+echo "$SELECT_RESULT" | grep -q '"optionIndex":1'
+if echo "$SELECT_RESULT" | grep -Eq 'Canada|"CA"'; then
+  echo "select response exposed option label or value" >&2
+  fail
+fi
+"$CLI" --session qa wait --text 'country=CA events=input,change' --timeout 2000 | grep -q 'country=CA events=input,change'
+"$CLI" --session qa select --role combobox --name Country --value US | grep -q '"optionIndex":2'
+"$CLI" --session qa wait --text 'events=input,change,input,change' --timeout 2000 | grep -q 'country=US'
+for SELECT_NAME in 'Duplicate country' 'Disabled country' 'Disabled option' 'Disabled group' 'Many countries' 'Custom country'; do
+  if SELECT_ERROR="$("$CLI" --session qa select --role combobox --name "$SELECT_NAME" --label Canada 2>&1)"; then
+    echo "invalid select case unexpectedly succeeded: $SELECT_NAME" >&2
+    fail
+  fi
+  echo "$SELECT_ERROR" | grep -q 'INVALID_INPUT'
+done
+if SELECT_ERROR="$("$CLI" --session qa select --role combobox --name Country --label Missing 2>&1)"; then
+  echo "missing select option unexpectedly succeeded" >&2
+  fail
+fi
+echo "$SELECT_ERROR" | grep -q 'INVALID_INPUT'
+"$CLI" --session qa visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'
 STEP="artifacts-visual"
 "$CLI" --session qa screenshot --output viewport.png | grep -q '"name":"viewport.png"'
 "$CLI" --session qa screenshot --full-page --output full-page.png | grep -q '"name":"full-page.png"'
