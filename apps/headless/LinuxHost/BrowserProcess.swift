@@ -610,6 +610,7 @@ final class LinuxBrowserSession: @unchecked Sendable {
     let diagnostics = QADiagnosticStore()
     private let diagnosticsLock = NSLock()
     private var requestContexts: [String: (method: String?, url: String?, headers: [String: String])] = [:]
+    private let networkIdleTracker = NetworkIdleTracker()
     private let recordingLock = NSLock()
     private var recordingPausedUntil = Date.distantPast
     private let navigationLock = NSLock()
@@ -827,6 +828,8 @@ final class LinuxBrowserSession: @unchecked Sendable {
         let expectedURL = parameters["url"]?.stringValue
         let expectedText = parameters["text"]?.stringValue
         let requireSettled = parameters["settled"]?.boolValue ?? false
+        let requireNetworkIdle = parameters["networkIdle"]?.boolValue ?? false
+        let networkWaitStartedAt = networkIdleTracker.beginWait()
         let deadline = Date().addingTimeInterval(timeoutMs / 1_000)
         var state: JSONValue = .object([:])
         repeat {
@@ -846,7 +849,10 @@ final class LinuxBrowserSession: @unchecked Sendable {
             let ready = object["readyState"]?.stringValue == "complete"
             let animations = object["runningAnimations"]?.numberValue ?? 0
             let quiet = object["mutationQuietMs"]?.numberValue ?? 0
-            if urlMatches && textMatches && (!requireSettled || (ready && animations == 0 && quiet >= 300)) { return state }
+            let settled = !requireSettled || (ready && animations == 0 && quiet >= 300)
+            let networkIdle = !requireNetworkIdle
+                || networkIdleTracker.snapshot(since: networkWaitStartedAt).isIdle
+            if urlMatches && textMatches && settled && networkIdle { return state }
             Thread.sleep(forTimeInterval: 0.05)
         } while Date() < deadline
         throw CDPError.timedOut
@@ -1190,6 +1196,10 @@ final class LinuxBrowserSession: @unchecked Sendable {
         case "Network.requestWillBeSent":
             guard let requestID = parameters["requestId"] as? String,
                   let request = parameters["request"] as? [String: Any] else { return }
+            networkIdleTracker.requestDidStart(
+                identifier: requestID,
+                resourceType: parameters["type"] as? String
+            )
             diagnosticsLock.lock()
             requestContexts[requestID] = (
                 request["method"] as? String,
@@ -1207,12 +1217,14 @@ final class LinuxBrowserSession: @unchecked Sendable {
                                responseHeaders: stringHeaders(response["headers"] as? [String: Any]), source: "chromium-cdp")
         case "Network.loadingFailed":
             let requestID = parameters["requestId"] as? String ?? ""
+            networkIdleTracker.requestDidFinish(identifier: requestID)
             diagnosticsLock.lock(); let request = requestContexts.removeValue(forKey: requestID); diagnosticsLock.unlock()
             diagnostics.append(kind: "request-failed", message: parameters["errorText"] as? String,
                                url: request?.url, method: request?.method, requestID: requestID,
                                requestHeaders: request?.headers, source: "chromium-cdp")
         case "Network.loadingFinished":
             if let requestID = parameters["requestId"] as? String {
+                networkIdleTracker.requestDidFinish(identifier: requestID)
                 diagnosticsLock.lock(); requestContexts.removeValue(forKey: requestID); diagnosticsLock.unlock()
             }
         default: break
