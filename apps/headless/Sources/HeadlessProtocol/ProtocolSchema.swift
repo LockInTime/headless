@@ -739,7 +739,8 @@ public let protocolCommandDefinitions: [CommandName: ProtocolCommandDefinition] 
         command(.back, untrusted: true),
         command(.reload, untrusted: true),
         command(.wait, [
-            boolean("settled"), string("url"), string("text", maximumBytes: 30_000),
+            boolean("settled"), boolean("networkIdle"), string("url"),
+            string("text", maximumBytes: 30_000),
             number("timeoutMs", minimum: 100, maximum: 120_000),
         ], untrusted: true),
         command(.tour, [boolean("fullPage"), number("pace", minimum: 100, maximum: 5_000)], untrusted: true),

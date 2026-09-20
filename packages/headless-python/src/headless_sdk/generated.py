@@ -13,7 +13,7 @@ PROTOCOL_VERSION = '0.5'
 PROTOCOL_SCHEMA_VERSION = 1
 MAXIMUM_MESSAGE_BYTES = 1048576
 MAXIMUM_COMMAND_TIMEOUT_SECONDS = 125.0
-PROTOCOL_SCHEMA_SHA256 = '0ec7caa5ef47c4068411298f459fbd7317e8f805e2e41aab93f1c70d801bb73d'
+PROTOCOL_SCHEMA_SHA256 = 'f82b2ea0d7e8b5d2db0a841c5d22976aec6f774303cd81791921977899679f1e'
 PROTOCOL_FIXTURES_SHA256 = '0b51ffaa2d3e3aaf0c32adcfeb02c180dcbe44face0d49e1c332b69f403ae062'
 RESPONSE_ADDITIONAL_PROPERTIES = True
 COMMAND_ERROR_CODES = ('ARTIFACT_ERROR', 'AUTH_ACCOUNT_NOT_FOUND', 'AUTH_CHALLENGE_CONSUMED', 'AUTH_CHALLENGE_EXPIRED', 'AUTH_CHALLENGE_NOT_FOUND', 'AUTH_FORM_CHANGED', 'AUTH_ORIGIN_CHANGED', 'AUTH_REQUIRED', 'CREDENTIAL_ALIAS_EXISTS', 'ELEMENT_NOT_FOUND', 'FLOW_FAILED', 'HOST_STOPPING', 'HOST_UNAVAILABLE', 'INTERNAL_ERROR', 'INVALID_CAPTURE_FORMAT', 'INVALID_COMMAND', 'INVALID_FLOW', 'INVALID_INPUT', 'INVALID_REQUEST', 'INVALID_SESSION', 'MISSING_PARAMETER', 'OPERATION_FAILED', 'PAGINATION_CURSOR_EXPIRED', 'PAGINATION_CURSOR_INVALID', 'PAGINATION_CURSOR_SCOPE_MISMATCH', 'PAGINATION_CURSOR_STALE', 'PEER_DENIED', 'RECORDER_UNAVAILABLE', 'RECORDING_ACTIVE', 'RECORDING_FAILED', 'RECORDING_NOT_ACTIVE', 'REGION_NOT_FOUND', 'RESPONSE_TOO_LARGE', 'SENSITIVE_DIAGNOSTICS_DISABLED', 'SESSION_EXISTS', 'SESSION_NOT_FOUND', 'TIMEOUT', 'UNSAFE_NAVIGATION', 'UNSAFE_RESOURCE_TYPE', 'UNSUPPORTED_CAPABILITY', 'USER_PRESENCE_DENIED', 'USER_PRESENCE_UNAVAILABLE', 'VAULT_LOCKED', 'VAULT_OPERATION_FAILED', 'VAULT_RESPONSE_INVALID', 'VAULT_UNAVAILABLE')
@@ -95,6 +95,7 @@ class ReloadParameters(TypedDict):
 
 class WaitParameters(TypedDict):
     settled: NotRequired[bool]
+    networkIdle: NotRequired[bool]
     url: NotRequired[str]
     text: NotRequired[str]
     timeoutMs: NotRequired[int | float]
@@ -1749,6 +1750,10 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                           'required': False,
                           'sensitive': False,
                           'type': 'boolean'},
+                         {'name': 'networkIdle',
+                          'required': False,
+                          'sensitive': False,
+                          'type': 'boolean'},
                          {'maximumBytes': 8192,
                           'name': 'url',
                           'required': False,
@@ -2149,6 +2154,7 @@ class SyncSessionCommands:
         self,
         *,
         settled: bool | None = None,
+        network_idle: bool | None = None,
         url: str | None = None,
         text: str | None = None,
         timeout_ms: int | float | None = None,
@@ -2159,6 +2165,8 @@ class SyncSessionCommands:
         }
         if settled is not None:
             parameters['settled'] = cast(JsonValue, settled)
+        if network_idle is not None:
+            parameters['networkIdle'] = cast(JsonValue, network_idle)
         if url is not None:
             parameters['url'] = cast(JsonValue, url)
         if text is not None:
@@ -2819,6 +2827,7 @@ class AsyncSessionCommands:
         self,
         *,
         settled: bool | None = None,
+        network_idle: bool | None = None,
         url: str | None = None,
         text: str | None = None,
         timeout_ms: int | float | None = None,
@@ -2829,6 +2838,8 @@ class AsyncSessionCommands:
         }
         if settled is not None:
             parameters['settled'] = cast(JsonValue, settled)
+        if network_idle is not None:
+            parameters['networkIdle'] = cast(JsonValue, network_idle)
         if url is not None:
             parameters['url'] = cast(JsonValue, url)
         if text is not None:

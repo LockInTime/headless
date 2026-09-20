@@ -138,6 +138,12 @@ extension BrowserWindowController {
     }
 
     func agentWait(parameters: [String: JSONValue]) throws -> JSONValue {
+        if parameters["networkIdle"]?.boolValue == true {
+            throw HostError(
+                code: .unsupportedCapability,
+                message: "Network-idle wait requires the Chromium CDP engine."
+            )
+        }
         let timeoutMs = min(120_000, max(100, parameters["timeoutMs"]?.numberValue ?? 20_000))
         let expectedURL = parameters["url"]?.stringValue
         let expectedText = parameters["text"]?.stringValue

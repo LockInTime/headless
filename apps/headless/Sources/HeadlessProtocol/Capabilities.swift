@@ -25,6 +25,7 @@ public struct BrowserEngineCapabilities: Sendable {
     public let screenshotClipboard: Bool
     public let inputDispatch: String
     public let selectDispatch: String
+    public let networkIdleWait: Bool
     public let normalProfileStorage: String
     public let fileUpload: Bool
 
@@ -70,6 +71,7 @@ public struct BrowserEngineCapabilities: Sendable {
                 "tourTimeoutMs": .number(65_000),
                 "inputDispatch": .string(inputDispatch),
                 "selectDispatch": .string(selectDispatch),
+                "networkIdleWait": .bool(networkIdleWait),
                 "fileUpload": .bool(fileUpload),
                 "normalProfile": .object([
                     "persistent": .bool(true),
@@ -116,6 +118,7 @@ public struct BrowserEngineCapabilities: Sendable {
         screenshotClipboard: true,
         inputDispatch: "synthetic-dom",
         selectDispatch: "synthetic-dom",
+        networkIdleWait: false,
         normalProfileStorage: "persistent-wkwebsite-data-store",
         fileUpload: false
     )
@@ -140,6 +143,7 @@ public struct BrowserEngineCapabilities: Sendable {
         screenshotClipboard: false,
         inputDispatch: "trusted-cdp",
         selectDispatch: "synthetic-dom",
+        networkIdleWait: true,
         normalProfileStorage: "private-xdg-data-directory",
         fileUpload: true
     )

@@ -293,6 +293,7 @@ public struct CommandRequest: Codable, Equatable, Sendable {
             )
         case .wait:
             try boolean("settled")
+            try boolean("networkIdle")
             _ = try string("url")
             _ = try string("text", maximumBytes: 30_000)
             _ = try number("timeoutMs", minimum: 100, maximum: 120_000)

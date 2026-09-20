@@ -7,7 +7,7 @@ export type Untrusted<T> = Readonly<{ readonly untrustedContent: true; readonly 
 export const PROTOCOL_VERSION = "0.5" as const;
 export const PROTOCOL_SCHEMA_VERSION = 1 as const;
 export const MAXIMUM_MESSAGE_BYTES = 1048576 as const;
-export const PROTOCOL_SCHEMA_SHA256 = "0ec7caa5ef47c4068411298f459fbd7317e8f805e2e41aab93f1c70d801bb73d" as const;
+export const PROTOCOL_SCHEMA_SHA256 = "f82b2ea0d7e8b5d2db0a841c5d22976aec6f774303cd81791921977899679f1e" as const;
 export const PROTOCOL_FIXTURES_SHA256 = "0b51ffaa2d3e3aaf0c32adcfeb02c180dcbe44face0d49e1c332b69f403ae062" as const;
 export const RESPONSE_ADDITIONAL_PROPERTIES = true as const;
 export const MAXIMUM_COMMAND_TIMEOUT_MS = 125000 as const;
@@ -203,6 +203,7 @@ export interface ReloadParameters {
 
 export interface WaitParameters {
   readonly "settled"?: boolean;
+  readonly "networkIdle"?: boolean;
   readonly "url"?: string;
   readonly "text"?: string;
   readonly "timeoutMs"?: number;
@@ -1771,6 +1772,12 @@ export const COMMAND_METADATA = {
     "parameters": [
       {
         "name": "settled",
+        "required": false,
+        "sensitive": false,
+        "type": "boolean"
+      },
+      {
+        "name": "networkIdle",
         "required": false,
         "sensitive": false,
         "type": "boolean"
