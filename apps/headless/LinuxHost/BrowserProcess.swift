@@ -610,12 +610,14 @@ final class LinuxBrowserSession: @unchecked Sendable {
     let diagnostics = QADiagnosticStore()
     private let diagnosticsLock = NSLock()
     private var requestContexts: [String: (method: String?, url: String?, headers: [String: String])] = [:]
+    private let networkIdleTracker = NetworkIdleTracker()
     private let recordingLock = NSLock()
     private var recordingPausedUntil = Date.distantPast
     private let navigationLock = NSLock()
     private var mainFrameID: String?
     private var lastSafeURL: String?
     private var navigationRecoveryPending = false
+    private var navigationInProgress = false
     private var isolatedContextID: Int?
     private let mockLock = NSLock()
     private var networkMocks: [NetworkMock] = []
@@ -671,10 +673,28 @@ final class LinuxBrowserSession: @unchecked Sendable {
     }
 
     func visit(_ url: URL) throws -> JSONValue {
-        navigationLock.lock(); lastSafeURL = url.absoluteString; navigationLock.unlock()
+        navigationLock.lock()
+        lastSafeURL = url.absoluteString
+        navigationInProgress = true
+        navigationLock.unlock()
         pauseRecordingCapture()
         _ = try command("Page.navigate", parameters: ["url": url.absoluteString])
         return try wait(parameters: ["settled": .bool(true), "timeoutMs": .number(20_000)])
+    }
+
+    func sessionMetadata() throws -> BrowserSessionPageMetadata {
+        let history = try command("Page.getNavigationHistory", timeoutMilliseconds: 2_000)
+        let currentIndex = (history["currentIndex"] as? NSNumber)?.intValue ?? -1
+        let entries = history["entries"] as? [[String: Any]] ?? []
+        let entry = entries.indices.contains(currentIndex) ? entries[currentIndex] : nil
+        navigationLock.lock()
+        let navigating = navigationInProgress
+        navigationLock.unlock()
+        return BrowserSessionPageMetadata(
+            url: entry?["url"] as? String,
+            title: entry?["title"] as? String,
+            lifecycle: navigating ? .navigating : .available
+        )
     }
 
     func inspect(parameters: [String: JSONValue]) throws -> JSONValue {
@@ -808,6 +828,8 @@ final class LinuxBrowserSession: @unchecked Sendable {
         let expectedURL = parameters["url"]?.stringValue
         let expectedText = parameters["text"]?.stringValue
         let requireSettled = parameters["settled"]?.boolValue ?? false
+        let requireNetworkIdle = parameters["networkIdle"]?.boolValue ?? false
+        let networkWaitStartedAt = networkIdleTracker.beginWait()
         let deadline = Date().addingTimeInterval(timeoutMs / 1_000)
         var state: JSONValue = .object([:])
         repeat {
@@ -827,7 +849,10 @@ final class LinuxBrowserSession: @unchecked Sendable {
             let ready = object["readyState"]?.stringValue == "complete"
             let animations = object["runningAnimations"]?.numberValue ?? 0
             let quiet = object["mutationQuietMs"]?.numberValue ?? 0
-            if urlMatches && textMatches && (!requireSettled || (ready && animations == 0 && quiet >= 300)) { return state }
+            let settled = !requireSettled || (ready && animations == 0 && quiet >= 300)
+            let networkIdle = !requireNetworkIdle
+                || networkIdleTracker.snapshot(since: networkWaitStartedAt).isIdle
+            if urlMatches && textMatches && settled && networkIdle { return state }
             Thread.sleep(forTimeInterval: 0.05)
         } while Date() < deadline
         throw CDPError.timedOut
@@ -965,12 +990,16 @@ final class LinuxBrowserSession: @unchecked Sendable {
         return diagnostics.report()
     }
 
-    func console(level: String, limit: Int) -> JSONValue {
-        diagnostics.console(level: level, limit: limit)
+    func console(level: String, limit: Int, cursor: String?) throws -> JSONValue {
+        try diagnostics.console(level: level, limit: limit, cursor: cursor)
     }
 
-    func network(failedOnly: Bool, status: Int?, limit: Int) -> JSONValue {
-        diagnostics.network(failedOnly: failedOnly, status: status, limit: limit)
+    func network(
+        failedOnly: Bool, status: Int?, limit: Int, cursor: String?
+    ) throws -> JSONValue {
+        try diagnostics.network(
+            failedOnly: failedOnly, status: status, limit: limit, cursor: cursor
+        )
     }
 
     func networkDetail(requestID: String) -> JSONValue {
@@ -1106,6 +1135,22 @@ final class LinuxBrowserSession: @unchecked Sendable {
             }
         case "Page.frameStartedLoading":
             pauseRecordingCapture()
+            if let frameID = parameters["frameId"] as? String {
+                navigationLock.lock()
+                if mainFrameID == nil { mainFrameID = frameID }
+                if mainFrameID == frameID { navigationInProgress = true }
+                navigationLock.unlock()
+            }
+        case "Page.frameStoppedLoading":
+            if let frameID = parameters["frameId"] as? String {
+                navigationLock.lock()
+                if mainFrameID == frameID { navigationInProgress = false }
+                navigationLock.unlock()
+            }
+        case "Page.loadEventFired":
+            navigationLock.lock()
+            navigationInProgress = false
+            navigationLock.unlock()
         case "Page.frameRequestedNavigation":
             pauseRecordingCapture()
             if let frameID = parameters["frameId"] as? String,
@@ -1151,6 +1196,10 @@ final class LinuxBrowserSession: @unchecked Sendable {
         case "Network.requestWillBeSent":
             guard let requestID = parameters["requestId"] as? String,
                   let request = parameters["request"] as? [String: Any] else { return }
+            networkIdleTracker.requestDidStart(
+                identifier: requestID,
+                resourceType: parameters["type"] as? String
+            )
             diagnosticsLock.lock()
             requestContexts[requestID] = (
                 request["method"] as? String,
@@ -1168,12 +1217,14 @@ final class LinuxBrowserSession: @unchecked Sendable {
                                responseHeaders: stringHeaders(response["headers"] as? [String: Any]), source: "chromium-cdp")
         case "Network.loadingFailed":
             let requestID = parameters["requestId"] as? String ?? ""
+            networkIdleTracker.requestDidFinish(identifier: requestID)
             diagnosticsLock.lock(); let request = requestContexts.removeValue(forKey: requestID); diagnosticsLock.unlock()
             diagnostics.append(kind: "request-failed", message: parameters["errorText"] as? String,
                                url: request?.url, method: request?.method, requestID: requestID,
                                requestHeaders: request?.headers, source: "chromium-cdp")
         case "Network.loadingFinished":
             if let requestID = parameters["requestId"] as? String {
+                networkIdleTracker.requestDidFinish(identifier: requestID)
                 diagnosticsLock.lock(); requestContexts.removeValue(forKey: requestID); diagnosticsLock.unlock()
             }
         default: break
