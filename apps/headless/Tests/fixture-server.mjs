@@ -11,6 +11,7 @@ const routes = new Map([
   ['/large-document', 'large-document.html'],
   ['/select', 'select.html'],
   ['/network-idle', 'network-idle.html'],
+  ['/region-capture', 'region-capture.html'],
   ['/auth-state', 'auth-state.html'],
   ['/auth-login', 'auth-login.html'],
   ['/file-upload', 'file-upload.html'],

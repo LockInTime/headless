@@ -274,7 +274,7 @@ back | reload
 capture-info
 screenshot [REF | --role ROLE --name NAME | --full-page] [--format png|jpg|jpeg] [--output FILE] [--clipboard]
 screenshot --full-page --format pdf [--output FILE.pdf]
-screenshot --every-viewport|--by-section [--format png|jpg|jpeg] [--output PREFIX]
+screenshot --every-viewport|--by-section|--by-region @rN [--format png|jpg|jpeg] [--output PREFIX]
 artifacts list [--limit N] [--cursor CURSOR]
 record start [--fps N] [--format mp4|mov|webm|gif] [--quality fast|balanced|high] [--output FILE]
 record status | record stop [--output FILE]
@@ -290,6 +290,14 @@ report create [--output REPORT.json]
   file reader or a download manager.
 - `--clipboard` capture is macOS only. Linux rejects clipboard capture because
   VM clipboards are not a reliable boundary.
+- `--by-region @rN` captures the referenced outline region's rendered border
+  box as vertical slices on both engines. The region must fit horizontally in
+  the viewport and cannot exceed 4096 CSS pixels in width; nested overflow is
+  not expanded. Region refs that are stale,
+  hidden, clipped, or change geometry during capture fail the whole series.
+- Region series reserve every artifact before capture and remove them all on
+  capture, write, validation, or scroll-restoration failure. `truncated: true`
+  means the first 79 and final slices were returned with the middle omitted.
 - PDF screenshots and element-scoped capture follow the engine matrix reported
   by `capabilities`.
 - The recorder captures browser pixels through ffmpeg only: no OS chrome, no

@@ -48,9 +48,13 @@ public protocol BrowserEngineSession: AnyObject {
     func hostScreenshot(
         parameters: [String: JSONValue], format: ScreenshotFormat, copyToClipboard: Bool
     ) throws -> BrowserScreenshot
+    func hostScreenshotRegionSlice(
+        reference: String, document: String, geometry: ScreenshotRegionGeometry,
+        point: ScreenshotSeriesPoint, format: ScreenshotFormat
+    ) throws -> BrowserScreenshot
     func hostRecordingFrame() throws -> Data
-    func hostScreenshotSeriesPlan(mode: String) throws -> JSONValue
-    func hostScrollToCapturePoint(y: Double) throws -> JSONValue
+    func hostScreenshotSeriesPlan(mode: String, region: String?) throws -> JSONValue
+    func hostScrollToCapturePoint(y: Double, document: String) throws -> JSONValue
     func hostQAReport() throws -> JSONValue
     func hostQAClear() throws -> JSONValue
     func hostConsole(level: String, limit: Int, cursor: String?) throws -> JSONValue
@@ -887,28 +891,50 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
     ) throws -> JSONValue {
         let mode = parameters["series"]?.stringValue ?? "viewport"
         let format = try screenshotFormat(explicit: parameters["format"]?.stringValue, output: nil)
-        let plan = try parseScreenshotSeriesPlan(try session.hostScreenshotSeriesPlan(mode: mode))
+        let regionReference = parameters["region"]?.stringValue
+        let rawPlan = try session.hostScreenshotSeriesPlan(
+            mode: mode, region: regionReference
+        )
+        let plan = try parseScreenshotSeriesPlan(rawPlan, regionReference: regionReference)
         let prefix = try screenshotSeriesPrefix(parameters: parameters, mode: mode)
-        defer { _ = try? session.hostScrollToCapturePoint(y: plan.initialY) }
         let reserved = try reserveScreenshotSeriesArtifacts(
             store: artifacts, points: plan.points, prefix: prefix, mode: mode, format: format
         )
+        var metadata: [JSONValue] = []
+        var captureError: Error?
         do {
-            let metadata = try plan.points.enumerated().map { index, point -> JSONValue in
-                _ = try session.hostScrollToCapturePoint(y: point.y)
-                let screenshot = try session.hostScreenshot(
-                    parameters: [:], format: format, copyToClipboard: false
-                )
+            metadata = try plan.points.enumerated().map { index, point -> JSONValue in
+                _ = try session.hostScrollToCapturePoint(y: point.y, document: plan.document)
+                let screenshot: BrowserScreenshot
+                if let regionReference, let geometry = plan.region {
+                    screenshot = try session.hostScreenshotRegionSlice(
+                        reference: regionReference, document: plan.document,
+                        geometry: geometry, point: point, format: format
+                    )
+                } else {
+                    screenshot = try session.hostScreenshot(
+                        parameters: [:], format: format, copyToClipboard: false
+                    )
+                }
                 return try artifacts.writeReserved(screenshot.data, to: reserved[index])
             }
-            return screenshotSeriesSummary(
-                mode: mode, points: plan.points, artifacts: metadata,
-                truncated: plan.truncated, totalPoints: plan.totalPoints
-            )
+        } catch {
+            captureError = error
+        }
+        do {
+            _ = try session.hostScrollToCapturePoint(y: plan.initialY, document: plan.document)
         } catch {
             artifacts.discardReserved(reserved)
             throw error
         }
+        if let captureError {
+            artifacts.discardReserved(reserved)
+            throw captureError
+        }
+        return screenshotSeriesSummary(
+            mode: mode, points: plan.points, artifacts: metadata,
+            truncated: plan.truncated, totalPoints: plan.totalPoints
+        )
     }
 
     private func startRecording(

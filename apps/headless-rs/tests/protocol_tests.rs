@@ -189,6 +189,25 @@ fn command_parameter_validation() {
         params(&[("format", json!("pdf")), ("fullPage", json!(true)), ("output", json!("page.pdf"))]),
     );
     request.validate().unwrap();
+    let request = valid_request(
+        CommandName::Screenshot,
+        params(&[
+            ("series", json!("region")),
+            ("region", json!("@r4")),
+            ("outputPrefix", json!("checkout")),
+        ]),
+    );
+    request.validate().unwrap();
+    let request = valid_request(
+        CommandName::Screenshot,
+        params(&[("series", json!("region"))]),
+    );
+    assert!(request.validate().is_err());
+    let request = valid_request(
+        CommandName::Screenshot,
+        params(&[("series", json!("viewport")), ("region", json!("@r4"))]),
+    );
+    assert!(request.validate().is_err());
 
     // visual compare only accepts private PNG artifacts
     let request = valid_request(

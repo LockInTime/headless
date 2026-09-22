@@ -506,23 +506,32 @@ public struct CLIParser {
         let fullPage = removeFlag("--full-page", from: &args)
         let everyViewport = removeFlag("--every-viewport", from: &args)
         let bySection = removeFlag("--by-section", from: &args)
+        let byRegion = try removeOption("--by-region", from: &args)
         let role = try removeOption("--role", from: &args)
         let name = try removeOption("--name", from: &args)
         let output = try removeOption("--output", from: &args)
         let formatText = try removeOption("--format", from: &args)
         let clipboard = removeFlag("--clipboard", from: &args)
         let format = try screenshotFormat(explicit: formatText, output: output)
-        if everyViewport && bySection { throw CLIParseError.conflictingTarget }
-        if everyViewport || bySection {
+        let seriesModes = (everyViewport ? 1 : 0) + (bySection ? 1 : 0) + (byRegion == nil ? 0 : 1)
+        if seriesModes > 1 { throw CLIParseError.conflictingTarget }
+        if seriesModes == 1 {
             try requireEmpty(args)
             guard !fullPage, role == nil, name == nil else { throw CLIParseError.conflictingTarget }
             guard format.isImage else { throw CLIParseError.invalidOption("--format pdf") }
             guard !clipboard else { throw CLIParseError.invalidOption("--clipboard") }
+            if let byRegion {
+                guard byRegion.hasPrefix("@r"), !byRegion.dropFirst(2).isEmpty,
+                      byRegion.dropFirst(2).allSatisfy({ $0.isASCII && $0.isNumber }) else {
+                    throw CLIParseError.invalidOption(byRegion)
+                }
+            }
             var parameters: [String: JSONValue] = [
                 "fullPage": .bool(false),
-                "series": .string(everyViewport ? "viewport" : "section"),
+                "series": .string(everyViewport ? "viewport" : (bySection ? "section" : "region")),
                 "format": .string(format.rawValue),
             ]
+            if let byRegion { parameters["region"] = .string(byRegion) }
             if let output {
                 let prefix = try screenshotSeriesPrefix(output)
                 parameters["outputPrefix"] = .string(prefix)
@@ -886,7 +895,7 @@ Commands:
   capture-info
   screenshot [REF | --role ROLE --name NAME | --full-page] [--format png|jpg|jpeg] [--output FILE] [--clipboard]
   screenshot --full-page --format pdf [--output FILE.pdf]
-  screenshot --every-viewport|--by-section [--format png|jpg|jpeg] [--output PREFIX]
+  screenshot --every-viewport|--by-section|--by-region @rN [--format png|jpg|jpeg] [--output PREFIX]
   artifacts list [--limit N] [--cursor CURSOR]
   record start [--fps N] [--format mp4|mov|webm|gif] [--quality fast|balanced|high] [--output FILE]
   record status | record stop [--output FILE]

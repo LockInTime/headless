@@ -1124,6 +1124,50 @@ for logging, even though callers still control their own CLI process arguments.
 
 ---
 
+## 36. Region screenshots are bounded, exact-crop series
+
+**Decision:** `screenshot --by-region @rN` is a third screenshot-series mode
+alongside viewport and section series. It accepts only an opaque region
+reference issued by the current page runtime. It never accepts selectors,
+element references, roles, or names.
+
+The isolated runtime freezes the region's document geometry and divides its
+vertical extent into at most 80 bounded image slices. Each slice is no taller
+than the viewport or the shared screenshot pixel limit permits, and the final
+region extent is included when truncation is not required. Before each capture,
+the runtime resolves the same region reference again, requires it to remain
+connected and visible, verifies that its geometry has not changed, and returns
+only the exact slice rectangle. Regions that are horizontally outside the
+viewport, exceed the portable 4096 CSS-pixel width bound, mutate during
+capture, or produce invalid geometry fail closed.
+
+A region reference means the referenced element's rendered border box, not the
+broader logical scope used by `inspect --within`. Nested scroll-container
+content outside that border box is not expanded. If more than 80 slices are
+required, Headless captures the first 79 and final slice and reports both
+`truncated: true` and the complete `totalPoints`; the missing middle is not
+represented as complete coverage.
+
+HostCore reserves the complete artifact set before capture, discards every
+reservation on failure, and requires restoration of the original scroll
+position after both success and failure while the original document identity
+remains active. WebKit captures the validated viewport rectangle;
+Chromium captures the corresponding document rectangle through CDP. Both use
+the same plan, artifact, truncation, and response contract. Region capture
+does not add selectors, arbitrary JavaScript, page content, or coordinates to
+logs or flows. Screenshot-series metadata is marked untrusted because section
+labels originate in the page.
+
+**Status:** implemented for
+[#211](https://github.com/LockInTime/headless/issues/211).
+
+**Consequences:** an agent can progress from outline inspection to visual
+evidence for one semantic region without broad full-page capture. Very wide,
+moving, sticky, or dynamically resizing regions require a fresh inspection or
+a narrower region instead of yielding partial or misleading evidence.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -1156,5 +1200,6 @@ for logging, even though callers still control their own CLI process arguments.
 | 33  | Keep heavy agent benchmarks outside the product repository  | Proposed                                                  | 2026-09-19 |
 | 34  | CDP-backed bounded network-idle wait                        | Implemented                                               | 2026-09-20 |
 | 35  | Fixed native single-select operation                        | Implemented                                               | 2026-09-20 |
+| 36  | Bounded exact-crop region screenshot series                 | Implemented                                               | 2026-09-22 |
 
 New decisions append here with the same format.

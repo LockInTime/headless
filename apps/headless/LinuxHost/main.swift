@@ -134,12 +134,25 @@ final class ChromiumBrowserEngineSession: BrowserEngineSession {
         }
         return BrowserScreenshot(data: try browserSession.screenshot(parameters: parameters, format: format))
     }
-    func hostRecordingFrame() throws -> Data { try browserSession.recordingFrame() }
-    func hostScreenshotSeriesPlan(mode: String) throws -> JSONValue {
-        try browserSession.screenshotSeriesPlan(mode: mode)
+    func hostScreenshotRegionSlice(
+        reference: String, document: String, geometry: ScreenshotRegionGeometry,
+        point: ScreenshotSeriesPoint, format: ScreenshotFormat
+    ) throws -> BrowserScreenshot {
+        guard let sliceTop = point.sliceTop, let sliceHeight = point.sliceHeight else {
+            throw ScreenshotSeriesError.invalidPlan
+        }
+        return BrowserScreenshot(data: try browserSession.screenshot(parameters: [
+            "_region": .string(reference), "_document": .string(document),
+            "_geometry": .object(geometry.parameters),
+            "_sliceTop": .number(sliceTop), "_sliceHeight": .number(sliceHeight),
+        ], format: format))
     }
-    func hostScrollToCapturePoint(y: Double) throws -> JSONValue {
-        try browserSession.scrollToCapturePoint(y: y)
+    func hostRecordingFrame() throws -> Data { try browserSession.recordingFrame() }
+    func hostScreenshotSeriesPlan(mode: String, region: String?) throws -> JSONValue {
+        try browserSession.screenshotSeriesPlan(mode: mode, region: region)
+    }
+    func hostScrollToCapturePoint(y: Double, document: String) throws -> JSONValue {
+        try browserSession.scrollToCapturePoint(y: y, document: document)
     }
     func hostQAReport() throws -> JSONValue { try browserSession.qaReport() }
     func hostQAClear() throws -> JSONValue { browserSession.diagnostics.clear() }

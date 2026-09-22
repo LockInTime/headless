@@ -153,6 +153,48 @@ export function validateParameters<C extends CommandName>(
       validateParameter(command, definition, value);
     }
   }
+  if (command === "screenshot") {
+    const values = parameters as Readonly<Record<string, unknown>>;
+    const targetPresent = values.target !== undefined;
+    const semanticTargetPresent = values.role !== undefined || values.name !== undefined;
+    if (targetPresent && semanticTargetPresent) {
+      throw new ValidationError("screenshot element targets are mutually exclusive");
+    }
+    if (targetPresent && !/^@e\d+$/.test(String(values.target))) {
+      throw new ValidationError("screenshot.target must be an element reference");
+    }
+    if ((values.role !== undefined && values.role === "")
+      || (values.name !== undefined && values.name === "")) {
+      throw new ValidationError("screenshot semantic target values must not be empty");
+    }
+    const hasTarget = targetPresent || semanticTargetPresent;
+    const series = typeof values.series === "string" ? values.series : undefined;
+    const regionPresent = values.region !== undefined;
+    if (regionPresent && !/^@r\d+$/.test(String(values.region))) {
+      throw new ValidationError("screenshot.region must be a region reference");
+    }
+    if ((series === "region") !== regionPresent) {
+      throw new ValidationError("region screenshot series requires exactly one region reference");
+    }
+    if (series !== undefined && (values.fullPage === true || hasTarget || values.output !== undefined)) {
+      throw new ValidationError("screenshot series conflicts with full-page, output, or element target");
+    }
+    if (values.fullPage === true && hasTarget) {
+      throw new ValidationError("full-page and element screenshots are mutually exclusive");
+    }
+    if (values.outputPrefix !== undefined && series === undefined) {
+      throw new ValidationError("screenshot.outputPrefix requires a screenshot series");
+    }
+    const explicitFormat = typeof values.format === "string" ? values.format.toLowerCase() : "";
+    const output = typeof values.output === "string" ? values.output.toLowerCase() : "";
+    const pdf = explicitFormat === "pdf" || (!explicitFormat && output.endsWith(".pdf"));
+    if (series !== undefined && (pdf || values.clipboard === true)) {
+      throw new ValidationError("screenshot series does not support PDF or clipboard output");
+    }
+    if (pdf && (values.fullPage !== true || hasTarget || values.clipboard === true)) {
+      throw new ValidationError("PDF screenshots require full-page mode without a target or clipboard");
+    }
+  }
   if (command === "session.create") {
     validateSession(String(parameters.name));
   }

@@ -914,8 +914,23 @@ final class LinuxBrowserSession: @unchecked Sendable {
             "format": format.browserScreenshotFormat, "fromSurface": true, "captureBeyondViewport": false,
         ]
         if format == .jpeg { capture["quality"] = 88 }
+        var regionSliceArguments = try screenshotRegionSliceArguments(parameters)
         let hasTarget = parameters["target"] != nil || parameters["role"] != nil || parameters["name"] != nil
-        if hasTarget {
+        if var arguments = regionSliceArguments {
+            capture["captureBeyondViewport"] = true
+            let rectangle = try evaluate(
+                "return globalThis.__headlessAgent.regionSlice(args);",
+                input: ["args": arguments]
+            )
+            guard case .object(let outer) = rectangle,
+                  case .object(let rect)? = outer["document"],
+                  case .object(let viewport)? = outer["viewport"] else {
+                throw CDPError.invalidResponse("region slice rectangle")
+            }
+            capture["clip"] = try screenshotClip(rect)
+            arguments["viewport"] = try screenshotRectangleArguments(viewport)
+            regionSliceArguments = arguments
+        } else if hasTarget {
             capture["captureBeyondViewport"] = true
             let args = try browserTargetArguments(parameters)
             let rectangle = try evaluate(
@@ -946,7 +961,37 @@ final class LinuxBrowserSession: @unchecked Sendable {
         guard let base64 = response["data"] as? String, let data = Data(base64Encoded: base64) else {
             throw CDPError.invalidResponse("Page.captureScreenshot data")
         }
+        if let regionSliceArguments {
+            _ = try evaluate(
+                "return globalThis.__headlessAgent.regionSlice(args);",
+                input: ["args": regionSliceArguments]
+            )
+        }
         return data
+    }
+
+    private func screenshotRegionSliceArguments(
+        _ parameters: [String: JSONValue]
+    ) throws -> [String: Any]? {
+        let hasRegionSlice = ["_region", "_document", "_geometry", "_sliceTop", "_sliceHeight"]
+            .contains { parameters[$0] != nil }
+        guard hasRegionSlice else { return nil }
+        guard let reference = parameters["_region"]?.stringValue,
+              let document = parameters["_document"]?.stringValue,
+              case .object(let geometry)? = parameters["_geometry"],
+              let x = geometry["x"]?.numberValue,
+              let y = geometry["y"]?.numberValue,
+              let width = geometry["width"]?.numberValue,
+              let height = geometry["height"]?.numberValue,
+              let sliceTop = parameters["_sliceTop"]?.numberValue,
+              let sliceHeight = parameters["_sliceHeight"]?.numberValue else {
+            throw CDPError.invalidResponse("region slice parameters")
+        }
+        return [
+            "region": reference, "document": document,
+            "geometry": ["x": x, "y": y, "width": width, "height": height],
+            "sliceTop": sliceTop, "sliceHeight": sliceHeight,
+        ]
     }
 
     private func printPDF(
@@ -972,17 +1017,19 @@ final class LinuxBrowserSession: @unchecked Sendable {
         return data
     }
 
-    func screenshotSeriesPlan(mode: String) throws -> JSONValue {
-        try evaluate(
+    func screenshotSeriesPlan(mode: String, region: String?) throws -> JSONValue {
+        var args: [String: Any] = ["mode": mode]
+        if let region { args["region"] = region }
+        return try evaluate(
             "return globalThis.__headlessAgent.screenshotPlan(args);",
-            input: ["args": ["mode": mode]]
+            input: ["args": args]
         )
     }
 
-    func scrollToCapturePoint(y: Double) throws -> JSONValue {
+    func scrollToCapturePoint(y: Double, document: String) throws -> JSONValue {
         try evaluate(
             "return await globalThis.__headlessAgent.scrollToCapturePoint(args);",
-            input: ["args": ["y": y]]
+            input: ["args": ["y": y, "document": document]]
         )
     }
 
@@ -1279,10 +1326,16 @@ final class LinuxBrowserSession: @unchecked Sendable {
     }
 
     private func screenshotClip(_ rect: [String: JSONValue]) throws -> [String: Any] {
+        var result = try screenshotRectangleArguments(rect)
+        result["scale"] = 1
+        return result
+    }
+
+    private func screenshotRectangleArguments(_ rect: [String: JSONValue]) throws -> [String: Any] {
         let rectangle = try BoundedScreenshotRectangle(rect)
         return [
             "x": rectangle.x, "y": rectangle.y,
-            "width": rectangle.width, "height": rectangle.height, "scale": 1,
+            "width": rectangle.width, "height": rectangle.height,
         ]
     }
 

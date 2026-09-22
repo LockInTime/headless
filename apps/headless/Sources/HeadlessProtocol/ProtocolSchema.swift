@@ -351,7 +351,14 @@ public func protocolResultDefinition(for command: CommandName) -> ProtocolResult
             resultField("bytes", .number, required: false),
             resultField("createdAt", .number, required: false),
             resultField("artifacts", .array, required: false),
+            resultField(
+                "series", .string, required: false, values: ["viewport", "section", "region"]
+            ),
+            resultField("count", .number, required: false),
+            resultField("positions", .array, required: false),
             resultField("truncated", .boolean, required: false),
+            resultField("totalPoints", .number, required: false),
+            resultField("untrustedContent", .boolean, required: false),
         ])
     case .artifactList:
         return result("ArtifactList", [
@@ -747,7 +754,8 @@ public let protocolCommandDefinitions: [CommandName: ProtocolCommandDefinition] 
         command(.captureInfo, untrusted: true),
         command(.screenshot, targetParameters + [
             boolean("fullPage"), string("output", maximumBytes: 128),
-            string("series", maximumBytes: 32, values: ["viewport", "section"]),
+            string("series", maximumBytes: 32, values: ["viewport", "section", "region"]),
+            string("region", maximumBytes: 16),
             string("outputPrefix", maximumBytes: 80),
             string(
                 "format", maximumBytes: 16, values: ["png", "jpg", "jpeg", "pdf"],
@@ -756,6 +764,7 @@ public let protocolCommandDefinitions: [CommandName: ProtocolCommandDefinition] 
             boolean("clipboard"),
         ], capabilityNegotiated: true, constraints: [
             "target, full-page, and series modes are mutually constrained",
+            "region is required only for region series and must be an @rN reference",
             "PDF requires full-page mode and no clipboard",
         ]),
         command(.artifactList, [

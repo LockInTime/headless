@@ -76,6 +76,36 @@
           "originalActionReplayed": false
         }
       }
+    },
+    {
+      "name": "region screenshot series",
+      "argv": ["screenshot", "--by-region", "@r4", "--output", "checkout"],
+      "request": {
+        "id": "fixture-region-screenshot",
+        "version": "0.5",
+        "command": "screenshot",
+        "parameters": {
+          "fullPage": false,
+          "series": "region",
+          "region": "@r4",
+          "format": "png",
+          "outputPrefix": "checkout"
+        }
+      },
+      "response": {
+        "id": "fixture-region-screenshot",
+        "version": "0.5",
+        "ok": true,
+        "result": {
+          "series": "region",
+          "count": 1,
+          "artifacts": [],
+          "positions": [{"index": 1, "kind": "region"}],
+          "truncated": false,
+          "totalPoints": 1,
+          "untrustedContent": true
+        }
+      }
     }
   ],
   "directRequests": [

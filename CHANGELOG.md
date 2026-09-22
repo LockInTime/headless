@@ -18,6 +18,10 @@ Two versions travel independently, on purpose:
 
 ## [Unreleased]
 
+- Add bounded cross-engine `screenshot --by-region @rN` series with exact
+  border-box crops, document and geometry revalidation, atomic artifacts, and
+  enforced scroll restoration.
+
 ### Added
 
 - macOS Command-, opens one Settings window built from the typed registry and

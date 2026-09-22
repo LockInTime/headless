@@ -306,8 +306,20 @@ public struct CommandRequest: Codable, Equatable, Sendable {
             try target(allowValue: false, required: false)
             let hasTarget = parameters["target"] != nil || parameters["role"] != nil || parameters["name"] != nil
             let series = try string("series", maximumBytes: 32)
-            if let series, !["viewport", "section"].contains(series) {
+            if let series, !["viewport", "section", "region"].contains(series) {
                 throw ProtocolValidationError.invalidParameter("Invalid screenshot series")
+            }
+            let region = try string("region", maximumBytes: 16)
+            if let region {
+                guard region.hasPrefix("@r"), !region.dropFirst(2).isEmpty,
+                      region.dropFirst(2).allSatisfy({ $0.isASCII && $0.isNumber }) else {
+                    throw ProtocolValidationError.invalidParameter("Invalid screenshot region reference")
+                }
+            }
+            if (series == "region") != (region != nil) {
+                throw ProtocolValidationError.invalidParameter(
+                    "Region screenshot series requires exactly one region reference"
+                )
             }
             let format = try screenshotFormat(
                 explicit: string("format", maximumBytes: 16),

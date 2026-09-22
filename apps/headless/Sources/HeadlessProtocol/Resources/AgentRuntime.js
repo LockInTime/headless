@@ -13,6 +13,10 @@ if (!globalThis.__headlessAgent) {
     const issuedRefs = new Set();
     const issuedRegionRefs = new Set();
     const maximumTrackedRegions = 256;
+    const maximumScreenshotDimension = 16384;
+    const maximumScreenshotPixels = 64000000;
+    const maximumRegionCaptureWidth = 4096;
+    const maximumRegionExtent = 100000000;
     let lastMutation = performance.now();
     new MutationObserver(() => { lastMutation = performance.now(); })
       .observe(document, {subtree: true, childList: true, attributes: true, characterData: true});
@@ -93,6 +97,27 @@ if (!globalThis.__headlessAgent) {
       }
       const rect = element.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0;
+    };
+    const regionIsFullyRenderable = element => {
+      const target = element.getBoundingClientRect();
+      for (let current = element.parentElement; current instanceof Element;
+        current = current.parentElement) {
+        const style = getComputedStyle(current);
+        const ancestor = current.getBoundingClientRect();
+        const overflow = style.overflow || '';
+        const overflowX = style.overflowX || overflow;
+        const overflowY = style.overflowY || overflow;
+        const clipsX = /^(auto|clip|hidden|scroll)$/.test(overflowX);
+        const clipsY = /^(auto|clip|hidden|scroll)$/.test(overflowY);
+        if ((clipsX && (target.left < ancestor.left - 0.5 || target.right > ancestor.right + 0.5)) ||
+            (clipsY && (target.top < ancestor.top - 0.5 || target.bottom > ancestor.bottom + 0.5))) {
+          return false;
+        }
+        const clipPath = style.clipPath || style.getPropertyValue?.('clip-path') || 'none';
+        const contain = style.contain || style.getPropertyValue?.('contain') || 'none';
+        if (clipPath !== 'none' || /(^|\s)(content|paint|strict)(\s|$)/.test(contain)) return false;
+      }
+      return true;
     };
     const uploadVisible = element => {
       if (!visible(element)) return false;
@@ -1005,10 +1030,49 @@ if (!globalThis.__headlessAgent) {
       return {points: result, truncated, totalPoints: truncated ? points.length : result.length};
     };
     const screenshotPlan = args => {
-      const mode = args.mode === 'section' ? 'section' : 'viewport';
+      const mode = ['section', 'region'].includes(args.mode) ? args.mode : 'viewport';
       const root = document.documentElement;
       const maximum = Math.max(0, root.scrollHeight - innerHeight);
       const initialY = Math.round(scrollY);
+      if (mode === 'region') {
+        const element = resolveRegion(args.region);
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + scrollX;
+        const y = rect.top + scrollY;
+        const width = rect.width;
+        const height = rect.height;
+        if (![x, y, width, height].every(Number.isFinite) || x < 0 || y < 0 ||
+            width <= 0 || height <= 0 || width > maximumRegionCaptureWidth ||
+            x > maximumRegionExtent || y > maximumRegionExtent || height > maximumRegionExtent ||
+            rect.left < -0.5 || rect.right > innerWidth + 0.5 ||
+            !regionIsFullyRenderable(element)) {
+          fail('REGION_NOT_FOUND', `REGION_NOT_FOUND:${args.region} (invalid capture geometry)`);
+        }
+        const sliceHeight = Math.min(
+          innerHeight, maximumScreenshotDimension, Math.floor(maximumScreenshotPixels / width)
+        );
+        if (!Number.isFinite(sliceHeight) || sliceHeight < 1) {
+          fail('REGION_NOT_FOUND', `REGION_NOT_FOUND:${args.region} (invalid capture geometry)`);
+        }
+        const totalPoints = Math.max(1, Math.ceil(height / sliceHeight));
+        const truncated = totalPoints > 80;
+        const points = [];
+        const leadingCount = truncated ? 79 : totalPoints;
+        for (let index = 0; index < leadingCount; index += 1) {
+          const sliceTop = y + index * sliceHeight;
+          points.push({...capturePoint(Math.min(maximum, sliceTop), `region ${index + 1}`, 'region'),
+            sliceTop, sliceHeight: Math.min(sliceHeight, y + height - sliceTop)});
+        }
+        if (truncated) {
+          const finalHeight = Math.min(sliceHeight, height);
+          const sliceTop = y + height - finalHeight;
+          points.push({...capturePoint(Math.min(maximum, sliceTop), `region ${totalPoints}`, 'region'),
+            sliceTop, sliceHeight: finalHeight});
+        }
+        return {mode, document: authenticationDocument, initialY,
+          viewportHeight: innerHeight, contentHeight: root.scrollHeight,
+          region: {x, y, width, height}, points, truncated, totalPoints};
+      }
       if (mode === 'viewport') {
         const step = Math.max(1, innerHeight);
         const totalPoints = maximum === 0 ? 1 : Math.ceil(maximum / step) + 1;
@@ -1021,7 +1085,8 @@ if (!globalThis.__headlessAgent) {
         if (points.length === 0 || points[points.length - 1].y !== maximum) {
           points.push(capturePoint(maximum, `viewport ${totalPoints}`, 'viewport'));
         }
-        return {mode, initialY, viewportHeight: innerHeight, contentHeight: root.scrollHeight,
+        return {mode, document: authenticationDocument, initialY,
+          viewportHeight: innerHeight, contentHeight: root.scrollHeight,
           points, truncated, totalPoints};
       }
       const candidates = Array.from(document.querySelectorAll('main h1,main h2,main h3,h1,h2,h3,section,[role="region"]'));
@@ -1032,10 +1097,55 @@ if (!globalThis.__headlessAgent) {
         return capturePoint(rect.top + scrollY - 16, label, kind);
       }).sort((left, right) => left.y - right.y);
       const deduped = dedupePoints(points);
-      return {mode, initialY, viewportHeight: innerHeight, contentHeight: root.scrollHeight,
+      return {mode, document: authenticationDocument, initialY,
+        viewportHeight: innerHeight, contentHeight: root.scrollHeight,
         points: deduped.points, truncated: deduped.truncated, totalPoints: deduped.totalPoints};
     };
+    const regionSlice = args => {
+      if (args.document !== authenticationDocument) {
+        fail('REGION_NOT_FOUND', `REGION_NOT_FOUND:${args.region} (document changed: inspect again)`);
+      }
+      const element = resolveRegion(args.region);
+      const rect = element.getBoundingClientRect();
+      if (!regionIsFullyRenderable(element)) {
+        fail('REGION_NOT_FOUND', `REGION_NOT_FOUND:${args.region} (region is clipped by an ancestor)`);
+      }
+      const current = {
+        x: rect.left + scrollX, y: rect.top + scrollY,
+        width: rect.width, height: rect.height
+      };
+      const expected = args.geometry || {};
+      if (![current.x, current.y, current.width, current.height].every(Number.isFinite) ||
+          ['x', 'y', 'width', 'height'].some(key =>
+            !Number.isFinite(Number(expected[key])) || Math.abs(current[key] - Number(expected[key])) > 0.5)) {
+        fail('REGION_NOT_FOUND', `REGION_NOT_FOUND:${args.region} (geometry changed: inspect again)`);
+      }
+      const top = Number(args.sliceTop);
+      const height = Number(args.sliceHeight);
+      if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0 ||
+          top < current.y - 0.5 || top + height > current.y + current.height + 0.5) {
+        fail('REGION_NOT_FOUND', `REGION_NOT_FOUND:${args.region} (invalid capture slice)`);
+      }
+      const viewport = {x: current.x - scrollX, y: top - scrollY, width: current.width, height};
+      const expectedViewport = args.viewport;
+      if (expectedViewport && ['x', 'y', 'width', 'height'].some(key =>
+          !Number.isFinite(Number(expectedViewport[key])) ||
+          Math.abs(viewport[key] - Number(expectedViewport[key])) > 0.5)) {
+        fail('REGION_NOT_FOUND', `REGION_NOT_FOUND:${args.region} (viewport changed during capture)`);
+      }
+      if (viewport.x < -0.5 || viewport.x + viewport.width > innerWidth + 0.5 ||
+          viewport.y < -0.5 || viewport.y + viewport.height > innerHeight + 0.5) {
+        fail('REGION_NOT_FOUND', `REGION_NOT_FOUND:${args.region} (slice is outside the viewport)`);
+      }
+      return {
+        viewport,
+        document: {x: current.x, y: top, width: current.width, height}
+      };
+    };
     const scrollToCapturePoint = async args => {
+      if (args.document !== authenticationDocument) {
+        fail('OPERATION_FAILED', 'SCREENSHOT_DOCUMENT_CHANGED');
+      }
       const maximum = Math.max(0, document.documentElement.scrollHeight - innerHeight);
       const requestedY = Math.min(maximum, Math.max(0, Number(args.y || 0)));
       scrollTo({top: requestedY, behavior: 'instant'});
@@ -1090,7 +1200,7 @@ if (!globalThis.__headlessAgent) {
     };
     return {
       snapshot, click, fill, select, credentialFill, finishCredentialFill, press, inputTarget, fileInput, fileInputMetadata,
-      authentication, scroll, state, tour, screenshotPlan, scrollToCapturePoint, rectangle, styles, storage,
+      authentication, scroll, state, tour, screenshotPlan, regionSlice, scrollToCapturePoint, rectangle, styles, storage,
       performance: performanceSummary, animations
     };
   })();

@@ -491,8 +491,12 @@ get an architecture-decision entry:
   **Done:** Chromium tracks bounded in-flight CDP requests and requires a
   500 ms quiet window; WebKit declares and returns an explicit unsupported
   capability instead of approximating network state.
-- **G6. Element screenshot on Linux `--by-region @rN`** — region-scoped series
-  capture, pairs naturally with the pruning ladder.
+- **G6. Region screenshot series** ([#211](https://github.com/LockInTime/headless/issues/211)) —
+  ~~add bounded exact-crop `screenshot --by-region @rN` capture that pairs with
+  the pruning ladder and uses the portable series pipeline on both engines.~~
+  **Done:** opaque current-document region refs produce an atomic, bounded
+  vertical series on both engines, with per-slice geometry revalidation,
+  enforced scroll restoration, explicit truncation, and untrusted metadata.
 - **G7. Trace export** — `capture-info` already returns an action trace;
   `report create` bundles it; a `--format junit`/markdown export would slot
   into CI comments.
