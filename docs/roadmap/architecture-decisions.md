@@ -1171,21 +1171,33 @@ a narrower region instead of yielding partial or misleading evidence.
 ## 37. Hover is semantic, bounded, and dispatch-accurate
 
 **Decision:** protocol `0.5` gains one compatible portable `hover` command with
-the same fresh element-ref or exact role/name target grammar as `click`. The
-isolated runtime scrolls the target to the viewport and rejects missing, stale, hidden,
-detached, or center-point-obscured targets before dispatch. The public response
-contains only the bounded target ref, role, and name. It never returns the
-internal hit-test coordinates.
+the same fresh element-ref or exact role/name target grammar as `click`. A ref
+resolves only against the latest inspection. A later inspect or a document
+refresh expires it, and a detached node fails closed. After scrolling the
+target into view, both engines reject a hidden target and a target whose
+viewport center is covered by another element, including a dropdown or other
+overlay, before any pointer event. The public response contains only the
+bounded target ref, role, and name. It never returns the internal hit-test
+coordinates.
 
-Chromium performs one trusted `Input.dispatchMouseEvent` mouse move after the
-isolated-world target check. WebKit tracks the previous synthetic target and
-emits fixed pointer/mouse leave, enter, and move transitions. The capability
-matrix reports `hoverDispatch` as `trusted-cdp` or `synthetic-dom`. The command
-never focuses or clicks directly, accepts selectors or coordinates, or exposes
+Chromium performs one trusted `Input.dispatchMouseEvent` mouse move after that
+check. WebKit tracks the previous synthetic target and emits fixed
+pointer/mouse leave, enter, and move transitions. The capability matrix
+reports `hoverDispatch` as `trusted-cdp` or `synthetic-dom`. The command never
+focuses or clicks directly, accepts selectors or coordinates, or exposes
 caller JavaScript. Page-controlled hover handlers can still navigate or cause
 other page side effects, subject to the existing navigation and download
-policies. Hover is not a replayable flow step. Inspection does not advertise
-hover because markup cannot prove that hovering has meaningful behavior.
+policies.
+
+Hover is not a flow step. A flow replays commands later. Hover only describes
+where the pointer is now, and WebKit's synthetic sequence does not activate
+CSS `:hover`, so a replay would not reproduce the revealed surface. Screenshot
+series are saved images from one capture. They are not replayed commands, so
+they are not flow steps either. Hover follows that rule. A hover that reveals
+a login form still returns `AUTH_REQUIRED` through the existing challenge
+path, and the hover itself is not stored for replay. Inspection does not
+advertise hover because markup cannot prove that hovering has meaningful
+behavior.
 
 Generic drag remains deferred to
 [#208](https://github.com/LockInTime/headless/issues/208). That contract must

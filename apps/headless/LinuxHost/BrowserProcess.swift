@@ -778,6 +778,9 @@ final class LinuxBrowserSession: @unchecked Sendable {
         _ = try command("Input.dispatchMouseEvent", parameters: [
             "type": "mouseMoved", "x": target.x, "y": target.y,
         ])
+        // A hover handler can start a cross-document navigation before the next
+        // command. Pause capture so a recording does not composite that frame.
+        pauseRecordingCapture()
         return .object([
             "hovered": .string(target.reference),
             "role": .string(target.role),

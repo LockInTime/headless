@@ -244,8 +244,11 @@ back | reload
   semantic target (`--role`/`--name`). `fill` accepts a reference; `press` acts
   on the focused control. On Linux click, fill, and key input dispatch trusted
   CDP events; WebKit uses synthetic input. Hover does not focus or click its
-  target and returns no coordinates. Native select and hover dispatch are
-  declared separately by capabilities.
+  target and returns no coordinates. Before dispatch it resolves a ref from the
+  latest inspection only, then rejects a stale, detached, hidden, or
+  center-covered target. Hover is not a flow step: a flow replays commands, and
+  a later replay would not reproduce a transient pointer state. Native select
+  and hover dispatch are declared separately by capabilities.
 - `fill REF -- value` keeps leading dashes in the value. Flow recordings never
   record fill values.
 - `select` supports native single-selection HTML controls only. Choose exactly

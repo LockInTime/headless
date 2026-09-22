@@ -289,6 +289,29 @@ assert.throws(
   error => error.headlessCode === 'ELEMENT_NOT_FOUND' && error.message === 'ELEMENT_NOT_VISIBLE',
 );
 secondButton.style.opacity = '1';
+window.document.elementFromPoint = () => window.document.body;
+const coveredEvents = secondHoverEvents.length;
+assert.throws(
+  () => agent.hover({target: hiddenHoverRef}),
+  error => error.headlessCode === 'ELEMENT_NOT_FOUND' && error.message === 'ELEMENT_OBSCURED',
+);
+assert.throws(
+  () => agent.inputTarget({target: hiddenHoverRef}, 'hover'),
+  error => error.headlessCode === 'ELEMENT_NOT_FOUND' && error.message === 'ELEMENT_OBSCURED',
+);
+assert.equal(secondHoverEvents.length, coveredEvents, 'obscured hover must not dispatch');
+secondButton.remove();
+assert.throws(
+  () => agent.hover({target: hiddenHoverRef}),
+  error => error.headlessCode === 'ELEMENT_NOT_FOUND' && /detached/.test(error.message),
+);
+const staleHoverRef = agent.snapshot(false, false, {context: 'actions', limit: 20})
+  .elements.find(element => element.name === 'Runtime action').ref;
+agent.snapshot(false, false, {context: 'text', limit: 1});
+assert.throws(
+  () => agent.hover({target: staleHoverRef}),
+  error => error.headlessCode === 'ELEMENT_NOT_FOUND' && /expired/.test(error.message),
+);
 window.document.elementFromPoint = () => button;
 
 const clicked = agent.click({role: 'button', name: 'Runtime action'});

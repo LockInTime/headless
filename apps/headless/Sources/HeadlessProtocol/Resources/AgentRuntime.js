@@ -707,9 +707,8 @@ if (!globalThis.__headlessAgent) {
       element.click();
       return {clicked: refFor(element), role: role(element), name: name(element)};
     };
-    const hover = args => {
-      const element = target(args);
-      element.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});
+    // Hit-test the layout after scroll, before any pointer event.
+    const pointerHit = element => {
       if (!visible(element)) fail('ELEMENT_NOT_FOUND', 'ELEMENT_NOT_VISIBLE');
       const rect = element.getBoundingClientRect();
       const left = Math.max(0, rect.left);
@@ -723,10 +722,16 @@ if (!globalThis.__headlessAgent) {
       if (!hit || (hit !== element && !element.contains(hit))) {
         fail('ELEMENT_NOT_FOUND', 'ELEMENT_OBSCURED');
       }
+      return {x, y};
+    };
+    const hover = args => {
+      const element = target(args);
+      element.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});
+      const point = pointerHit(element);
       const Pointer = typeof PointerEvent === 'function' ? PointerEvent : MouseEvent;
-      const pointer = {bubbles: true, clientX: x, clientY: y, pointerId: 1,
+      const pointer = {bubbles: true, clientX: point.x, clientY: point.y, pointerId: 1,
         pointerType: 'mouse', isPrimary: true};
-      const mouse = {bubbles: true, clientX: x, clientY: y};
+      const mouse = {bubbles: true, clientX: point.x, clientY: point.y};
       const previous = hoveredElement instanceof Element && hoveredElement.isConnected
         ? hoveredElement : null;
       hoveredElement = element;
@@ -765,26 +770,24 @@ if (!globalThis.__headlessAgent) {
         if (!editable || element.disabled || element.readOnly) throw new Error('NOT_EDITABLE');
       }
       element.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});
-      if (action !== 'hover') element.focus({preventScroll: true});
-      if (action === 'hover' && !visible(element)) {
-        fail('ELEMENT_NOT_FOUND', 'ELEMENT_NOT_VISIBLE');
+      if (action === 'hover') {
+        const point = pointerHit(element);
+        return {
+          ref: refFor(element), role: role(element), name: name(element),
+          x: point.x, y: point.y,
+        };
       }
+      element.focus({preventScroll: true});
       const rect = element.getBoundingClientRect();
       const left = Math.max(0, rect.left);
       const right = Math.min(innerWidth, rect.right);
       const top = Math.max(0, rect.top);
       const bottom = Math.min(innerHeight, rect.bottom);
-      if (right <= left || bottom <= top) {
-        if (action === 'hover') fail('ELEMENT_NOT_FOUND', 'ELEMENT_NOT_VISIBLE');
-        throw new Error('ELEMENT_NOT_VISIBLE');
-      }
+      if (right <= left || bottom <= top) throw new Error('ELEMENT_NOT_VISIBLE');
       const x = left + (right - left) / 2;
       const y = top + (bottom - top) / 2;
       const hit = document.elementFromPoint(x, y);
-      if (!hit || (hit !== element && !element.contains(hit))) {
-        if (action === 'hover') fail('ELEMENT_NOT_FOUND', 'ELEMENT_OBSCURED');
-        throw new Error('ELEMENT_OBSCURED');
-      }
+      if (!hit || (hit !== element && !element.contains(hit))) throw new Error('ELEMENT_OBSCURED');
       return {ref: refFor(element), role: role(element), name: name(element), x, y};
     };
     const checkedFileInput = element => {
