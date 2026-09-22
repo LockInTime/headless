@@ -87,6 +87,7 @@ headless --session qa screenshot --format jpg --output next-page.jpg --clipboard
 headless --session qa screenshot --format pdf --full-page --output next-page.pdf
 headless --session qa screenshot --every-viewport --output dashboard-scroll
 headless --session qa screenshot --by-section --output dashboard-sections
+headless --session qa screenshot --by-region @r4 --output checkout-region
 headless --session qa qa report
 headless --session qa console list --level error
 headless --session qa network list --failed
@@ -142,6 +143,17 @@ sections. Series capture restores the original scroll position. Add `--format
 jpg` for JPEG series; PDF requires `--full-page` and is not a series format. The
 output prefix creates numbered artifacts such as `dashboard-scroll-001.png` or
 `dashboard-scroll-001.jpg`.
+
+After `inspect --context outline`, use `screenshot --by-region @rN --output
+PREFIX` to capture only that region element's rendered border box as bounded
+vertical slices. The region must fit horizontally in the viewport and cannot
+exceed the portable 4096 CSS-pixel capture width. Nested
+scroll-container content outside the rendered box is not expanded. Unknown,
+expired, hidden, clipped, or changing regions fail without keeping partial
+artifacts. A series with `truncated: true` contains the first 79 slices and the
+final slice, so its omitted middle is explicit rather than presented as full
+coverage. Scroll restoration is enforced while the original document remains
+active.
 
 When an action fails, use the on-demand diagnostic commands instead of an
 interactive DevTools UI: `console list`, `network list|get`, `styles get`,

@@ -82,6 +82,7 @@ headless --session NAME screenshot REF --output element.png
 headless --session NAME screenshot --role button --name Continue --output button.png
 headless --session NAME screenshot --every-viewport --format jpg --output page-scroll
 headless --session NAME screenshot --by-section --output page-sections
+headless --session NAME screenshot --by-region @r4 --output focused-region
 headless --session NAME record start --fps 10 --format mp4 --quality balanced
 headless --session NAME record status
 headless --session NAME record stop --output flow.mp4
@@ -117,8 +118,8 @@ For human-reviewable evidence:
 
 1. Start recording before the action under test.
 2. Use `tour --full-page --pace 500` when scrolling is part of the evidence.
-3. Capture key-state screenshots, plus `--every-viewport` or `--by-section`
-   screenshots for long scrollable pages.
+3. Capture key-state screenshots, plus `--every-viewport`, `--by-section`, or
+   an outline-scoped `--by-region @rN` series for broader visual evidence.
 4. Stop recording on both success and failure paths.
 5. List the artifact metadata.
 6. Verify the copied file independently when tools are available:

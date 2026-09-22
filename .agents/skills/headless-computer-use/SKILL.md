@@ -87,6 +87,7 @@ headless --session agent-qa screenshot --full-page --output before.png
 headless --session agent-qa screenshot --format jpg --output before.jpg
 headless --session agent-qa screenshot --every-viewport --output page-scroll
 headless --session agent-qa screenshot --by-section --output page-sections
+headless --session agent-qa screenshot --by-region @r4 --output focused-region
 headless --session agent-qa click --role button --name Continue
 headless --session agent-qa wait --url /next --text "Designer details" --settled
 headless --session agent-qa screenshot --full-page --output after.png

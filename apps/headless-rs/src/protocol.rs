@@ -537,7 +537,7 @@ impl CommandRequest {
     fn validate_screenshot(&self) -> Result<(), ValidationError> {
         self.allow(&[
             "fullPage", "target", "role", "name", "output", "series", "outputPrefix", "format",
-            "clipboard",
+            "clipboard", "region",
         ])?;
         self.boolean("fullPage")?;
         self.boolean("clipboard")?;
@@ -546,11 +546,27 @@ impl CommandRequest {
             self.parameter("target").is_some() || self.parameter("role").is_some() || self.parameter("name").is_some();
         let series = self.string("series", false, 32)?;
         if let Some(series) = &series {
-            if !["viewport", "section"].contains(&series.as_str()) {
+            if !["viewport", "section", "region"].contains(&series.as_str()) {
                 return Err(ValidationError::InvalidParameter(
                     "Invalid screenshot series".to_string(),
                 ));
             }
+        }
+        let region = self.string("region", false, 16)?;
+        if let Some(region) = &region {
+            let digits = region.strip_prefix("@r").map(|rest| {
+                !rest.is_empty() && rest.bytes().all(|byte| byte.is_ascii_digit())
+            });
+            if digits != Some(true) {
+                return Err(ValidationError::InvalidParameter(
+                    "Invalid screenshot region reference".to_string(),
+                ));
+            }
+        }
+        if (series.as_deref() == Some("region")) != region.is_some() {
+            return Err(ValidationError::InvalidParameter(
+                "Region screenshot series requires exactly one region reference".to_string(),
+            ));
         }
         let format = screenshot_format(
             self.string("format", false, 16)?.as_deref(),

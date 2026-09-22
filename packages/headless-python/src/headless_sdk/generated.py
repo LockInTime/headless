@@ -13,8 +13,8 @@ PROTOCOL_VERSION = '0.5'
 PROTOCOL_SCHEMA_VERSION = 1
 MAXIMUM_MESSAGE_BYTES = 1048576
 MAXIMUM_COMMAND_TIMEOUT_SECONDS = 125.0
-PROTOCOL_SCHEMA_SHA256 = 'f82b2ea0d7e8b5d2db0a841c5d22976aec6f774303cd81791921977899679f1e'
-PROTOCOL_FIXTURES_SHA256 = '0b51ffaa2d3e3aaf0c32adcfeb02c180dcbe44face0d49e1c332b69f403ae062'
+PROTOCOL_SCHEMA_SHA256 = 'db70dc1b07b034624e85ab8f07ac420d5af5b948edf999cd11e5445ed07d7a17'
+PROTOCOL_FIXTURES_SHA256 = '76bbee05cacd7ed16452176ad2973bf4604f4b864f8de1277664880c079a5435'
 RESPONSE_ADDITIONAL_PROPERTIES = True
 COMMAND_ERROR_CODES = ('ARTIFACT_ERROR', 'AUTH_ACCOUNT_NOT_FOUND', 'AUTH_CHALLENGE_CONSUMED', 'AUTH_CHALLENGE_EXPIRED', 'AUTH_CHALLENGE_NOT_FOUND', 'AUTH_FORM_CHANGED', 'AUTH_ORIGIN_CHANGED', 'AUTH_REQUIRED', 'CREDENTIAL_ALIAS_EXISTS', 'ELEMENT_NOT_FOUND', 'FLOW_FAILED', 'HOST_STOPPING', 'HOST_UNAVAILABLE', 'INTERNAL_ERROR', 'INVALID_CAPTURE_FORMAT', 'INVALID_COMMAND', 'INVALID_FLOW', 'INVALID_INPUT', 'INVALID_REQUEST', 'INVALID_SESSION', 'MISSING_PARAMETER', 'OPERATION_FAILED', 'PAGINATION_CURSOR_EXPIRED', 'PAGINATION_CURSOR_INVALID', 'PAGINATION_CURSOR_SCOPE_MISMATCH', 'PAGINATION_CURSOR_STALE', 'PEER_DENIED', 'RECORDER_UNAVAILABLE', 'RECORDING_ACTIVE', 'RECORDING_FAILED', 'RECORDING_NOT_ACTIVE', 'REGION_NOT_FOUND', 'RESPONSE_TOO_LARGE', 'SENSITIVE_DIAGNOSTICS_DISABLED', 'SESSION_EXISTS', 'SESSION_NOT_FOUND', 'TIMEOUT', 'UNSAFE_NAVIGATION', 'UNSAFE_RESOURCE_TYPE', 'UNSUPPORTED_CAPABILITY', 'USER_PRESENCE_DENIED', 'USER_PRESENCE_UNAVAILABLE', 'VAULT_LOCKED', 'VAULT_OPERATION_FAILED', 'VAULT_RESPONSE_INVALID', 'VAULT_UNAVAILABLE')
 CommandErrorCode = Literal['ARTIFACT_ERROR', 'AUTH_ACCOUNT_NOT_FOUND', 'AUTH_CHALLENGE_CONSUMED', 'AUTH_CHALLENGE_EXPIRED', 'AUTH_CHALLENGE_NOT_FOUND', 'AUTH_FORM_CHANGED', 'AUTH_ORIGIN_CHANGED', 'AUTH_REQUIRED', 'CREDENTIAL_ALIAS_EXISTS', 'ELEMENT_NOT_FOUND', 'FLOW_FAILED', 'HOST_STOPPING', 'HOST_UNAVAILABLE', 'INTERNAL_ERROR', 'INVALID_CAPTURE_FORMAT', 'INVALID_COMMAND', 'INVALID_FLOW', 'INVALID_INPUT', 'INVALID_REQUEST', 'INVALID_SESSION', 'MISSING_PARAMETER', 'OPERATION_FAILED', 'PAGINATION_CURSOR_EXPIRED', 'PAGINATION_CURSOR_INVALID', 'PAGINATION_CURSOR_SCOPE_MISMATCH', 'PAGINATION_CURSOR_STALE', 'PEER_DENIED', 'RECORDER_UNAVAILABLE', 'RECORDING_ACTIVE', 'RECORDING_FAILED', 'RECORDING_NOT_ACTIVE', 'REGION_NOT_FOUND', 'RESPONSE_TOO_LARGE', 'SENSITIVE_DIAGNOSTICS_DISABLED', 'SESSION_EXISTS', 'SESSION_NOT_FOUND', 'TIMEOUT', 'UNSAFE_NAVIGATION', 'UNSAFE_RESOURCE_TYPE', 'UNSUPPORTED_CAPABILITY', 'USER_PRESENCE_DENIED', 'USER_PRESENCE_UNAVAILABLE', 'VAULT_LOCKED', 'VAULT_OPERATION_FAILED', 'VAULT_RESPONSE_INVALID', 'VAULT_UNAVAILABLE']
@@ -113,7 +113,8 @@ class ScreenshotParameters(TypedDict):
     name: NotRequired[str]
     fullPage: NotRequired[bool]
     output: NotRequired[str]
-    series: NotRequired[Literal['viewport', 'section']]
+    series: NotRequired[Literal['viewport', 'section', 'region']]
+    region: NotRequired[str]
     outputPrefix: NotRequired[str]
     format: NotRequired[str]
     clipboard: NotRequired[bool]
@@ -318,7 +319,12 @@ class Screenshot(TypedDict, total=False):
     bytes: NotRequired[int | float]
     createdAt: NotRequired[int | float]
     artifacts: NotRequired[list[JsonValue]]
+    series: NotRequired[Literal['viewport', 'section', 'region']]
+    count: NotRequired[int | float]
+    positions: NotRequired[list[JsonValue]]
     truncated: NotRequired[bool]
+    totalPoints: NotRequired[int | float]
+    untrustedContent: NotRequired[bool]
 
 class ArtifactList(TypedDict, total=False):
     directory: Required[str]
@@ -1315,6 +1321,8 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                    'timeout': {'defaultMilliseconds': 15000, 'parameterPresentOverrides': {}}},
  'screenshot': {'capabilityNegotiated': True,
                 'constraints': ['target, full-page, and series modes are mutually constrained',
+                                'region is required only for region series and must be an @rN '
+                                'reference',
                                 'PDF requires full-page mode and no clipboard'],
                 'parameters': [{'maximumBytes': 16,
                                 'name': 'target',
@@ -1345,7 +1353,12 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                                 'required': False,
                                 'sensitive': False,
                                 'type': 'string',
-                                'values': ['viewport', 'section']},
+                                'values': ['viewport', 'section', 'region']},
+                               {'maximumBytes': 16,
+                                'name': 'region',
+                                'required': False,
+                                'sensitive': False,
+                                'type': 'string'},
                                {'maximumBytes': 80,
                                 'name': 'outputPrefix',
                                 'required': False,
@@ -1382,7 +1395,23 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                                                  {'name': 'artifacts',
                                                   'required': False,
                                                   'type': 'array'},
+                                                 {'name': 'series',
+                                                  'required': False,
+                                                  'type': 'string',
+                                                  'values': ['viewport', 'section', 'region']},
+                                                 {'name': 'count',
+                                                  'required': False,
+                                                  'type': 'number'},
+                                                 {'name': 'positions',
+                                                  'required': False,
+                                                  'type': 'array'},
                                                  {'name': 'truncated',
+                                                  'required': False,
+                                                  'type': 'boolean'},
+                                                 {'name': 'totalPoints',
+                                                  'required': False,
+                                                  'type': 'number'},
+                                                 {'name': 'untrustedContent',
                                                   'required': False,
                                                   'type': 'boolean'}],
                                       'name': 'Screenshot',
@@ -2208,7 +2237,8 @@ class SyncSessionCommands:
         name: str | None = None,
         full_page: bool | None = None,
         output: str | None = None,
-        series: Literal['viewport', 'section'] | None = None,
+        series: Literal['viewport', 'section', 'region'] | None = None,
+        region: str | None = None,
         output_prefix: str | None = None,
         format: str | None = None,
         clipboard: bool | None = None,
@@ -2229,6 +2259,8 @@ class SyncSessionCommands:
             parameters['output'] = cast(JsonValue, output)
         if series is not None:
             parameters['series'] = cast(JsonValue, series)
+        if region is not None:
+            parameters['region'] = cast(JsonValue, region)
         if output_prefix is not None:
             parameters['outputPrefix'] = cast(JsonValue, output_prefix)
         if format is not None:
@@ -2881,7 +2913,8 @@ class AsyncSessionCommands:
         name: str | None = None,
         full_page: bool | None = None,
         output: str | None = None,
-        series: Literal['viewport', 'section'] | None = None,
+        series: Literal['viewport', 'section', 'region'] | None = None,
+        region: str | None = None,
         output_prefix: str | None = None,
         format: str | None = None,
         clipboard: bool | None = None,
@@ -2902,6 +2935,8 @@ class AsyncSessionCommands:
             parameters['output'] = cast(JsonValue, output)
         if series is not None:
             parameters['series'] = cast(JsonValue, series)
+        if region is not None:
+            parameters['region'] = cast(JsonValue, region)
         if output_prefix is not None:
             parameters['outputPrefix'] = cast(JsonValue, output_prefix)
         if format is not None:

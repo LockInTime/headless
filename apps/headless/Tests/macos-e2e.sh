@@ -1445,6 +1445,63 @@ SECTION_SERIES="$("$CLI" --session qa screenshot --by-section --output section-c
 echo "$SECTION_SERIES" | grep -q '"series":"section"'
 SECTION_CAPTURE_COUNT="$(find "$HEADLESS_ARTIFACT_DIR" -maxdepth 1 -name 'section-capture-*.png' | wc -l | tr -d ' ')"
 test "$SECTION_CAPTURE_COUNT" -ge 3
+"$CLI" --session qa visit "http://127.0.0.1:$PORT/region-capture" | grep -q 'Region capture fixture'
+REGION_OUTLINE="$("$CLI" --session qa inspect --context outline --task 'Capture target' --limit 8 --budget 900)"
+CAPTURE_REGION="$(printf %s "$REGION_OUTLINE" | python3 -c '
+import json, sys
+regions = json.load(sys.stdin)["result"]["regions"]
+print(next(region["ref"] for region in regions
+           if region.get("role") == "region" and region.get("name") == "Capture target"))
+')"
+test -n "$CAPTURE_REGION"
+REGION_SERIES="$("$CLI" --session qa screenshot --by-region "$CAPTURE_REGION" --output region-capture)"
+echo "$REGION_SERIES" | grep -q '"series":"region"'
+echo "$REGION_SERIES" | grep -q '"count":3'
+echo "$REGION_SERIES" | grep -q '"totalPoints":3'
+echo "$REGION_SERIES" | grep -q '"untrustedContent":true'
+if echo "$REGION_SERIES" | grep -q '"label"\|"y"'; then
+  echo "region screenshot response exposed page labels or coordinates" >&2
+  fail
+fi
+REGION_CAPTURE_COUNT="$(find "$HEADLESS_ARTIFACT_DIR" -maxdepth 1 -name 'region-capture-*.png' | wc -l | tr -d ' ')"
+test "$REGION_CAPTURE_COUNT" -eq 3
+python3 - "$HEADLESS_ARTIFACT_DIR" <<'PY'
+import glob
+import os
+import struct
+import sys
+
+paths = sorted(glob.glob(os.path.join(sys.argv[1], "region-capture-*.png")))
+dimensions = []
+for path in paths:
+    with open(path, "rb") as artifact:
+        header = artifact.read(24)
+    dimensions.append(struct.unpack(">II", header[16:24]))
+assert len(dimensions) == 3, dimensions
+assert all(width == 640 for width, _ in dimensions), dimensions
+assert sum(height for _, height in dimensions) == 1600, dimensions
+assert dimensions[0][1] == dimensions[1][1], dimensions
+assert 0 < dimensions[-1][1] < dimensions[0][1], dimensions
+PY
+for artifact in "$HEADLESS_ARTIFACT_DIR"/region-capture-*.png; do
+  if ! ffmpeg -v error -i "$artifact" \
+      -f rawvideo -pix_fmt rgb24 - 2>/dev/null | python3 -c '
+import sys
+pixels = sys.stdin.buffer.read()
+has_page_red = any(pixels[index] > 180 and pixels[index + 1] < 80 and pixels[index + 2] < 100
+                   for index in range(0, len(pixels) - 2, 3))
+sys.exit(0 if pixels and not has_page_red else 1)
+'; then
+    echo "region screenshot included pixels outside the target: $artifact" >&2
+    fail
+  fi
+done
+if REGION_ERROR="$("$CLI" --session qa screenshot --by-region @r999999 --output missing-region 2>&1)"; then
+  echo "unknown screenshot region unexpectedly succeeded" >&2
+  fail
+fi
+echo "$REGION_ERROR" | grep -q 'REGION_NOT_FOUND'
+"$CLI" --session qa visit "http://127.0.0.1:$PORT/designers/dashboard" | grep -q 'Designers Dashboard'
 "$CLI" --session qa visual compare viewport.png viewport.png --output visual-diff.png | grep -q '"name":"visual-diff.png"'
 test -s "$HEADLESS_ARTIFACT_DIR/visual-diff.png"
 "$CLI" --session qa performance get | grep -q '"webVitals"'

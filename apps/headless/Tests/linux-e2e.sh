@@ -12,11 +12,12 @@ SUPERVISED_LAUNCHER_PID=""
 
 FIXTURE_ROOT="$(mktemp -d /tmp/headless-fixture.XXXXXX)"
 INSTALL_ROOT="$(mktemp -d /tmp/headless-install.XXXXXX)"
-mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/select" "$FIXTURE_ROOT/network-idle" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/file-upload" "$FIXTURE_ROOT/api" "$FIXTURE_ROOT/allowlist-exits" "$FIXTURE_ROOT/allowlist-redirect"
+mkdir -p "$FIXTURE_ROOT/designers/dashboard" "$FIXTURE_ROOT/next" "$FIXTURE_ROOT/hostile" "$FIXTURE_ROOT/large-document" "$FIXTURE_ROOT/region-capture" "$FIXTURE_ROOT/select" "$FIXTURE_ROOT/network-idle" "$FIXTURE_ROOT/trusted-input" "$FIXTURE_ROOT/auth-state" "$FIXTURE_ROOT/auth-login" "$FIXTURE_ROOT/file-upload" "$FIXTURE_ROOT/api" "$FIXTURE_ROOT/allowlist-exits" "$FIXTURE_ROOT/allowlist-redirect"
 cp /opt/headless/fixtures/dashboard.html "$FIXTURE_ROOT/designers/dashboard/index.html"
 cp /opt/headless/fixtures/next.html "$FIXTURE_ROOT/next/index.html"
 cp /opt/headless/fixtures/hostile.html "$FIXTURE_ROOT/hostile/index.html"
 cp /opt/headless/fixtures/large-document.html "$FIXTURE_ROOT/large-document/index.html"
+cp /opt/headless/fixtures/region-capture.html "$FIXTURE_ROOT/region-capture/index.html"
 cp /opt/headless/fixtures/select.html "$FIXTURE_ROOT/select/index.html"
 cp /opt/headless/fixtures/network-idle.html "$FIXTURE_ROOT/network-idle/index.html"
 cp /opt/headless/fixtures/trusted-input.html "$FIXTURE_ROOT/trusted-input/index.html"
@@ -509,6 +510,7 @@ if headless --session qa screenshot --format pdf --role button --name Continue -
   echo "element PDF capture was not rejected" >&2
   exit 1
 fi
+STEP="screenshot-series"
 VIEWPORT_SERIES="$(headless --session qa screenshot --every-viewport --format jpg --output scroll-capture)"
 echo "$VIEWPORT_SERIES" | grep -q '"series":"viewport"'
 echo "$VIEWPORT_SERIES" | grep -q '"name":"scroll-capture-001.jpg"'
@@ -519,6 +521,63 @@ SECTION_SERIES="$(headless --session qa screenshot --by-section --output section
 echo "$SECTION_SERIES" | grep -q '"series":"section"'
 SECTION_CAPTURE_COUNT="$(find "$HEADLESS_ARTIFACT_DIR" -maxdepth 1 -name 'section-capture-*.png' | wc -l | tr -d ' ')"
 test "$SECTION_CAPTURE_COUNT" -ge 3
+headless --session qa visit http://127.0.0.1:41739/region-capture | grep -q 'Region capture fixture'
+REGION_OUTLINE="$(headless --session qa inspect --context outline --task 'Capture target' --limit 8 --budget 900)"
+CAPTURE_REGION="$(printf %s "$REGION_OUTLINE" | python3 -c '
+import json, sys
+regions = json.load(sys.stdin)["result"]["regions"]
+print(next(region["ref"] for region in regions
+           if region.get("role") == "region" and region.get("name") == "Capture target"))
+')"
+test -n "$CAPTURE_REGION"
+REGION_SERIES="$(headless --session qa screenshot --by-region "$CAPTURE_REGION" --output region-capture)"
+echo "$REGION_SERIES" | grep -q '"series":"region"'
+echo "$REGION_SERIES" | grep -q '"count":3'
+echo "$REGION_SERIES" | grep -q '"totalPoints":3'
+echo "$REGION_SERIES" | grep -q '"untrustedContent":true'
+if echo "$REGION_SERIES" | grep -q '"label"\|"y"'; then
+  echo "region screenshot response exposed page labels or coordinates" >&2
+  exit 1
+fi
+REGION_CAPTURE_COUNT="$(find "$HEADLESS_ARTIFACT_DIR" -maxdepth 1 -name 'region-capture-*.png' | wc -l | tr -d ' ')"
+test "$REGION_CAPTURE_COUNT" -eq 3
+python3 - "$HEADLESS_ARTIFACT_DIR" <<'PY'
+import glob
+import os
+import struct
+import sys
+
+paths = sorted(glob.glob(os.path.join(sys.argv[1], "region-capture-*.png")))
+dimensions = []
+for path in paths:
+    with open(path, "rb") as artifact:
+        header = artifact.read(24)
+    dimensions.append(struct.unpack(">II", header[16:24]))
+assert len(dimensions) == 3, dimensions
+assert all(width == 640 for width, _ in dimensions), dimensions
+assert sum(height for _, height in dimensions) == 1600, dimensions
+assert dimensions[0][1] == dimensions[1][1], dimensions
+assert 0 < dimensions[-1][1] < dimensions[0][1], dimensions
+PY
+for artifact in "$HEADLESS_ARTIFACT_DIR"/region-capture-*.png; do
+  if ! ffmpeg -v error -i "$artifact" \
+      -f rawvideo -pix_fmt rgb24 - 2>/dev/null | python3 -c '
+import sys
+pixels = sys.stdin.buffer.read()
+has_page_red = any(pixels[index] > 180 and pixels[index + 1] < 80 and pixels[index + 2] < 100
+                   for index in range(0, len(pixels) - 2, 3))
+sys.exit(0 if pixels and not has_page_red else 1)
+'; then
+    echo "region screenshot included pixels outside the target: $artifact" >&2
+    exit 1
+  fi
+done
+if REGION_ERROR="$(headless --session qa screenshot --by-region @r999999 --output missing-region 2>&1)"; then
+  echo "unknown screenshot region unexpectedly succeeded" >&2
+  exit 1
+fi
+echo "$REGION_ERROR" | grep -q 'REGION_NOT_FOUND'
+headless --session qa visit http://127.0.0.1:41739/designers/dashboard | grep -q 'Designers Dashboard'
 headless --session qa visual compare viewport.png viewport.png --output visual-diff.png | grep -q '"name":"visual-diff.png"'
 test -s "$HEADLESS_ARTIFACT_DIR/visual-diff.png"
 headless --session qa performance get | grep -q '"webVitals"'

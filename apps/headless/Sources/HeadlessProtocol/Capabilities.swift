@@ -215,7 +215,7 @@ public let capabilitiesDocument: JSONValue = {
             "budgetRangeEstimatedTokens": .array([.number(256), .number(16_000)]),
             "maximumOutlineDepth": .number(8),
         ]),
-        "screenshotSeries": stringArray(["viewport", "section"]),
+        "screenshotSeries": stringArray(["viewport", "section", "region"]),
         "localCommands": stringArray([
             "config.describe", "config.get", "config.list", "config.reset", "config.set",
             "credentials.add", "credentials.list", "credentials.remove", "credentials.rename",

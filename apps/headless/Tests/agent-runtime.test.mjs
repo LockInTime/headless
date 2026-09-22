@@ -29,6 +29,11 @@ window.getComputedStyle = element => ({
   display: element.style?.display || 'block',
   visibility: element.style?.visibility || 'visible',
   opacity: element.style?.opacity || '1',
+  overflow: element.style?.overflow || 'visible',
+  overflowX: element.style?.overflowX || element.style?.overflow || 'visible',
+  overflowY: element.style?.overflowY || element.style?.overflow || 'visible',
+  clipPath: element.style?.clipPath || 'none',
+  contain: element.style?.contain || 'none',
   getPropertyValue(property) { return element.style?.getPropertyValue(property) || ''; },
 });
 const positions = new WeakMap();
@@ -529,6 +534,152 @@ for (let index = 1; index < sectionPlan.points.length; index += 1) {
     'section capture points within 96 px should be deduplicated',
   );
 }
+
+// Region series bind an outline ref and one document to exact vertical slices.
+const captureRegion = window.document.createElement('section');
+captureRegion.setAttribute('aria-label', 'Region capture fixture');
+captureRegion.textContent = 'Only these pixels belong in the region series.';
+const captureRegionContainer = window.document.createElement('div');
+window.document.body.append(captureRegionContainer);
+captureRegionContainer.append(captureRegion);
+let captureRegionTop = 400;
+let captureRegionLeft = 40;
+let captureRegionWidth = 700;
+let captureRegionHeight = window.innerHeight * 2 + 100;
+let captureRegionContainerHeight = captureRegionHeight + 100;
+captureRegionContainer.getBoundingClientRect = () => ({
+  x: captureRegionLeft,
+  y: captureRegionTop - window.scrollY,
+  top: captureRegionTop - window.scrollY,
+  left: captureRegionLeft,
+  right: captureRegionLeft + captureRegionWidth,
+  bottom: captureRegionTop - window.scrollY + captureRegionContainerHeight,
+  width: captureRegionWidth,
+  height: captureRegionContainerHeight,
+});
+captureRegion.getBoundingClientRect = () => ({
+  x: captureRegionLeft,
+  y: captureRegionTop - window.scrollY,
+  top: captureRegionTop - window.scrollY,
+  left: captureRegionLeft,
+  right: captureRegionLeft + captureRegionWidth,
+  bottom: captureRegionTop - window.scrollY + captureRegionHeight,
+  width: captureRegionWidth,
+  height: captureRegionHeight,
+});
+const captureOutline = agent.snapshot(false, false, {
+  context: 'outline', task: 'Region capture fixture', limit: 20, budget: 1200,
+});
+const captureRegionRef = captureOutline.regions.find(
+  region => region.name === 'Region capture fixture',
+)?.ref;
+assert.match(captureRegionRef ?? '', /^@r\d+$/);
+window.scrollY = 0;
+const regionPlan = agent.screenshotPlan({mode: 'region', region: captureRegionRef});
+assert.equal(regionPlan.points.length, 3);
+assert.equal(regionPlan.truncated, false);
+assert.equal(regionPlan.region.height, captureRegionHeight);
+assert.equal(regionPlan.points.at(-1).sliceTop + regionPlan.points.at(-1).sliceHeight,
+  captureRegionTop + captureRegionHeight);
+const firstRegionPoint = regionPlan.points[0];
+await agent.scrollToCapturePoint({y: firstRegionPoint.y, document: regionPlan.document});
+const firstRegionSlice = agent.regionSlice({
+  region: captureRegionRef,
+  document: regionPlan.document,
+  geometry: regionPlan.region,
+  sliceTop: firstRegionPoint.sliceTop,
+  sliceHeight: firstRegionPoint.sliceHeight,
+});
+assert.equal(firstRegionSlice.viewport.x, captureRegionLeft);
+assert.equal(firstRegionSlice.viewport.y, 0);
+assert.equal(firstRegionSlice.viewport.width, captureRegionWidth);
+assert.equal(firstRegionSlice.viewport.height, window.innerHeight);
+window.scrollY += 10;
+assert.throws(
+  () => agent.regionSlice({
+    region: captureRegionRef,
+    document: regionPlan.document,
+    geometry: regionPlan.region,
+    sliceTop: firstRegionPoint.sliceTop,
+    sliceHeight: firstRegionPoint.sliceHeight,
+    viewport: firstRegionSlice.viewport,
+  }),
+  error => error.headlessCode === 'REGION_NOT_FOUND' && /viewport changed/.test(error.message),
+);
+window.scrollY -= 10;
+assert.throws(
+  () => agent.regionSlice({
+    region: captureRegionRef,
+    document: '0'.repeat(32),
+    geometry: regionPlan.region,
+    sliceTop: firstRegionPoint.sliceTop,
+    sliceHeight: firstRegionPoint.sliceHeight,
+  }),
+  error => error.headlessCode === 'REGION_NOT_FOUND' && /document changed/.test(error.message),
+);
+captureRegionHeight += 10;
+assert.throws(
+  () => agent.regionSlice({
+    region: captureRegionRef,
+    document: regionPlan.document,
+    geometry: regionPlan.region,
+    sliceTop: firstRegionPoint.sliceTop,
+    sliceHeight: firstRegionPoint.sliceHeight,
+  }),
+  error => error.headlessCode === 'REGION_NOT_FOUND' && /geometry changed/.test(error.message),
+);
+captureRegionHeight = window.innerHeight * 100;
+const truncatedRegionPlan = agent.screenshotPlan({mode: 'region', region: captureRegionRef});
+assert.equal(truncatedRegionPlan.points.length, 80);
+assert.equal(truncatedRegionPlan.truncated, true);
+assert(truncatedRegionPlan.totalPoints > truncatedRegionPlan.points.length);
+assert.equal(
+  truncatedRegionPlan.points.at(-1).sliceTop + truncatedRegionPlan.points.at(-1).sliceHeight,
+  captureRegionTop + captureRegionHeight,
+);
+captureRegionHeight = window.innerHeight * 2 + 100;
+captureRegionWidth = 4097;
+assert.throws(
+  () => agent.screenshotPlan({mode: 'region', region: captureRegionRef}),
+  error => error.headlessCode === 'REGION_NOT_FOUND' && /invalid capture geometry/.test(error.message),
+);
+captureRegionWidth = 700;
+captureRegionContainer.style.overflow = 'hidden';
+captureRegionContainerHeight = captureRegionHeight - 1;
+assert.throws(
+  () => agent.screenshotPlan({mode: 'region', region: captureRegionRef}),
+  error => error.headlessCode === 'REGION_NOT_FOUND' && /invalid capture geometry/.test(error.message),
+);
+captureRegionContainer.style.overflow = 'visible';
+captureRegionContainerHeight = captureRegionHeight + 100;
+captureRegionLeft = -1;
+assert.throws(
+  () => agent.screenshotPlan({mode: 'region', region: captureRegionRef}),
+  error => error.headlessCode === 'REGION_NOT_FOUND' && /invalid capture geometry/.test(error.message),
+);
+captureRegionLeft = 40;
+captureRegion.style.display = 'none';
+assert.throws(
+  () => agent.screenshotPlan({mode: 'region', region: captureRegionRef}),
+  error => error.headlessCode === 'REGION_NOT_FOUND' && /no longer visible/.test(error.message),
+);
+captureRegion.style.display = '';
+assert.throws(
+  () => agent.screenshotPlan({mode: 'region', region: '@r999999'}),
+  error => error.headlessCode === 'REGION_NOT_FOUND' && /unknown/.test(error.message),
+);
+const refreshedCaptureOutline = agent.snapshot(false, false, {
+  context: 'outline', task: 'Region capture fixture', limit: 20, budget: 1200,
+});
+const refreshedCaptureRegionRef = refreshedCaptureOutline.regions.find(
+  region => region.name === 'Region capture fixture',
+)?.ref;
+assert.equal(refreshedCaptureRegionRef, captureRegionRef);
+captureRegion.remove();
+assert.throws(
+  () => agent.screenshotPlan({mode: 'region', region: refreshedCaptureRegionRef}),
+  error => error.headlessCode === 'REGION_NOT_FOUND' && /no longer visible/.test(error.message),
+);
 
 // Once result arrays are exhausted, budget pruning must fall back to chopping
 // page text instead of returning an oversized response.

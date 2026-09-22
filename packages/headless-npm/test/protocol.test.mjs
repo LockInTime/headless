@@ -85,6 +85,25 @@ test("schema-driven validation mirrors portable Swift bounds", () => {
     () => validateParameters("auth.login", { challenge: "id", account: "work", password: "secret" }),
     /unknown parameter password/,
   );
+  assert.doesNotThrow(() => validateParameters("screenshot", {
+    series: "region", region: "@r4", outputPrefix: "checkout", format: "png",
+  }));
+  assert.throws(
+    () => validateParameters("screenshot", { series: "region" }),
+    /requires exactly one region reference/,
+  );
+  assert.throws(
+    () => validateParameters("screenshot", { series: "viewport", region: "@r4" }),
+    /requires exactly one region reference/,
+  );
+  assert.throws(
+    () => validateParameters("screenshot", { series: "region", region: "@r4", clipboard: true }),
+    /does not support PDF or clipboard/,
+  );
+  assert.throws(
+    () => validateParameters("screenshot", { fullPage: true, target: "@e1" }),
+    /mutually exclusive/,
+  );
 });
 
 test("generated scopes and timeout policies drive the SDK", () => {

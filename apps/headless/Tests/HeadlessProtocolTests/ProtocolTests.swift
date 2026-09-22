@@ -318,6 +318,9 @@ private final class TestBrowserSession: BrowserEngineSession {
     var saveAlias: CredentialAlias?
     private(set) var credentialPromptCount = 0
     private(set) var savePromptCount = 0
+    private(set) var screenshotScrollCount = 0
+    var screenshotScrollFailureCall: Int?
+    var screenshotRegionFailure = false
 
     init(isolated: Bool = false) {
         hostIsolated = isolated
@@ -361,14 +364,40 @@ private final class TestBrowserSession: BrowserEngineSession {
     func hostScreenshot(
         parameters: [String: JSONValue], format: ScreenshotFormat, copyToClipboard: Bool
     ) throws -> BrowserScreenshot { BrowserScreenshot(data: Data("image".utf8)) }
+    func hostScreenshotRegionSlice(
+        reference: String, document: String, geometry: ScreenshotRegionGeometry,
+        point: ScreenshotSeriesPoint, format: ScreenshotFormat
+    ) throws -> BrowserScreenshot {
+        if screenshotRegionFailure {
+            throw HostError(code: .operationFailed, message: "region capture failed")
+        }
+        return BrowserScreenshot(data: Data("region".utf8))
+    }
     func hostRecordingFrame() throws -> Data { Data("frame".utf8) }
-    func hostScreenshotSeriesPlan(mode: String) throws -> JSONValue {
-        .object([
+    func hostScreenshotSeriesPlan(mode: String, region: String?) throws -> JSONValue {
+        var plan: [String: JSONValue] = [
+            "document": .string(String(repeating: "a", count: 32)),
             "initialY": .number(0), "totalPoints": .number(1), "truncated": .bool(false),
             "points": .array([.object(["y": .number(0), "label": .string("viewport")])]),
-        ])
+        ]
+        if mode == "region", region != nil {
+            plan["region"] = .object([
+                "x": .number(0), "y": .number(0), "width": .number(100), "height": .number(100),
+            ])
+            plan["points"] = .array([.object([
+                "y": .number(0), "label": .string("region 1"), "kind": .string("region"),
+                "sliceTop": .number(0), "sliceHeight": .number(100),
+            ])])
+        }
+        return .object(plan)
     }
-    func hostScrollToCapturePoint(y: Double) throws -> JSONValue { .object(["y": .number(y)]) }
+    func hostScrollToCapturePoint(y: Double, document: String) throws -> JSONValue {
+        screenshotScrollCount += 1
+        if screenshotScrollFailureCall == screenshotScrollCount {
+            throw HostError(code: .operationFailed, message: "scroll restoration failed")
+        }
+        return .object(["y": .number(y)])
+    }
     func hostQAReport() throws -> JSONValue { .object(["issues": .array([])]) }
     func hostQAClear() throws -> JSONValue { .object(["cleared": .bool(true)]) }
     func hostConsole(level: String, limit: Int, cursor: String?) throws -> JSONValue {
@@ -1010,6 +1039,37 @@ struct ProtocolTests {
             parameters: ["series": .string("viewport"), "outputPrefix": .string("dashboard-scroll")]
         ).validate()
         try CommandRequest(
+            id: "valid-region-screenshot-series", command: .screenshot,
+            parameters: [
+                "series": .string("region"), "region": .string("@r4"),
+                "outputPrefix": .string("checkout"),
+            ]
+        ).validate()
+        try expectThrows("region series should require a region reference") {
+            try CommandRequest(
+                id: "missing-region", command: .screenshot,
+                parameters: ["series": .string("region")]
+            ).validate()
+        }
+        try expectThrows("region references should require region series mode") {
+            try CommandRequest(
+                id: "unused-region", command: .screenshot,
+                parameters: ["series": .string("viewport"), "region": .string("@r4")]
+            ).validate()
+        }
+        try expectThrows("malformed screenshot region references should fail") {
+            try CommandRequest(
+                id: "bad-region", command: .screenshot,
+                parameters: ["series": .string("region"), "region": .string("@r../4")]
+            ).validate()
+        }
+        try expectThrows("screenshot region references should require ASCII digits") {
+            try CommandRequest(
+                id: "unicode-region", command: .screenshot,
+                parameters: ["series": .string("region"), "region": .string("@r٤")]
+            ).validate()
+        }
+        try CommandRequest(
             id: "valid-jpeg-screenshot", command: .screenshot,
             parameters: ["format": .string("jpeg"), "output": .string("dashboard.jpeg")]
         ).validate()
@@ -1396,6 +1456,20 @@ struct ProtocolTests {
         ])
         try expect(sectionSeries.request?.parameters["series"] == .string("section"), "section series should parse")
         try expect(sectionSeries.request?.parameters["outputPrefix"] == .string("dashboard-sections"), "series prefix should strip image extension")
+        let regionSeries = try CLIParser().parse([
+            "screenshot", "--by-region", "@r4", "--output", "checkout",
+        ])
+        try expect(regionSeries.request?.parameters["series"] == .string("region"), "region series should parse")
+        try expect(regionSeries.request?.parameters["region"] == .string("@r4"), "region reference should parse")
+        try expectThrows("region screenshot must reject malformed references") {
+            _ = try CLIParser().parse(["screenshot", "--by-region", "main"])
+        }
+        try expectThrows("region screenshot must reject Unicode digits") {
+            _ = try CLIParser().parse(["screenshot", "--by-region", "@r٤"])
+        }
+        try expectThrows("region screenshot must reject another series mode") {
+            _ = try CLIParser().parse(["screenshot", "--by-region", "@r4", "--by-section"])
+        }
         try expectThrows("series screenshot must reject element targets") {
             _ = try CLIParser().parse(["screenshot", "--every-viewport", "@e1"])
         }
@@ -3385,6 +3459,7 @@ struct ProtocolTests {
 
     static func screenshotSeriesHelpers() throws {
         let rawPlan = JSONValue.object([
+            "document": .string(String(repeating: "a", count: 32)),
             "initialY": .number(240),
             "truncated": .bool(true),
             "totalPoints": .number(100),
@@ -3399,9 +3474,135 @@ struct ProtocolTests {
         try expect(plan.truncated && plan.totalPoints == 100, "series plans should report truncation")
         try expectThrows("invalid initial scroll positions should fail") {
             _ = try parseScreenshotSeriesPlan(.object([
+                "document": .string(String(repeating: "a", count: 32)),
                 "initialY": .number(-1),
                 "points": .array([.object(["y": .number(0)])]),
             ]))
+        }
+        let regionPlan = try parseScreenshotSeriesPlan(.object([
+            "document": .string(String(repeating: "b", count: 32)),
+            "initialY": .number(20), "totalPoints": .number(2),
+            "truncated": .bool(false),
+            "region": .object([
+                "x": .number(10), "y": .number(100),
+                "width": .number(500), "height": .number(900),
+            ]),
+            "points": .array([
+                .object([
+                    "y": .number(100), "kind": .string("region"),
+                    "sliceTop": .number(100), "sliceHeight": .number(600),
+                ]),
+                .object([
+                    "y": .number(700), "kind": .string("region"),
+                    "sliceTop": .number(700), "sliceHeight": .number(300),
+                ]),
+            ]),
+        ]), regionReference: "@r4")
+        try expect(regionPlan.region?.width == 500, "region geometry should remain bounded")
+        let fractionalSliceHeight = 10.0
+        let fractionalRegionHeight = fractionalSliceHeight * 80 + 0.25
+        var fractionalPoints = (0..<79).map { index in
+            JSONValue.object([
+                "y": .number(Double(index) * fractionalSliceHeight),
+                "sliceTop": .number(Double(index) * fractionalSliceHeight),
+                "sliceHeight": .number(fractionalSliceHeight),
+            ])
+        }
+        fractionalPoints.append(.object([
+            "y": .number(fractionalRegionHeight - fractionalSliceHeight),
+            "sliceTop": .number(fractionalRegionHeight - fractionalSliceHeight),
+            "sliceHeight": .number(fractionalSliceHeight),
+        ]))
+        let fractionalPlan = try parseScreenshotSeriesPlan(.object([
+            "document": .string(String(repeating: "c", count: 32)),
+            "totalPoints": .number(81), "truncated": .bool(true),
+            "region": .object([
+                "x": .number(0), "y": .number(0),
+                "width": .number(500), "height": .number(fractionalRegionHeight),
+            ]),
+            "points": .array(fractionalPoints),
+        ]), regionReference: "@r5")
+        try expect(
+            fractionalPlan.truncated && fractionalPlan.totalPoints == 81,
+            "fractional omitted spans should remain valid truncated plans"
+        )
+        let regionSummary = screenshotSeriesSummary(
+            mode: "region", points: regionPlan.points, artifacts: []
+        )
+        guard case .object(let regionSummaryObject) = regionSummary,
+              case .array(let positions)? = regionSummaryObject["positions"],
+              case .object(let firstPosition)? = positions.first else {
+            throw TestFailure(description: "region summary should contain bounded positions")
+        }
+        try expect(firstPosition["y"] == nil, "region summaries must not expose page coordinates")
+        try expect(firstPosition["label"] == nil, "region summaries must not expose page labels")
+        try expectThrows("region plans with gaps should fail") {
+            _ = try parseScreenshotSeriesPlan(.object([
+                "document": .string(String(repeating: "b", count: 32)),
+                "totalPoints": .number(2), "truncated": .bool(false),
+                "region": .object([
+                    "x": .number(10), "y": .number(100),
+                    "width": .number(500), "height": .number(900),
+                ]),
+                "points": .array([
+                    .object([
+                        "y": .number(100), "sliceTop": .number(100),
+                        "sliceHeight": .number(600),
+                    ]),
+                    .object([
+                        "y": .number(750), "sliceTop": .number(750),
+                        "sliceHeight": .number(250),
+                    ]),
+                ]),
+            ]), regionReference: "@r4")
+        }
+        try expectThrows("region plans with overlaps should fail") {
+            _ = try parseScreenshotSeriesPlan(.object([
+                "document": .string(String(repeating: "b", count: 32)),
+                "totalPoints": .number(2), "truncated": .bool(false),
+                "region": .object([
+                    "x": .number(10), "y": .number(100),
+                    "width": .number(500), "height": .number(900),
+                ]),
+                "points": .array([
+                    .object([
+                        "y": .number(100), "sliceTop": .number(100),
+                        "sliceHeight": .number(600),
+                    ]),
+                    .object([
+                        "y": .number(650), "sliceTop": .number(650),
+                        "sliceHeight": .number(350),
+                    ]),
+                ]),
+            ]), regionReference: "@r4")
+        }
+        try expectThrows("region plans wider than the portable capture bound should fail") {
+            _ = try parseScreenshotSeriesPlan(.object([
+                "document": .string(String(repeating: "b", count: 32)),
+                "totalPoints": .number(1), "truncated": .bool(false),
+                "region": .object([
+                    "x": .number(10), "y": .number(100),
+                    "width": .number(4097), "height": .number(600),
+                ]),
+                "points": .array([.object([
+                    "y": .number(100), "sliceTop": .number(100),
+                    "sliceHeight": .number(600),
+                ])]),
+            ]), regionReference: "@r4")
+        }
+        try expectThrows("region slices outside frozen geometry should fail") {
+            _ = try parseScreenshotSeriesPlan(.object([
+                "document": .string(String(repeating: "b", count: 32)),
+                "totalPoints": .number(1), "truncated": .bool(false),
+                "region": .object([
+                    "x": .number(10), "y": .number(100),
+                    "width": .number(500), "height": .number(900),
+                ]),
+                "points": .array([.object([
+                    "y": .number(100), "sliceTop": .number(900),
+                    "sliceHeight": .number(200),
+                ])]),
+            ]), regionReference: "@r4")
         }
 
         let root = "/tmp/headless-series-test-\(UUID().uuidString)"
@@ -3427,6 +3628,70 @@ struct ProtocolTests {
         try expect(
             !FileManager.default.fileExists(atPath: root + "/" + firstName),
             "partial series reservations should be removed after a later collision"
+        )
+        let atomicRoot = root + "/atomic"
+        let successSession = TestBrowserSession()
+        let successCore = HostCore(
+            engine: TestBrowserEngine(),
+            artifacts: try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": atomicRoot]),
+            defaultSession: successSession,
+            shutdownHandler: {}
+        )
+        let successfulCapture = successCore.handle(CommandRequest(
+            command: .screenshot,
+            parameters: [
+                "series": .string("region"), "region": .string("@r4"),
+                "outputPrefix": .string("capture-success"),
+            ]
+        ))
+        successCore.stop()
+        try expect(successfulCapture.ok, "valid region capture should succeed")
+        try expect(successSession.screenshotScrollCount == 2, "successful capture must restore scroll")
+
+        let restorationSession = TestBrowserSession()
+        restorationSession.screenshotScrollFailureCall = 2
+        let restorationCore = HostCore(
+            engine: TestBrowserEngine(),
+            artifacts: try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": atomicRoot]),
+            defaultSession: restorationSession,
+            shutdownHandler: {}
+        )
+        let restorationFailure = restorationCore.handle(CommandRequest(
+            command: .screenshot,
+            parameters: [
+                "series": .string("viewport"), "outputPrefix": .string("restore-failure"),
+            ]
+        ))
+        restorationCore.stop()
+        try expect(!restorationFailure.ok, "scroll restoration failure must fail the series")
+        let restorationArtifacts = try FileManager.default.contentsOfDirectory(atPath: atomicRoot)
+        try expect(
+            !restorationArtifacts.contains(where: { $0.hasPrefix("restore-failure") }),
+            "scroll restoration failure must remove completed artifacts"
+        )
+
+        let captureSession = TestBrowserSession()
+        captureSession.screenshotRegionFailure = true
+        let captureCore = HostCore(
+            engine: TestBrowserEngine(),
+            artifacts: try ArtifactStore(environment: ["HEADLESS_ARTIFACT_DIR": atomicRoot]),
+            defaultSession: captureSession,
+            shutdownHandler: {}
+        )
+        let captureFailure = captureCore.handle(CommandRequest(
+            command: .screenshot,
+            parameters: [
+                "series": .string("region"), "region": .string("@r4"),
+                "outputPrefix": .string("capture-failure"),
+            ]
+        ))
+        captureCore.stop()
+        try expect(!captureFailure.ok, "region capture failure must fail the series")
+        try expect(captureSession.screenshotScrollCount == 2, "failed capture must still restore scroll")
+        let captureArtifacts = try FileManager.default.contentsOfDirectory(atPath: atomicRoot)
+        try expect(
+            !captureArtifacts.contains(where: { $0.hasPrefix("capture-failure") }),
+            "region capture failure must remove every reservation"
         )
         try expect(RecordingFormat.webm.videoCodec == "vp9", "recording metadata should report the codec, not encoder")
         try expect(

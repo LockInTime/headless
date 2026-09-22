@@ -208,8 +208,10 @@ extension BrowserWindowController {
         format: ScreenshotFormat,
         copyToClipboard: Bool
     ) throws -> ScreenshotArtifactData {
-        let image = try agentScreenshotImage(parameters: parameters)
-        guard let data = encodeScreenshot(image, format: format) else {
+        let capture = try agentScreenshotImage(parameters: parameters)
+        guard let data = encodeScreenshot(
+            capture.image, format: format, pixelSize: capture.regionPixelSize
+        ) else {
             throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
         }
         if copyToClipboard {
@@ -218,16 +220,53 @@ extension BrowserWindowController {
             }
             onMain {
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.writeObjects([image])
+                NSPasteboard.general.writeObjects([capture.image])
             }
         }
         return ScreenshotArtifactData(data: data, clipboardCopied: copyToClipboard)
     }
 
-    private func agentScreenshotImage(parameters: [String: JSONValue]) throws -> NSImage {
+    private func agentScreenshotImage(
+        parameters: [String: JSONValue]
+    ) throws -> (image: NSImage, regionPixelSize: CGSize?) {
         var requestedRect: CGRect?
+        var regionSliceArguments: [String: Any]?
         let hasTarget = parameters["target"] != nil || parameters["role"] != nil || parameters["name"] != nil
-        if hasTarget {
+        let hasRegionSlice = ["_region", "_document", "_geometry", "_sliceTop", "_sliceHeight"]
+            .contains { parameters[$0] != nil }
+        if hasRegionSlice {
+            guard let reference = parameters["_region"]?.stringValue,
+                  let document = parameters["_document"]?.stringValue,
+                  case .object(let geometry)? = parameters["_geometry"],
+                  let x = geometry["x"]?.numberValue,
+                  let y = geometry["y"]?.numberValue,
+                  let width = geometry["width"]?.numberValue,
+                  let height = geometry["height"]?.numberValue,
+                  let sliceTop = parameters["_sliceTop"]?.numberValue,
+                  let sliceHeight = parameters["_sliceHeight"]?.numberValue else {
+                throw ScreenshotSeriesError.invalidPlan
+            }
+            var args: [String: Any] = [
+                "region": reference, "document": document,
+                "geometry": ["x": x, "y": y, "width": width, "height": height],
+                "sliceTop": sliceTop, "sliceHeight": sliceHeight,
+            ]
+            let value = try callAgent(
+                "return globalThis.__headlessAgent.regionSlice(args);",
+                arguments: ["args": args]
+            )
+            guard case .object(let outer) = value, case .object(let rect)? = outer["viewport"] else {
+                throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
+            }
+            requestedRect = try screenshotRect(rect)
+            if let requestedRect {
+                args["viewport"] = [
+                    "x": requestedRect.origin.x, "y": requestedRect.origin.y,
+                    "width": requestedRect.width, "height": requestedRect.height,
+                ]
+            }
+            regionSliceArguments = args
+        } else if hasTarget {
             let args = try browserTargetArguments(parameters)
             let value = try callAgent(
                 "return globalThis.__headlessAgent.rectangle(args);", arguments: ["args": args]
@@ -279,15 +318,26 @@ extension BrowserWindowController {
         guard let image = try result?.get() else {
             throw HostError(code: .operationFailed, message: "Browser returned an invalid agent result")
         }
-        return image
+        if let regionSliceArguments {
+            _ = try callAgent(
+                "return globalThis.__headlessAgent.regionSlice(args);",
+                arguments: ["args": regionSliceArguments]
+            )
+        }
+        return (image, regionSliceArguments == nil ? nil : requestedRect?.size)
     }
 
-    private func encodeScreenshot(_ image: NSImage, format: ScreenshotFormat) -> Data? {
+    private func encodeScreenshot(
+        _ image: NSImage, format: ScreenshotFormat, pixelSize: CGSize? = nil
+    ) -> Data? {
         switch format {
         case .png:
-            return bitmapData(for: image, type: .png, properties: [:])
+            return bitmapData(for: image, pixelSize: pixelSize, type: .png, properties: [:])
         case .jpeg:
-            return bitmapData(for: image, type: .jpeg, properties: [.compressionFactor: 0.88])
+            return bitmapData(
+                for: image, pixelSize: pixelSize,
+                type: .jpeg, properties: [.compressionFactor: 0.88]
+            )
         case .pdf:
             return pdfData(for: image)
         }
@@ -295,9 +345,45 @@ extension BrowserWindowController {
 
     private func bitmapData(
         for image: NSImage,
+        pixelSize: CGSize?,
         type: NSBitmapImageRep.FileType,
         properties: [NSBitmapImageRep.PropertyKey: Any]
     ) -> Data? {
+        if let pixelSize {
+            let width = Int(ceil(pixelSize.width))
+            let height = Int(ceil(pixelSize.height))
+            guard width > 0, height > 0,
+                  width <= Int(ProtocolBounds.screenshotDimension),
+                  height <= Int(ProtocolBounds.screenshotDimension),
+                  Double(width * height) <= ProtocolBounds.screenshotPixels,
+                  let bitmap = NSBitmapImageRep(
+                      bitmapDataPlanes: nil,
+                      pixelsWide: width,
+                      pixelsHigh: height,
+                      bitsPerSample: 8,
+                      samplesPerPixel: 4,
+                      hasAlpha: true,
+                      isPlanar: false,
+                      colorSpaceName: .deviceRGB,
+                      bytesPerRow: 0,
+                      bitsPerPixel: 0
+                  ),
+                  let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
+                return nil
+            }
+            bitmap.size = NSSize(width: width, height: height)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            image.draw(
+                in: NSRect(x: 0, y: 0, width: width, height: height),
+                from: NSRect(origin: .zero, size: image.size),
+                operation: .copy,
+                fraction: 1
+            )
+            context.flushGraphics()
+            NSGraphicsContext.restoreGraphicsState()
+            return bitmap.representation(using: type, properties: properties)
+        }
         guard let representation = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: representation) else { return nil }
         return bitmap.representation(using: type, properties: properties)
@@ -319,17 +405,19 @@ extension BrowserWindowController {
         return data as Data
     }
 
-    func agentScreenshotSeriesPlan(mode: String) throws -> JSONValue {
-        try callAgent(
+    func agentScreenshotSeriesPlan(mode: String, region: String?) throws -> JSONValue {
+        var args: [String: Any] = ["mode": mode]
+        if let region { args["region"] = region }
+        return try callAgent(
             "return globalThis.__headlessAgent.screenshotPlan(args);",
-            arguments: ["args": ["mode": mode]]
+            arguments: ["args": args]
         )
     }
 
-    func agentScrollToCapturePoint(y: Double) throws -> JSONValue {
+    func agentScrollToCapturePoint(y: Double, document: String) throws -> JSONValue {
         try callAgent(
             "return await globalThis.__headlessAgent.scrollToCapturePoint(args);",
-            arguments: ["args": ["y": y]]
+            arguments: ["args": ["y": y, "document": document]]
         )
     }
 
@@ -595,12 +683,25 @@ extension BrowserWindowController: BrowserEngineSession {
             data: screenshot.data, clipboardCopied: screenshot.clipboardCopied
         )
     }
-    func hostRecordingFrame() throws -> Data { try agentScreenshot(parameters: [:]) }
-    func hostScreenshotSeriesPlan(mode: String) throws -> JSONValue {
-        try agentScreenshotSeriesPlan(mode: mode)
+    func hostScreenshotRegionSlice(
+        reference: String, document: String, geometry: ScreenshotRegionGeometry,
+        point: ScreenshotSeriesPoint, format: ScreenshotFormat
+    ) throws -> BrowserScreenshot {
+        guard let sliceTop = point.sliceTop, let sliceHeight = point.sliceHeight else {
+            throw ScreenshotSeriesError.invalidPlan
+        }
+        return BrowserScreenshot(data: try agentScreenshotData(parameters: [
+            "_region": .string(reference), "_document": .string(document),
+            "_geometry": .object(geometry.parameters),
+            "_sliceTop": .number(sliceTop), "_sliceHeight": .number(sliceHeight),
+        ], format: format, copyToClipboard: false).data)
     }
-    func hostScrollToCapturePoint(y: Double) throws -> JSONValue {
-        try agentScrollToCapturePoint(y: y)
+    func hostRecordingFrame() throws -> Data { try agentScreenshot(parameters: [:]) }
+    func hostScreenshotSeriesPlan(mode: String, region: String?) throws -> JSONValue {
+        try agentScreenshotSeriesPlan(mode: mode, region: region)
+    }
+    func hostScrollToCapturePoint(y: Double, document: String) throws -> JSONValue {
+        try agentScrollToCapturePoint(y: y, document: document)
     }
     func hostQAReport() throws -> JSONValue { agentQAReport() }
     func hostQAClear() throws -> JSONValue { agentQAClear() }

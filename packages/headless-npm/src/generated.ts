@@ -7,8 +7,8 @@ export type Untrusted<T> = Readonly<{ readonly untrustedContent: true; readonly 
 export const PROTOCOL_VERSION = "0.5" as const;
 export const PROTOCOL_SCHEMA_VERSION = 1 as const;
 export const MAXIMUM_MESSAGE_BYTES = 1048576 as const;
-export const PROTOCOL_SCHEMA_SHA256 = "f82b2ea0d7e8b5d2db0a841c5d22976aec6f774303cd81791921977899679f1e" as const;
-export const PROTOCOL_FIXTURES_SHA256 = "0b51ffaa2d3e3aaf0c32adcfeb02c180dcbe44face0d49e1c332b69f403ae062" as const;
+export const PROTOCOL_SCHEMA_SHA256 = "db70dc1b07b034624e85ab8f07ac420d5af5b948edf999cd11e5445ed07d7a17" as const;
+export const PROTOCOL_FIXTURES_SHA256 = "76bbee05cacd7ed16452176ad2973bf4604f4b864f8de1277664880c079a5435" as const;
 export const RESPONSE_ADDITIONAL_PROPERTIES = true as const;
 export const MAXIMUM_COMMAND_TIMEOUT_MS = 125000 as const;
 export const LOCAL_LIFECYCLE = {
@@ -223,7 +223,8 @@ export interface ScreenshotParameters {
   readonly "name"?: string;
   readonly "fullPage"?: boolean;
   readonly "output"?: string;
-  readonly "series"?: "viewport" | "section";
+  readonly "series"?: "viewport" | "section" | "region";
+  readonly "region"?: string;
   readonly "outputPrefix"?: string;
   readonly "format"?: string;
   readonly "clipboard"?: boolean;
@@ -479,7 +480,12 @@ export interface Screenshot {
   readonly "bytes"?: number;
   readonly "createdAt"?: number;
   readonly "artifacts"?: readonly JsonValue[];
+  readonly "series"?: "viewport" | "section" | "region";
+  readonly "count"?: number;
+  readonly "positions"?: readonly JsonValue[];
   readonly "truncated"?: boolean;
+  readonly "totalPoints"?: number;
+  readonly "untrustedContent"?: boolean;
   readonly [key: string]: JsonValue;
 }
 
@@ -1998,8 +2004,16 @@ export const COMMAND_METADATA = {
         "type": "string",
         "values": [
           "viewport",
-          "section"
+          "section",
+          "region"
         ]
+      },
+      {
+        "maximumBytes": 16,
+        "name": "region",
+        "required": false,
+        "sensitive": false,
+        "type": "string"
       },
       {
         "maximumBytes": 80,
@@ -2065,7 +2079,37 @@ export const COMMAND_METADATA = {
             "type": "array"
           },
           {
+            "name": "series",
+            "required": false,
+            "type": "string",
+            "values": [
+              "viewport",
+              "section",
+              "region"
+            ]
+          },
+          {
+            "name": "count",
+            "required": false,
+            "type": "number"
+          },
+          {
+            "name": "positions",
+            "required": false,
+            "type": "array"
+          },
+          {
             "name": "truncated",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "totalPoints",
+            "required": false,
+            "type": "number"
+          },
+          {
+            "name": "untrustedContent",
             "required": false,
             "type": "boolean"
           }

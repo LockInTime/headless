@@ -95,6 +95,18 @@ def test_schema_driven_validation_matches_swift_bounds() -> None:
             "auth.login",
             {"challenge": "id", "account": "work", "password": "secret"},
         )
+    create_request(
+        "screenshot",
+        {"series": "region", "region": "@r4", "outputPrefix": "checkout", "format": "png"},
+    )
+    with pytest.raises(ValidationError, match="requires exactly one region reference"):
+        create_request("screenshot", {"series": "region"})
+    with pytest.raises(ValidationError, match="requires exactly one region reference"):
+        create_request("screenshot", {"series": "viewport", "region": "@r4"})
+    with pytest.raises(ValidationError, match="does not support PDF or clipboard"):
+        create_request("screenshot", {"series": "region", "region": "@r4", "clipboard": True})
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        create_request("screenshot", {"fullPage": True, "target": "@e1"})
     with pytest.raises(ValidationError, match="finite number"):
         create_request("wait", {"timeoutMs": 10**1000})
     with pytest.raises(ValidationError, match="request id is invalid"):

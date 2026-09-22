@@ -153,6 +153,45 @@ def validate_parameters(command: CommandName, parameters: Mapping[str, object]) 
                 raise ValidationError(f"{command} requires {name}")
         else:
             _validate_parameter(command, definition, parameters[name])
+    if command == "screenshot":
+        target_present = "target" in parameters
+        semantic_target_present = "role" in parameters or "name" in parameters
+        if target_present and semantic_target_present:
+            raise ValidationError("screenshot element targets are mutually exclusive")
+        if target_present and re.fullmatch(r"@e\d+", cast(str, parameters["target"])) is None:
+            raise ValidationError("screenshot.target must be an element reference")
+        if parameters.get("role") == "" or parameters.get("name") == "":
+            raise ValidationError("screenshot semantic target values must not be empty")
+        has_target = target_present or semantic_target_present
+        series = parameters.get("series")
+        region_present = "region" in parameters
+        if region_present and re.fullmatch(r"@r\d+", cast(str, parameters["region"])) is None:
+            raise ValidationError("screenshot.region must be a region reference")
+        if (series == "region") != region_present:
+            raise ValidationError("region screenshot series requires exactly one region reference")
+        if series is not None and (
+            parameters.get("fullPage") is True or has_target or "output" in parameters
+        ):
+            raise ValidationError(
+                "screenshot series conflicts with full-page, output, or element target"
+            )
+        if parameters.get("fullPage") is True and has_target:
+            raise ValidationError("full-page and element screenshots are mutually exclusive")
+        if "outputPrefix" in parameters and series is None:
+            raise ValidationError("screenshot.outputPrefix requires a screenshot series")
+        explicit_format = cast(str, parameters.get("format", "")).lower()
+        output = cast(str, parameters.get("output", "")).lower()
+        pdf = explicit_format == "pdf" or (not explicit_format and output.endswith(".pdf"))
+        if series is not None and (pdf or parameters.get("clipboard") is True):
+            raise ValidationError("screenshot series does not support PDF or clipboard output")
+        if pdf and (
+            parameters.get("fullPage") is not True
+            or has_target
+            or parameters.get("clipboard") is True
+        ):
+            raise ValidationError(
+                "PDF screenshots require full-page mode without a target or clipboard"
+            )
     if command == "session.create":
         validate_session(cast(str, parameters["name"]))
 
