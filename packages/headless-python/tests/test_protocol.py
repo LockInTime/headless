@@ -107,6 +107,14 @@ def test_schema_driven_validation_matches_swift_bounds() -> None:
         create_request("screenshot", {"series": "region", "region": "@r4", "clipboard": True})
     with pytest.raises(ValidationError, match="mutually exclusive"):
         create_request("screenshot", {"fullPage": True, "target": "@e1"})
+    with pytest.raises(ValidationError, match="exactly one reference or semantic target"):
+        create_request("hover", {})
+    with pytest.raises(ValidationError, match="exactly one reference or semantic target"):
+        create_request("hover", {"target": "@e1", "role": "button"})
+    with pytest.raises(ValidationError, match="element reference"):
+        create_request("hover", {"target": "@r1"})
+    create_request("hover", {"target": "@e1"})
+    create_request("hover", {"role": "button", "name": "Continue"})
     with pytest.raises(ValidationError, match="finite number"):
         create_request("wait", {"timeoutMs": 10**1000})
     with pytest.raises(ValidationError, match="request id is invalid"):
@@ -130,7 +138,7 @@ def test_generated_timeout_policies_are_used() -> None:
 
 def test_request_has_exactly_one_terminal_newline() -> None:
     frame = encode_request(
-        create_request("fill", {"target": "@1", "value": "line one\nline two"}, request_id="one")
+        create_request("fill", {"target": "@e1", "value": "line one\nline two"}, request_id="one")
     )
     assert frame.endswith(b"\n")
     assert b"\n" not in frame[:-1]

@@ -1168,6 +1168,42 @@ a narrower region instead of yielding partial or misleading evidence.
 
 ---
 
+## 37. Hover is semantic, bounded, and dispatch-accurate
+
+**Decision:** protocol `0.5` gains one compatible portable `hover` command with
+the same fresh element-ref or exact role/name target grammar as `click`. The
+isolated runtime scrolls the target to the viewport and rejects missing, stale, hidden,
+detached, or center-point-obscured targets before dispatch. The public response
+contains only the bounded target ref, role, and name. It never returns the
+internal hit-test coordinates.
+
+Chromium performs one trusted `Input.dispatchMouseEvent` mouse move after the
+isolated-world target check. WebKit tracks the previous synthetic target and
+emits fixed pointer/mouse leave, enter, and move transitions. The capability
+matrix reports `hoverDispatch` as `trusted-cdp` or `synthetic-dom`. The command
+never focuses or clicks directly, accepts selectors or coordinates, or exposes
+caller JavaScript. Page-controlled hover handlers can still navigate or cause
+other page side effects, subject to the existing navigation and download
+policies. Hover is not a replayable flow step. Inspection does not advertise
+hover because markup cannot prove that hovering has meaningful behavior.
+
+Generic drag remains deferred to
+[#208](https://github.com/LockInTime/headless/issues/208). That contract must
+separate pointer and HTML drag behavior, deny caller payloads and file paths,
+bound timing and auto-scroll, and define cross-frame behavior before code is
+accepted. Arbitrary evaluation and response-body inspection remain denied.
+
+**Status:** implemented for
+[#35](https://github.com/LockInTime/headless/issues/35).
+
+**Consequences:** agents can reveal tooltips and hover-only controls without
+falling back to coordinates. CSS `:hover` fidelity is guaranteed only by the
+trusted Chromium path; WebKit callers can negotiate its synthetic limitation.
+The additive command retains protocol `0.5`; schema format `1` remains
+unchanged.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -1201,5 +1237,6 @@ a narrower region instead of yielding partial or misleading evidence.
 | 34  | CDP-backed bounded network-idle wait                        | Implemented                                               | 2026-09-20 |
 | 35  | Fixed native single-select operation                        | Implemented                                               | 2026-09-20 |
 | 36  | Bounded exact-crop region screenshot series                 | Implemented                                               | 2026-09-22 |
+| 37  | Semantic bounded hover with declared dispatch fidelity      | Implemented                                               | 2026-09-22 |
 
 New decisions append here with the same format.

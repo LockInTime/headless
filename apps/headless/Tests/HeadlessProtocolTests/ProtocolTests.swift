@@ -338,6 +338,11 @@ private final class TestBrowserSession: BrowserEngineSession {
         .object(["engineResult": .bool(true), "parameters": .object(parameters)])
     }
     func hostClick(parameters: [String: JSONValue]) throws -> JSONValue { .object(["clicked": .bool(true)]) }
+    private(set) var lastHoverParameters: [String: JSONValue]?
+    func hostHover(parameters: [String: JSONValue]) throws -> JSONValue {
+        lastHoverParameters = parameters
+        return .object(["hovered": .bool(true), "parameters": .object(parameters)])
+    }
     func hostFill(parameters: [String: JSONValue]) throws -> JSONValue { .object(["filled": .bool(true)]) }
     private(set) var lastSelectParameters: [String: JSONValue]?
     func hostSelect(parameters: [String: JSONValue]) throws -> JSONValue {
@@ -995,6 +1000,19 @@ struct ProtocolTests {
             ).validate()
         }
         try CommandRequest(
+            id: "valid-hover", command: .hover,
+            parameters: ["role": .string("button"), "name": .string("Details")]
+        ).validate()
+        try expectThrows("hover should require one semantic target") {
+            try CommandRequest(id: "missing-hover-target", command: .hover).validate()
+        }
+        try expectThrows("hover should reject region references") {
+            try CommandRequest(
+                id: "hover-region", command: .hover,
+                parameters: ["target": .string("@r1")]
+            ).validate()
+        }
+        try CommandRequest(
             id: "valid-select", command: .select,
             parameters: ["target": .string("@e1"), "label": .string("Canada")]
         ).validate()
@@ -1236,6 +1254,29 @@ struct ProtocolTests {
             invocation.request?.parameters == ["role": .string("button"), "name": .string("Continue")],
             "semantic target should parse"
         )
+    }
+
+    static func cliSemanticHover() throws {
+        let semantic = try CLIParser().parse([
+            "hover", "--role", "button", "--name", "Continue",
+        ])
+        try expect(semantic.request?.command == .hover, "hover command should parse")
+        try expect(
+            semantic.request?.parameters == [
+                "role": .string("button"), "name": .string("Continue"),
+            ],
+            "semantic hover target should parse"
+        )
+        let reference = try CLIParser().parse(["hover", "@e4"])
+        try expect(
+            reference.request?.parameters == ["target": .string("@e4")],
+            "ref hover target should parse"
+        )
+        try expectThrows("hover should reject conflicting target forms") {
+            _ = try CLIParser().parse([
+                "hover", "@e4", "--role", "button", "--name", "Continue",
+            ])
+        }
     }
 
     static func cliSemanticSelect() throws {
@@ -2682,6 +2723,10 @@ struct ProtocolTests {
             parameters: ["target": .string("@e1"), "value": .string(secret)]
         )
         try expect(fill == nil, "fill values must never become replayable flow steps")
+        try expect(
+            flowStepIfSafe(command: .hover, parameters: safeParameters) == nil,
+            "hover must not become a replayable flow step"
+        )
         let select = flowStepIfSafe(
             command: .select,
             parameters: ["target": .string("@e1"), "value": .string(secret)]
@@ -3040,6 +3085,14 @@ struct ProtocolTests {
         try expect(
             chromiumFeatures["inputDispatch"] == .string("trusted-cdp"),
             "Chromium should declare trusted CDP input"
+        )
+        try expect(
+            webkitFeatures["hoverDispatch"] == .string("synthetic-dom"),
+            "WebKit should declare synthetic hover dispatch"
+        )
+        try expect(
+            chromiumFeatures["hoverDispatch"] == .string("trusted-cdp"),
+            "Chromium should declare trusted CDP hover dispatch"
         )
         try expect(
             webkitFeatures["selectDispatch"] == .string("synthetic-dom")
@@ -5066,6 +5119,18 @@ struct ProtocolTests {
             "agent control should be enabled at creation and before command execution"
         )
 
+        let hoverParameters: [String: JSONValue] = [
+            "role": .string("button"), "name": .string("Details"),
+        ]
+        let hovered = core.handle(CommandRequest(
+            command: .hover, session: "secondary", parameters: hoverParameters
+        ))
+        try expect(hovered.ok, "shared host hover dispatch should succeed")
+        try expect(
+            engine.createdSessions[1].lastHoverParameters == hoverParameters,
+            "HostCore should pass validated hover parameters to the engine"
+        )
+
         let selectParameters: [String: JSONValue] = [
             "role": .string("combobox"), "name": .string("Country"),
             "label": .string("Canada"),
@@ -5281,6 +5346,7 @@ struct ProtocolTests {
             ("CLI visit", cliVisit),
             ("CLI fill literal value", cliFillPreservesLiteralValue),
             ("CLI semantic click", cliSemanticClick),
+            ("CLI semantic hover", cliSemanticHover),
             ("CLI semantic select", cliSemanticSelect),
             ("CLI inspect context and task", cliInspectContextAndTask),
             ("CLI conflicting target", cliRejectsConflictingClickTarget),

@@ -180,6 +180,7 @@ assert.equal(agent.click({target: fresh.elements[0].ref}).clicked, fresh.element
 const controls = window.document.createElement('section');
 controls.innerHTML = `
   <button type="button" aria-label="Runtime action">Run</button>
+  <button type="button" aria-label="Second runtime action">Run second</button>
   <input aria-label="Runtime input">
   <label for="runtime-country">Country</label>
   <select id="runtime-country">
@@ -203,6 +204,7 @@ controls.innerHTML = `
 `;
 window.document.body.prepend(controls);
 const button = controls.querySelector('button');
+const secondButton = controls.querySelector('[aria-label="Second runtime action"]');
 const input = controls.querySelector('input');
 const country = controls.querySelector('#runtime-country');
 const duplicateCountry = controls.querySelector('[aria-label="Duplicate country"]');
@@ -211,13 +213,23 @@ const disabledOption = controls.querySelector('[aria-label="Disabled option"]');
 const disabledGroup = controls.querySelector('[aria-label="Disabled group"]');
 const manyCountries = controls.querySelector('[aria-label="Many countries"]');
 button.getBoundingClientRect = () => ({x: 20, y: 20, top: 20, left: 20, right: 120, bottom: 60, width: 100, height: 40});
+secondButton.getBoundingClientRect = () => ({x: 140, y: 20, top: 20, left: 140, right: 260, bottom: 60, width: 120, height: 40});
 input.getBoundingClientRect = () => ({x: 20, y: 80, top: 80, left: 20, right: 220, bottom: 120, width: 200, height: 40});
 let clicks = 0;
 let inputs = 0;
 let changes = 0;
+const hoverEvents = [];
+const secondHoverEvents = [];
 const selectionEvents = [];
 const pressed = [];
 button.addEventListener('click', () => { clicks += 1; });
+for (const type of [
+  'pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove',
+  'pointerout', 'pointerleave', 'mouseout', 'mouseleave',
+]) {
+  button.addEventListener(type, event => hoverEvents.push(`${type}:${event.isTrusted}`));
+  secondButton.addEventListener(type, event => secondHoverEvents.push(`${type}:${event.isTrusted}`));
+}
 input.addEventListener('input', () => { inputs += 1; });
 input.addEventListener('change', () => { changes += 1; });
 country.addEventListener('input', event => selectionEvents.push(`input:${event.isTrusted}`));
@@ -238,6 +250,46 @@ assert.throws(
   () => agent.inputTarget({role: 'button', name: 'Runtime action'}, 'click'),
   /ELEMENT_OBSCURED/,
 );
+
+input.focus();
+window.document.elementFromPoint = () => button;
+const trustedHoverTarget = agent.inputTarget({role: 'button', name: 'Runtime action'}, 'hover');
+assert.equal(trustedHoverTarget.role, 'button');
+assert.equal(window.document.activeElement, input, 'trusted hover resolution must not move focus');
+const hovered = agent.hover({role: 'button', name: 'Runtime action'});
+assert.match(hovered.hovered, /^@e\d+$/);
+assert.equal(hovered.x, undefined, 'hover responses must not expose internal coordinates');
+assert.equal(hovered.y, undefined, 'hover responses must not expose internal coordinates');
+assert.equal(window.document.activeElement, input, 'synthetic hover must not move focus');
+assert.deepEqual(hoverEvents, [
+  'pointerover:false', 'pointerenter:false', 'mouseover:false',
+  'mouseenter:false', 'pointermove:false', 'mousemove:false',
+]);
+agent.hover({role: 'button', name: 'Runtime action'});
+assert.deepEqual(hoverEvents.slice(-2), ['pointermove:false', 'mousemove:false']);
+window.document.elementFromPoint = () => secondButton;
+agent.hover({role: 'button', name: 'Second runtime action'});
+assert.deepEqual(hoverEvents.slice(-6), [
+  'pointermove:false', 'mousemove:false', 'pointerout:false',
+  'pointerleave:false', 'mouseout:false', 'mouseleave:false',
+]);
+assert.deepEqual(secondHoverEvents, [
+  'pointerover:false', 'pointerenter:false', 'mouseover:false',
+  'mouseenter:false', 'pointermove:false', 'mousemove:false',
+]);
+const hiddenHoverRef = agent.snapshot(false, false, {context: 'actions', limit: 20})
+  .elements.find(element => element.name === 'Second runtime action').ref;
+secondButton.style.opacity = '0';
+assert.throws(
+  () => agent.hover({target: hiddenHoverRef}),
+  error => error.headlessCode === 'ELEMENT_NOT_FOUND' && error.message === 'ELEMENT_NOT_VISIBLE',
+);
+assert.throws(
+  () => agent.inputTarget({target: hiddenHoverRef}, 'hover'),
+  error => error.headlessCode === 'ELEMENT_NOT_FOUND' && error.message === 'ELEMENT_NOT_VISIBLE',
+);
+secondButton.style.opacity = '1';
+window.document.elementFromPoint = () => button;
 
 const clicked = agent.click({role: 'button', name: 'Runtime action'});
 assert.match(clicked.clicked, /^@e\d+$/);

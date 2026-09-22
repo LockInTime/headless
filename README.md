@@ -79,6 +79,7 @@ headless --session qa inspect --context outline --limit 20
 headless --session qa inspect --context actions --task "click Continue"
 headless --session qa record start --fps 10
 headless --session qa tour --full-page
+headless --session qa hover --role button --name Continue
 headless --session qa click --role button --name Continue
 headless --session qa wait --url /next --settled
 headless --session qa record stop --output dashboard-flow.mp4
@@ -128,7 +129,10 @@ structural region references such as `@r4`, then inspect only that region with
 explicit broad-page escape hatch.
 
 Each control's `actions` list contains only protocol verbs that can run (`click`,
-`fill`, or `upload`); unsupported controls never advertise nonexistent commands. Full
+`fill`, `select`, or `upload`); unsupported controls never advertise nonexistent
+commands. Hover is available for any visible semantic target but is not
+advertised because a page does not expose whether hovering has meaningful
+behavior. Full
 inspection retains roles, names, rendered media metadata, safety markers,
 bounds, and element references such as `@e1`.
 `capture-info` returns the browser surface, page state, action trace, and

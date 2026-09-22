@@ -80,6 +80,24 @@ function resultType(field) {
   }
 }
 
+const targetConstraint = "exactly one target reference or semantic role/name target";
+const optionConstraint = "exactly one option label or value";
+
+function hasConstraint(command, constraint) {
+  return command.constraints.includes(constraint);
+}
+
+function constrainedParameterNames(command) {
+  const names = new Set();
+  if (hasConstraint(command, targetConstraint)) {
+    for (const name of ["target", "role", "name"]) names.add(name);
+  }
+  if (hasConstraint(command, optionConstraint)) {
+    for (const name of ["label", "value"]) names.add(name);
+  }
+  return names;
+}
+
 const resultSchemas = new Map();
 function registerResultSchema(result, label) {
   const name = result?.name;
@@ -143,8 +161,32 @@ const lines = [
 
 for (const command of schema.commands) {
   const typeName = `${identifier(command.name)}Parameters`;
-  lines.push(`export interface ${typeName} {`);
-  for (const parameter of command.parameters) {
+  const constrained = constrainedParameterNames(command);
+  const intersections = [];
+  if (hasConstraint(command, targetConstraint)) {
+    intersections.push([
+      "(",
+      "  | { readonly target: string; readonly role?: never; readonly name?: never }",
+      "  | { readonly target?: never; readonly role: string; readonly name?: string }",
+      "  | { readonly target?: never; readonly role?: never; readonly name: string }",
+      ")",
+    ].join("\n"));
+  }
+  if (hasConstraint(command, optionConstraint)) {
+    intersections.push([
+      "(",
+      "  | { readonly label: string; readonly value?: never }",
+      "  | { readonly label?: never; readonly value: string }",
+      ")",
+    ].join("\n"));
+  }
+  const remaining = command.parameters.filter((parameter) => !constrained.has(parameter.name));
+  if (intersections.length > 0) {
+    lines.push(`export type ${typeName} = ${intersections.join(" & ")} & {`);
+  } else {
+    lines.push(`export interface ${typeName} {`);
+  }
+  for (const parameter of remaining) {
     lines.push(`  readonly ${JSON.stringify(parameter.name)}${parameter.required ? "" : "?"}: ${parameterType(parameter)};`);
   }
   lines.push("}", "");
@@ -206,6 +248,7 @@ lines.push(
   "",
   `export const COMMAND_METADATA = ${JSON.stringify(Object.fromEntries(schema.commands.map((command) => [command.name, {
     capabilityNegotiated: command.capabilityNegotiated,
+    constraints: command.constraints,
     parameters: command.parameters,
     result: command.result,
     scope: command.scope,
@@ -244,7 +287,9 @@ function emitMethods(commands) {
   for (const command of commands) {
   const parameters = `${identifier(command.name)}Parameters`;
   const result = `Promise<CommandResult<${literal(command.name)}>>`;
-  const required = command.parameters.some((parameter) => parameter.required);
+  const required = command.parameters.some((parameter) => parameter.required)
+    || hasConstraint(command, targetConstraint)
+    || hasConstraint(command, optionConstraint);
   if (command.parameters.length === 0) {
     lines.push(`  ${methodName(command.name)}(options?: CommandOptions): ${result} {`);
     lines.push(`    return this.invoke(${literal(command.name)}, {}, options);`, "  }", "");

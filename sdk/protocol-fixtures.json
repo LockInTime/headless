@@ -55,6 +55,22 @@
       }
     },
     {
+      "name": "semantic hover",
+      "argv": ["hover", "--role", "button", "--name", "Continue"],
+      "request": {
+        "id": "fixture-hover",
+        "version": "0.5",
+        "command": "hover",
+        "parameters": {"role": "button", "name": "Continue"}
+      },
+      "response": {
+        "id": "fixture-hover",
+        "version": "0.5",
+        "ok": true,
+        "result": {"hovered": "@e1", "role": "button", "name": "Continue"}
+      }
+    },
+    {
       "name": "credential alias login",
       "argv": ["auth", "login", "--challenge", "11111111-1111-4111-8111-111111111111", "--account", "work"],
       "request": {

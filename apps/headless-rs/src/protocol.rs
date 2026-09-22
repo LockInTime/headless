@@ -26,6 +26,7 @@ pub enum CommandName {
     Visit,
     Inspect,
     Click,
+    Hover,
     Fill,
     Press,
     Scroll,
@@ -93,6 +94,7 @@ impl CommandName {
             CommandName::Visit => "visit",
             CommandName::Inspect => "inspect",
             CommandName::Click => "click",
+            CommandName::Hover => "hover",
             CommandName::Fill => "fill",
             CommandName::Press => "press",
             CommandName::Scroll => "scroll",
@@ -350,7 +352,7 @@ impl CommandRequest {
                 }
                 Ok(())
             }
-            Click => self.target(false, true, true),
+            Click | Hover => self.target(false, true, true),
             Fill => self.target(true, true, true),
             Press => {
                 self.allow(&["key"])?;

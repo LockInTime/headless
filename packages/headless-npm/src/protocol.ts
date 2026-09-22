@@ -139,6 +139,7 @@ export function validateParameters<C extends CommandName>(
   if (!isPlainParameterRecord(parameters)) {
     throw new ValidationError(`${command} parameters must be a plain data object`);
   }
+  const values = parameters as Readonly<Record<string, unknown>>;
   const definitions = COMMAND_METADATA[command].parameters as readonly UnknownRecord[];
   const known = new Map(definitions.map((definition) => [String(definition.name), definition]));
   for (const key of Object.keys(parameters)) {
@@ -146,15 +147,39 @@ export function validateParameters<C extends CommandName>(
   }
   for (const definition of definitions) {
     const name = String(definition.name);
-    const value = parameters[name];
+    const value = values[name];
     if (value === undefined) {
       if (definition.required === true) throw new ValidationError(`${command} requires ${name}`);
     } else {
       validateParameter(command, definition, value);
     }
   }
+  const constraints = COMMAND_METADATA[command].constraints as readonly string[];
+  if (constraints.includes("exactly one target reference or semantic role/name target")) {
+    const targetPresent = values.target !== undefined;
+    const rolePresent = values.role !== undefined;
+    const namePresent = values.name !== undefined;
+    if (targetPresent === (rolePresent || namePresent)) {
+      throw new ValidationError(`${command} requires exactly one reference or semantic target`);
+    }
+    if (targetPresent && !/^@e\d+$/.test(String(values.target))) {
+      throw new ValidationError(`${command}.target must be an element reference`);
+    }
+    if ((rolePresent && values.role === "") || (namePresent && values.name === "")) {
+      throw new ValidationError(`${command} semantic target values must not be empty`);
+    }
+  }
+  if (constraints.includes("exactly one option label or value")) {
+    const labelPresent = values.label !== undefined;
+    const valuePresent = values.value !== undefined;
+    if (labelPresent === valuePresent) {
+      throw new ValidationError(`${command} requires exactly one option label or value`);
+    }
+    if ((labelPresent && values.label === "") || (valuePresent && values.value === "")) {
+      throw new ValidationError(`${command} option matchers must not be empty`);
+    }
+  }
   if (command === "screenshot") {
-    const values = parameters as Readonly<Record<string, unknown>>;
     const targetPresent = values.target !== undefined;
     const semanticTargetPresent = values.role !== undefined || values.name !== undefined;
     if (targetPresent && semanticTargetPresent) {

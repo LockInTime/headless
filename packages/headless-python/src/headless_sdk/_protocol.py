@@ -153,6 +153,28 @@ def validate_parameters(command: CommandName, parameters: Mapping[str, object]) 
                 raise ValidationError(f"{command} requires {name}")
         else:
             _validate_parameter(command, definition, parameters[name])
+    constraints = cast(list[str], metadata["constraints"])
+    if "exactly one target reference or semantic role/name target" in constraints:
+        target_present = "target" in parameters
+        role_present = "role" in parameters
+        name_present = "name" in parameters
+        if target_present == (role_present or name_present):
+            raise ValidationError(f"{command} requires exactly one reference or semantic target")
+        if target_present and re.fullmatch(r"@e\d+", cast(str, parameters["target"])) is None:
+            raise ValidationError(f"{command}.target must be an element reference")
+        if (role_present and parameters["role"] == "") or (
+            name_present and parameters["name"] == ""
+        ):
+            raise ValidationError(f"{command} semantic target values must not be empty")
+    if "exactly one option label or value" in constraints:
+        label_present = "label" in parameters
+        value_present = "value" in parameters
+        if label_present == value_present:
+            raise ValidationError(f"{command} requires exactly one option label or value")
+        if (label_present and parameters["label"] == "") or (
+            value_present and parameters["value"] == ""
+        ):
+            raise ValidationError(f"{command} option matchers must not be empty")
     if command == "screenshot":
         target_present = "target" in parameters
         semantic_target_present = "role" in parameters or "name" in parameters

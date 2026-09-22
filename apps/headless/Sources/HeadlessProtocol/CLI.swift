@@ -151,6 +151,8 @@ public struct CLIParser {
             return try parseInspect(arguments, session: session, jsonOutput: jsonOutput)
         case "click":
             return try parseTargeted(.click, arguments: arguments, session: session, jsonOutput: jsonOutput)
+        case "hover":
+            return try parseTargeted(.hover, arguments: arguments, session: session, jsonOutput: jsonOutput)
         case "upload":
             return try parseUpload(arguments, session: session, jsonOutput: jsonOutput)
         case "fill":
@@ -884,6 +886,7 @@ Commands:
   inspect [--context summary|outline|text|actions|full] [--task TEXT]
           [--within @rN] [--limit N] [--budget TOKENS] [--depth N] [--text]
   click REF | click --role ROLE [--name NAME]
+  hover REF | hover --role ROLE [--name NAME]
   fill REF TEXT | fill REF -- TEXT_WITH_LITERAL_FLAGS | press KEY
   select REF --label LABEL | select REF --value VALUE
   select --role ROLE [--name NAME] (--label LABEL | --value VALUE)

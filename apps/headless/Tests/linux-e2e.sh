@@ -370,11 +370,21 @@ headless --session qa visit http://127.0.0.1:41739/trusted-input/ | grep -q 'Tru
 headless --session qa inspect --interactive | grep -q '"name":"Trusted input"'
 headless --session qa fill @e1 'CDP value' | grep -q '"valueLength":9'
 headless --session qa press Enter | grep -q '"pressed":"Enter"'
+headless --session qa hover --role button --name 'Trusted click' | grep -q '"hovered"'
 headless --session qa click --role button --name 'Trusted click' | grep -q '"clicked"'
 TRUSTED_INPUT="$(headless --session qa inspect --text)"
 echo "$TRUSTED_INPUT" | grep -q 'input:true'
 echo "$TRUSTED_INPUT" | grep -q 'key:Enter:true'
+echo "$TRUSTED_INPUT" | grep -q 'hover:true'
 echo "$TRUSTED_INPUT" | grep -q 'click:true'
+headless --session qa hover --role button --name 'Hover navigation' | grep -q '"hovered"'
+headless --session qa wait --url 'hovered=1' --timeout 5000 | grep -q 'hovered=1'
+headless --session qa visit http://127.0.0.1:41739/trusted-input/ | grep -q 'Trusted input fixture'
+if HOVER_AUTH_REQUIRED="$(headless --session qa hover --role button --name 'Hover login' 2>&1)"; then
+  echo "hover-revealed login form did not require authentication" >&2
+  exit 1
+fi
+echo "$HOVER_AUTH_REQUIRED" | grep -q '"code":"AUTH_REQUIRED"'
 STEP="native-select"
 headless --session qa visit http://127.0.0.1:41739/select/ | grep -q 'Native select fixture'
 SELECT_RESULT="$(headless --session qa select --role combobox --name Country --label Canada)"

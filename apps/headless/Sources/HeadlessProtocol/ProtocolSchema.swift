@@ -318,6 +318,11 @@ public func protocolResultDefinition(for command: CommandName) -> ProtocolResult
             resultField("clicked", .string), resultField("role", .string),
             resultField("name", .string),
         ])
+    case .hover:
+        return result("Hover", [
+            resultField("hovered", .string), resultField("role", .string),
+            resultField("name", .string),
+        ])
     case .fill:
         return result("Fill", [resultField("filled", .string), resultField("valueLength", .number)])
     case .select:
@@ -703,6 +708,10 @@ public let protocolCommandDefinitions: [CommandName: ProtocolCommandDefinition] 
         ], untrusted: true),
         command(
             .click, targetParameters, untrusted: true,
+            constraints: ["exactly one target reference or semantic role/name target"]
+        ),
+        command(
+            .hover, targetParameters, untrusted: true,
             constraints: ["exactly one target reference or semantic role/name target"]
         ),
         command(

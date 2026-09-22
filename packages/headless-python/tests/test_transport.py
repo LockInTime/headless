@@ -60,7 +60,9 @@ def test_connect_negotiates_capabilities_and_preserves_untrusted_results() -> No
         assert isinstance(result, Untrusted)
         assert result.value["title"] == "Untrusted"
         assert server.requests[1]["session"] == "work.one"
-        assert "visit" in client.capabilities["commands"]
+        commands = client.capabilities["commands"]
+        assert isinstance(commands, list)
+        assert "visit" in commands
         with pytest.raises(ValidationError, match="timeout"):
             client.ping(timeout=10**1000)
 

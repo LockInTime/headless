@@ -12,8 +12,8 @@ Two versions travel independently, on purpose:
   `HEADLESS_VERSION`, reported by the CLI, host, and MCP adapter, and used for
   release assets.
 - **Protocol version**: `headlessProtocolVersion` in `Protocol.swift`,
-  currently `0.5`. It changes only when the wire contract changes, and always
-  with an entry in
+  currently `0.5`. It changes only for incompatible wire-contract changes,
+  always with an entry in
   [`docs/roadmap/architecture-decisions.md`](docs/roadmap/architecture-decisions.md).
 
 ## [Unreleased]
@@ -24,6 +24,9 @@ Two versions travel independently, on purpose:
 
 ### Added
 
+- Semantic `hover` targets a fresh element ref or an exact role/name without
+  exposing coordinates. Chromium dispatches a trusted CDP mouse move, while
+  WebKit reports its fixed synthetic hover path in capabilities.
 - macOS Command-, opens one Settings window built from the typed registry and
   writing through the same backend as `headless config`. Linux has no Settings
   GUI.

@@ -104,6 +104,14 @@ test("schema-driven validation mirrors portable Swift bounds", () => {
     () => validateParameters("screenshot", { fullPage: true, target: "@e1" }),
     /mutually exclusive/,
   );
+  assert.throws(() => validateParameters("hover", {}), /exactly one reference or semantic target/);
+  assert.throws(
+    () => validateParameters("hover", { target: "@e1", role: "button" }),
+    /exactly one reference or semantic target/,
+  );
+  assert.throws(() => validateParameters("hover", { target: "@r1" }), /element reference/);
+  assert.doesNotThrow(() => validateParameters("hover", { target: "@e1" }));
+  assert.doesNotThrow(() => validateParameters("hover", { role: "button", name: "Continue" }));
 });
 
 test("generated scopes and timeout policies drive the SDK", () => {
@@ -120,7 +128,7 @@ test("generated scopes and timeout policies drive the SDK", () => {
 });
 
 test("request framing contains exactly one terminal newline", () => {
-  const frame = encodeRequest(createRequest("fill", { target: "@1", value: "line one\nline two" }, undefined, "frame"));
+  const frame = encodeRequest(createRequest("fill", { target: "@e1", value: "line one\nline two" }, undefined, "frame"));
   assert.equal(frame.at(-1), 0x0a);
   assert.equal(frame.subarray(0, -1).includes(0x0a), false);
   assert.equal(JSON.parse(frame.subarray(0, -1)).parameters.value, "line one\nline two");

@@ -10,6 +10,13 @@
     <label for="trusted-input">Trusted input</label>
     <input id="trusted-input" autocomplete="off">
     <button type="button">Trusted click</button>
+    <button id="hover-navigation" type="button">Hover navigation</button>
+    <button id="hover-login" type="button">Hover login</button>
+    <form id="hover-login-form" method="post" aria-label="Sign in" hidden>
+      <label>Email <input type="email" autocomplete="username"></label>
+      <label>Password <input type="password" autocomplete="current-password"></label>
+      <button type="submit">Sign in</button>
+    </form>
     <output aria-label="Input evidence">waiting</output>
   </main>
   <script>
@@ -21,7 +28,14 @@
     };
     document.querySelector('input').addEventListener('input', event => record(`input:${event.isTrusted}`));
     document.querySelector('input').addEventListener('keydown', event => record(`key:${event.key}:${event.isTrusted}`));
+    document.querySelector('button').addEventListener('mouseover', event => record(`hover:${event.isTrusted}`));
     document.querySelector('button').addEventListener('click', event => record(`click:${event.isTrusted}`));
+    document.querySelector('#hover-navigation').addEventListener('mouseover', () => {
+      location.href = `${location.pathname}?hovered=1`;
+    });
+    document.querySelector('#hover-login').addEventListener('mouseover', () => {
+      document.querySelector('#hover-login-form').hidden = false;
+    });
   </script>
 </body>
 </html>

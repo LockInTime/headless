@@ -32,6 +32,8 @@ Chromium capabilities; macOS WebKit reports them as unsupported.
 4. Start with `inspect --context summary --task "..."`, then use an outline,
    scoped text, or scoped actions only when the task needs them.
 5. Prefer role/name targeting; otherwise use a ref from the latest inspection.
+   Use `hover` when the task requires a tooltip or other hover-only state; it
+   does not click or focus the target. Inspect again after the state changes.
    For native dropdowns, use `select` with exactly one exact `--label` or
    `--value`; do not treat custom ARIA widgets as native selects.
 6. After navigation or a substantial rerender, wait for the expected URL, text,
@@ -49,6 +51,7 @@ headless session create agent-qa
 headless --session agent-qa visit http://localhost:3000
 headless --session agent-qa inspect --context summary --task "click Continue"
 headless --session agent-qa inspect --context actions --task "click Continue" --limit 10
+headless --session agent-qa hover --role button --name Continue
 headless --session agent-qa click --role button --name Continue
 headless --session agent-qa wait --url /next --settled --timeout 10000
 headless --session agent-qa inspect --context actions --task "verify next page"

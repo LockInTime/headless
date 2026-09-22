@@ -2,7 +2,16 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Literal, NotRequired, Required, TypeAlias, TypedDict, cast
+from typing import (
+    Any,
+    Literal,
+    NotRequired,
+    Required,
+    TypeAlias,
+    TypedDict,
+    cast,
+    overload,
+)
 
 from ._types import AsyncCancellation, SyncCancellation, Untrusted
 
@@ -13,8 +22,8 @@ PROTOCOL_VERSION = '0.5'
 PROTOCOL_SCHEMA_VERSION = 1
 MAXIMUM_MESSAGE_BYTES = 1048576
 MAXIMUM_COMMAND_TIMEOUT_SECONDS = 125.0
-PROTOCOL_SCHEMA_SHA256 = 'db70dc1b07b034624e85ab8f07ac420d5af5b948edf999cd11e5445ed07d7a17'
-PROTOCOL_FIXTURES_SHA256 = '76bbee05cacd7ed16452176ad2973bf4604f4b864f8de1277664880c079a5435'
+PROTOCOL_SCHEMA_SHA256 = 'b7058c5aa8035496a5a21fdbe274f4db9ff7dacd9ad2aac908349a55f3079e39'
+PROTOCOL_FIXTURES_SHA256 = '397f001d3930c79db7da27f4b885276c71fbcd5c56756a5236ff298f10636567'
 RESPONSE_ADDITIONAL_PROPERTIES = True
 COMMAND_ERROR_CODES = ('ARTIFACT_ERROR', 'AUTH_ACCOUNT_NOT_FOUND', 'AUTH_CHALLENGE_CONSUMED', 'AUTH_CHALLENGE_EXPIRED', 'AUTH_CHALLENGE_NOT_FOUND', 'AUTH_FORM_CHANGED', 'AUTH_ORIGIN_CHANGED', 'AUTH_REQUIRED', 'CREDENTIAL_ALIAS_EXISTS', 'ELEMENT_NOT_FOUND', 'FLOW_FAILED', 'HOST_STOPPING', 'HOST_UNAVAILABLE', 'INTERNAL_ERROR', 'INVALID_CAPTURE_FORMAT', 'INVALID_COMMAND', 'INVALID_FLOW', 'INVALID_INPUT', 'INVALID_REQUEST', 'INVALID_SESSION', 'MISSING_PARAMETER', 'OPERATION_FAILED', 'PAGINATION_CURSOR_EXPIRED', 'PAGINATION_CURSOR_INVALID', 'PAGINATION_CURSOR_SCOPE_MISMATCH', 'PAGINATION_CURSOR_STALE', 'PEER_DENIED', 'RECORDER_UNAVAILABLE', 'RECORDING_ACTIVE', 'RECORDING_FAILED', 'RECORDING_NOT_ACTIVE', 'REGION_NOT_FOUND', 'RESPONSE_TOO_LARGE', 'SENSITIVE_DIAGNOSTICS_DISABLED', 'SESSION_EXISTS', 'SESSION_NOT_FOUND', 'TIMEOUT', 'UNSAFE_NAVIGATION', 'UNSAFE_RESOURCE_TYPE', 'UNSUPPORTED_CAPABILITY', 'USER_PRESENCE_DENIED', 'USER_PRESENCE_UNAVAILABLE', 'VAULT_LOCKED', 'VAULT_OPERATION_FAILED', 'VAULT_RESPONSE_INVALID', 'VAULT_UNAVAILABLE')
 CommandErrorCode = Literal['ARTIFACT_ERROR', 'AUTH_ACCOUNT_NOT_FOUND', 'AUTH_CHALLENGE_CONSUMED', 'AUTH_CHALLENGE_EXPIRED', 'AUTH_CHALLENGE_NOT_FOUND', 'AUTH_FORM_CHANGED', 'AUTH_ORIGIN_CHANGED', 'AUTH_REQUIRED', 'CREDENTIAL_ALIAS_EXISTS', 'ELEMENT_NOT_FOUND', 'FLOW_FAILED', 'HOST_STOPPING', 'HOST_UNAVAILABLE', 'INTERNAL_ERROR', 'INVALID_CAPTURE_FORMAT', 'INVALID_COMMAND', 'INVALID_FLOW', 'INVALID_INPUT', 'INVALID_REQUEST', 'INVALID_SESSION', 'MISSING_PARAMETER', 'OPERATION_FAILED', 'PAGINATION_CURSOR_EXPIRED', 'PAGINATION_CURSOR_INVALID', 'PAGINATION_CURSOR_SCOPE_MISMATCH', 'PAGINATION_CURSOR_STALE', 'PEER_DENIED', 'RECORDER_UNAVAILABLE', 'RECORDING_ACTIVE', 'RECORDING_FAILED', 'RECORDING_NOT_ACTIVE', 'REGION_NOT_FOUND', 'RESPONSE_TOO_LARGE', 'SENSITIVE_DIAGNOSTICS_DISABLED', 'SESSION_EXISTS', 'SESSION_NOT_FOUND', 'TIMEOUT', 'UNSAFE_NAVIGATION', 'UNSAFE_RESOURCE_TYPE', 'UNSUPPORTED_CAPABILITY', 'USER_PRESENCE_DENIED', 'USER_PRESENCE_UNAVAILABLE', 'VAULT_LOCKED', 'VAULT_OPERATION_FAILED', 'VAULT_RESPONSE_INVALID', 'VAULT_UNAVAILABLE']
@@ -22,7 +31,7 @@ LIFECYCLE_ERROR_CODES = ('HOST_START_FAILED', 'NAVIGATION_ALLOWLIST_CONFLICT', '
 LifecycleErrorCode = Literal['HOST_START_FAILED', 'NAVIGATION_ALLOWLIST_CONFLICT', 'UNSUPPORTED_BROWSER_RUNTIME', 'UNSUPPORTED_CAPABILITY']
 LAUNCH_PRESENTATIONS = ('background', 'foreground')
 LaunchPresentation = Literal['background', 'foreground']
-CommandName = Literal['ping', 'shutdown', 'profile.clear', 'session.create', 'session.list', 'session.close', 'visit', 'inspect', 'click', 'fill', 'select', 'upload', 'press', 'scroll', 'back', 'reload', 'wait', 'tour', 'capture.info', 'screenshot', 'artifact.list', 'record.start', 'record.status', 'record.stop', 'qa.report', 'qa.clear', 'console.list', 'network.list', 'network.get', 'styles.get', 'cookies.list', 'storage.list', 'visual.compare', 'performance.get', 'animation.list', 'report.create', 'flow.start', 'flow.stop', 'flow.run', 'network.emulate', 'network.mock.set', 'network.mock.clear', 'auth.login']
+CommandName = Literal['ping', 'shutdown', 'profile.clear', 'session.create', 'session.list', 'session.close', 'visit', 'inspect', 'click', 'hover', 'fill', 'select', 'upload', 'press', 'scroll', 'back', 'reload', 'wait', 'tour', 'capture.info', 'screenshot', 'artifact.list', 'record.start', 'record.status', 'record.stop', 'qa.report', 'qa.clear', 'console.list', 'network.list', 'network.get', 'styles.get', 'cookies.list', 'storage.list', 'visual.compare', 'performance.get', 'animation.list', 'report.create', 'flow.start', 'flow.stop', 'flow.run', 'network.emulate', 'network.mock.set', 'network.mock.clear', 'auth.login']
 
 class PingParameters(TypedDict):
     pass
@@ -57,6 +66,11 @@ class InspectParameters(TypedDict):
     depth: NotRequired[int]
 
 class ClickParameters(TypedDict):
+    target: NotRequired[str]
+    role: NotRequired[str]
+    name: NotRequired[str]
+
+class HoverParameters(TypedDict):
     target: NotRequired[str]
     role: NotRequired[str]
     name: NotRequired[str]
@@ -275,6 +289,11 @@ class Inspection(TypedDict, total=False):
 
 class Click(TypedDict, total=False):
     clicked: Required[str]
+    role: Required[str]
+    name: Required[str]
+
+class Hover(TypedDict, total=False):
+    hovered: Required[str]
     role: Required[str]
     name: Required[str]
 
@@ -807,6 +826,32 @@ COMMAND_METADATA: dict[CommandName, dict[str, Any]] = {'animation.list': {'capab
                                      'type': 'object'}},
                'scope': 'session',
                'timeout': {'defaultMilliseconds': 15000, 'parameterPresentOverrides': {}}},
+ 'hover': {'capabilityNegotiated': False,
+           'constraints': ['exactly one target reference or semantic role/name target'],
+           'parameters': [{'maximumBytes': 16,
+                           'name': 'target',
+                           'required': False,
+                           'sensitive': False,
+                           'type': 'string'},
+                          {'maximumBytes': 128,
+                           'name': 'role',
+                           'required': False,
+                           'sensitive': False,
+                           'type': 'string'},
+                          {'maximumBytes': 1000,
+                           'name': 'name',
+                           'required': False,
+                           'sensitive': False,
+                           'type': 'string'}],
+           'result': {'mayContainUntrustedContent': True,
+                      'schema': {'additionalProperties': True,
+                                 'fields': [{'name': 'hovered', 'required': True, 'type': 'string'},
+                                            {'name': 'role', 'required': True, 'type': 'string'},
+                                            {'name': 'name', 'required': True, 'type': 'string'}],
+                                 'name': 'Hover',
+                                 'type': 'object'}},
+           'scope': 'session',
+           'timeout': {'defaultMilliseconds': 15000, 'parameterPresentOverrides': {}}},
  'inspect': {'capabilityNegotiated': False,
              'constraints': [],
              'parameters': [{'name': 'interactive',
@@ -2047,6 +2092,36 @@ class SyncSessionCommands:
             parameters['depth'] = cast(JsonValue, depth)
         return cast(Untrusted[Inspection], self._invoke_sync('inspect', parameters, timeout, cancel))
 
+    @overload
+    def click(
+        self,
+        *,
+        target: str,
+        role: None = None,
+        name: None = None,
+        timeout: float | None = None,
+        cancel: SyncCancellation | None = None,
+    ) -> Untrusted[Click]: ...
+    @overload
+    def click(
+        self,
+        *,
+        target: None = None,
+        role: str,
+        name: str | None = None,
+        timeout: float | None = None,
+        cancel: SyncCancellation | None = None,
+    ) -> Untrusted[Click]: ...
+    @overload
+    def click(
+        self,
+        *,
+        target: None = None,
+        role: None = None,
+        name: str,
+        timeout: float | None = None,
+        cancel: SyncCancellation | None = None,
+    ) -> Untrusted[Click]: ...
     def click(
         self,
         *,
@@ -2065,6 +2140,55 @@ class SyncSessionCommands:
         if name is not None:
             parameters['name'] = cast(JsonValue, name)
         return cast(Untrusted[Click], self._invoke_sync('click', parameters, timeout, cancel))
+
+    @overload
+    def hover(
+        self,
+        *,
+        target: str,
+        role: None = None,
+        name: None = None,
+        timeout: float | None = None,
+        cancel: SyncCancellation | None = None,
+    ) -> Untrusted[Hover]: ...
+    @overload
+    def hover(
+        self,
+        *,
+        target: None = None,
+        role: str,
+        name: str | None = None,
+        timeout: float | None = None,
+        cancel: SyncCancellation | None = None,
+    ) -> Untrusted[Hover]: ...
+    @overload
+    def hover(
+        self,
+        *,
+        target: None = None,
+        role: None = None,
+        name: str,
+        timeout: float | None = None,
+        cancel: SyncCancellation | None = None,
+    ) -> Untrusted[Hover]: ...
+    def hover(
+        self,
+        *,
+        target: str | None = None,
+        role: str | None = None,
+        name: str | None = None,
+        timeout: float | None = None,
+        cancel: SyncCancellation | None = None,
+    ) -> Untrusted[Hover]:
+        parameters: dict[str, JsonValue] = {
+        }
+        if target is not None:
+            parameters['target'] = cast(JsonValue, target)
+        if role is not None:
+            parameters['role'] = cast(JsonValue, role)
+        if name is not None:
+            parameters['name'] = cast(JsonValue, name)
+        return cast(Untrusted[Hover], self._invoke_sync('hover', parameters, timeout, cancel))
 
     def fill(
         self,
@@ -2723,6 +2847,36 @@ class AsyncSessionCommands:
             parameters['depth'] = cast(JsonValue, depth)
         return cast(Untrusted[Inspection], await self._invoke_async('inspect', parameters, timeout, cancel))
 
+    @overload
+    async def click(
+        self,
+        *,
+        target: str,
+        role: None = None,
+        name: None = None,
+        timeout: float | None = None,
+        cancel: AsyncCancellation | None = None,
+    ) -> Untrusted[Click]: ...
+    @overload
+    async def click(
+        self,
+        *,
+        target: None = None,
+        role: str,
+        name: str | None = None,
+        timeout: float | None = None,
+        cancel: AsyncCancellation | None = None,
+    ) -> Untrusted[Click]: ...
+    @overload
+    async def click(
+        self,
+        *,
+        target: None = None,
+        role: None = None,
+        name: str,
+        timeout: float | None = None,
+        cancel: AsyncCancellation | None = None,
+    ) -> Untrusted[Click]: ...
     async def click(
         self,
         *,
@@ -2741,6 +2895,55 @@ class AsyncSessionCommands:
         if name is not None:
             parameters['name'] = cast(JsonValue, name)
         return cast(Untrusted[Click], await self._invoke_async('click', parameters, timeout, cancel))
+
+    @overload
+    async def hover(
+        self,
+        *,
+        target: str,
+        role: None = None,
+        name: None = None,
+        timeout: float | None = None,
+        cancel: AsyncCancellation | None = None,
+    ) -> Untrusted[Hover]: ...
+    @overload
+    async def hover(
+        self,
+        *,
+        target: None = None,
+        role: str,
+        name: str | None = None,
+        timeout: float | None = None,
+        cancel: AsyncCancellation | None = None,
+    ) -> Untrusted[Hover]: ...
+    @overload
+    async def hover(
+        self,
+        *,
+        target: None = None,
+        role: None = None,
+        name: str,
+        timeout: float | None = None,
+        cancel: AsyncCancellation | None = None,
+    ) -> Untrusted[Hover]: ...
+    async def hover(
+        self,
+        *,
+        target: str | None = None,
+        role: str | None = None,
+        name: str | None = None,
+        timeout: float | None = None,
+        cancel: AsyncCancellation | None = None,
+    ) -> Untrusted[Hover]:
+        parameters: dict[str, JsonValue] = {
+        }
+        if target is not None:
+            parameters['target'] = cast(JsonValue, target)
+        if role is not None:
+            parameters['role'] = cast(JsonValue, role)
+        if name is not None:
+            parameters['name'] = cast(JsonValue, name)
+        return cast(Untrusted[Hover], await self._invoke_async('hover', parameters, timeout, cancel))
 
     async def fill(
         self,

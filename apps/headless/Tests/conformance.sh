@@ -68,6 +68,7 @@ for field in url title contextMode task elements contextStats omitted truncated 
 done
 assert_value "$INSPECT" '"contextMode":"actions"'
 assert_value "$INSPECT" '"name":"Continue"'
+"$CLI" --session "$SESSION" hover --role button --name Continue | grep -q '"hovered"'
 
 WAITED="$("$CLI" --session "$SESSION" wait --settled --timeout 10000)"
 for field in url title readyState; do assert_field "$WAITED" "$field"; done

@@ -1405,6 +1405,18 @@ STEP="safe-input-download-report"
 echo "$BLOCKED_DOWNLOAD_REPORT" | grep -q '"kind":"download-blocked"'
 echo "$BLOCKED_DOWNLOAD_REPORT" | grep -q '/download.txt'
 "$CLI" --session qa qa clear | grep -q '"cleared"'
+STEP="synthetic-hover"
+"$CLI" --session qa visit "http://127.0.0.1:$PORT/trusted-input" | grep -q 'Trusted input fixture'
+"$CLI" --session qa hover --role button --name 'Trusted click' | grep -q '"hovered"'
+"$CLI" --session qa wait --text 'hover:false' --timeout 2000 | grep -q 'hover:false'
+"$CLI" --session qa hover --role button --name 'Hover navigation' | grep -q '"hovered"'
+"$CLI" --session qa wait --url 'hovered=1' --timeout 5000 | grep -q 'hovered=1'
+"$CLI" --session qa visit "http://127.0.0.1:$PORT/trusted-input" | grep -q 'Trusted input fixture'
+if HOVER_AUTH_REQUIRED="$("$CLI" --session qa hover --role button --name 'Hover login' 2>&1)"; then
+  echo "hover-revealed login form did not require authentication" >&2
+  fail
+fi
+echo "$HOVER_AUTH_REQUIRED" | grep -q '"code":"AUTH_REQUIRED"'
 STEP="native-select"
 "$CLI" --session qa visit "http://127.0.0.1:$PORT/select" | grep -q 'Native select fixture'
 SELECT_RESULT="$("$CLI" --session qa select --role combobox --name Country --label Canada)"
