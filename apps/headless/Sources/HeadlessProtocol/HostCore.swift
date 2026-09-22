@@ -36,6 +36,7 @@ public protocol BrowserEngineSession: AnyObject {
     func hostVisit(_ url: URL) throws -> JSONValue
     func hostInspect(parameters: [String: JSONValue]) throws -> JSONValue
     func hostClick(parameters: [String: JSONValue]) throws -> JSONValue
+    func hostHover(parameters: [String: JSONValue]) throws -> JSONValue
     func hostFill(parameters: [String: JSONValue]) throws -> JSONValue
     func hostSelect(parameters: [String: JSONValue]) throws -> JSONValue
     func hostPress(parameters: [String: JSONValue]) throws -> JSONValue
@@ -558,6 +559,7 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
             return try session.hostVisit(url)
         case .inspect: return try session.hostInspect(parameters: request.parameters)
         case .click: return try session.hostClick(parameters: request.parameters)
+        case .hover: return try session.hostHover(parameters: request.parameters)
         case .fill: return try session.hostFill(parameters: request.parameters)
         case .select: return try session.hostSelect(parameters: request.parameters)
         case .upload:
@@ -675,7 +677,9 @@ public final class HostCore<Engine: BrowserEngine>: @unchecked Sendable {
         after command: CommandName, request: CommandRequest, sessionName: String,
         session: Engine.Session, result: JSONValue
     ) throws -> CommandResponse? {
-        guard [.visit, .inspect, .click, .wait, .back, .reload].contains(command) else { return nil }
+        guard [.visit, .inspect, .click, .hover, .wait, .back, .reload].contains(command) else {
+            return nil
+        }
         let form = try AuthenticationForm(session.hostAuthenticationState())
         guard form.detection != .none else {
             authenticationChallenges.invalidate(session: sessionName)

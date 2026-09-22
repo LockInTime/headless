@@ -28,6 +28,8 @@ headless --session NAME inspect --context actions --task "TASK"
 headless --session NAME inspect --context full --text
 headless --session NAME click REF
 headless --session NAME click --role ROLE --name NAME
+headless --session NAME hover REF
+headless --session NAME hover --role ROLE --name NAME
 headless --session NAME fill REF "TEXT"
 headless --session NAME fill REF -- "--json  stays literal"
 headless --session NAME select REF --label LABEL
@@ -48,7 +50,9 @@ large pages, request `outline`, select a returned `@rN` region, then use
 bound the result; check `omitted` before assuming it describes the whole page.
 Use `click --role ... --name ...` for unique accessible controls. Use an `@eN`
 ref from the latest inspection when role/name is ambiguous. Inspect again after
-navigation or a large rerender. Native single-select controls advertise
+navigation or a large rerender. Use `hover` only for hover-dependent state such
+as tooltips; it does not focus or click, and its output never includes internal
+coordinates. Native single-select controls advertise
 `select`; use exactly one exact `--label` or `--value`. File inputs advertise
 `upload` for an existing private artifact-store basename. Upload never accepts
 or imports a filesystem path. Ask before uploading, as in [safety.md](safety.md).

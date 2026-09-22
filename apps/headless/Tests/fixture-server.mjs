@@ -10,6 +10,7 @@ const routes = new Map([
   ['/hostile', 'hostile.html'],
   ['/large-document', 'large-document.html'],
   ['/select', 'select.html'],
+  ['/trusted-input', 'trusted-input.html'],
   ['/network-idle', 'network-idle.html'],
   ['/region-capture', 'region-capture.html'],
   ['/auth-state', 'auth-state.html'],

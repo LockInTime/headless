@@ -88,6 +88,9 @@ final class ChromiumBrowserEngineSession: BrowserEngineSession {
     func hostClick(parameters: [String: JSONValue]) throws -> JSONValue {
         try browserSession.click(parameters: parameters)
     }
+    func hostHover(parameters: [String: JSONValue]) throws -> JSONValue {
+        try browserSession.hover(parameters: parameters)
+    }
     func hostFill(parameters: [String: JSONValue]) throws -> JSONValue {
         try browserSession.fill(parameters: parameters)
     }

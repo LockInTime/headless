@@ -7,8 +7,8 @@ export type Untrusted<T> = Readonly<{ readonly untrustedContent: true; readonly 
 export const PROTOCOL_VERSION = "0.5" as const;
 export const PROTOCOL_SCHEMA_VERSION = 1 as const;
 export const MAXIMUM_MESSAGE_BYTES = 1048576 as const;
-export const PROTOCOL_SCHEMA_SHA256 = "db70dc1b07b034624e85ab8f07ac420d5af5b948edf999cd11e5445ed07d7a17" as const;
-export const PROTOCOL_FIXTURES_SHA256 = "76bbee05cacd7ed16452176ad2973bf4604f4b864f8de1277664880c079a5435" as const;
+export const PROTOCOL_SCHEMA_SHA256 = "b7058c5aa8035496a5a21fdbe274f4db9ff7dacd9ad2aac908349a55f3079e39" as const;
+export const PROTOCOL_FIXTURES_SHA256 = "397f001d3930c79db7da27f4b885276c71fbcd5c56756a5236ff298f10636567" as const;
 export const RESPONSE_ADDITIONAL_PROPERTIES = true as const;
 export const MAXIMUM_COMMAND_TIMEOUT_MS = 125000 as const;
 export const LOCAL_LIFECYCLE = {
@@ -158,31 +158,43 @@ export interface InspectParameters {
   readonly "depth"?: number;
 }
 
-export interface ClickParameters {
-  readonly "target"?: string;
-  readonly "role"?: string;
-  readonly "name"?: string;
+export type ClickParameters = (
+  | { readonly target: string; readonly role?: never; readonly name?: never }
+  | { readonly target?: never; readonly role: string; readonly name?: string }
+  | { readonly target?: never; readonly role?: never; readonly name: string }
+) & {
 }
 
-export interface FillParameters {
-  readonly "target"?: string;
-  readonly "role"?: string;
-  readonly "name"?: string;
+export type HoverParameters = (
+  | { readonly target: string; readonly role?: never; readonly name?: never }
+  | { readonly target?: never; readonly role: string; readonly name?: string }
+  | { readonly target?: never; readonly role?: never; readonly name: string }
+) & {
+}
+
+export type FillParameters = (
+  | { readonly target: string; readonly role?: never; readonly name?: never }
+  | { readonly target?: never; readonly role: string; readonly name?: string }
+  | { readonly target?: never; readonly role?: never; readonly name: string }
+) & {
   readonly "value": string;
 }
 
-export interface SelectParameters {
-  readonly "target"?: string;
-  readonly "role"?: string;
-  readonly "name"?: string;
-  readonly "label"?: string;
-  readonly "value"?: string;
+export type SelectParameters = (
+  | { readonly target: string; readonly role?: never; readonly name?: never }
+  | { readonly target?: never; readonly role: string; readonly name?: string }
+  | { readonly target?: never; readonly role?: never; readonly name: string }
+) & (
+  | { readonly label: string; readonly value?: never }
+  | { readonly label?: never; readonly value: string }
+) & {
 }
 
-export interface UploadParameters {
-  readonly "target"?: string;
-  readonly "role"?: string;
-  readonly "name"?: string;
+export type UploadParameters = (
+  | { readonly target: string; readonly role?: never; readonly name?: never }
+  | { readonly target?: never; readonly role: string; readonly name?: string }
+  | { readonly target?: never; readonly role?: never; readonly name: string }
+) & {
   readonly "artifact": string;
 }
 
@@ -272,10 +284,11 @@ export interface NetworkGetParameters {
   readonly "requestId": string;
 }
 
-export interface StylesGetParameters {
-  readonly "target"?: string;
-  readonly "role"?: string;
-  readonly "name"?: string;
+export type StylesGetParameters = (
+  | { readonly target: string; readonly role?: never; readonly name?: never }
+  | { readonly target?: never; readonly role: string; readonly name?: string }
+  | { readonly target?: never; readonly role?: never; readonly name: string }
+) & {
   readonly "properties"?: readonly string[];
 }
 
@@ -420,6 +433,13 @@ export interface Inspection {
 
 export interface Click {
   readonly "clicked": string;
+  readonly "role": string;
+  readonly "name": string;
+  readonly [key: string]: JsonValue;
+}
+
+export interface Hover {
+  readonly "hovered": string;
   readonly "role": string;
   readonly "name": string;
   readonly [key: string]: JsonValue;
@@ -744,7 +764,7 @@ export const ERROR_DETAILS_METADATA = {
   }
 } as const;
 
-export type CommandName = "ping" | "shutdown" | "profile.clear" | "session.create" | "session.list" | "session.close" | "visit" | "inspect" | "click" | "fill" | "select" | "upload" | "press" | "scroll" | "back" | "reload" | "wait" | "tour" | "capture.info" | "screenshot" | "artifact.list" | "record.start" | "record.status" | "record.stop" | "qa.report" | "qa.clear" | "console.list" | "network.list" | "network.get" | "styles.get" | "cookies.list" | "storage.list" | "visual.compare" | "performance.get" | "animation.list" | "report.create" | "flow.start" | "flow.stop" | "flow.run" | "network.emulate" | "network.mock.set" | "network.mock.clear" | "auth.login";
+export type CommandName = "ping" | "shutdown" | "profile.clear" | "session.create" | "session.list" | "session.close" | "visit" | "inspect" | "click" | "hover" | "fill" | "select" | "upload" | "press" | "scroll" | "back" | "reload" | "wait" | "tour" | "capture.info" | "screenshot" | "artifact.list" | "record.start" | "record.status" | "record.stop" | "qa.report" | "qa.clear" | "console.list" | "network.list" | "network.get" | "styles.get" | "cookies.list" | "storage.list" | "visual.compare" | "performance.get" | "animation.list" | "report.create" | "flow.start" | "flow.stop" | "flow.run" | "network.emulate" | "network.mock.set" | "network.mock.clear" | "auth.login";
 
 export interface CommandParameters {
   readonly "ping": PingParameters;
@@ -756,6 +776,7 @@ export interface CommandParameters {
   readonly "visit": VisitParameters;
   readonly "inspect": InspectParameters;
   readonly "click": ClickParameters;
+  readonly "hover": HoverParameters;
   readonly "fill": FillParameters;
   readonly "select": SelectParameters;
   readonly "upload": UploadParameters;
@@ -802,6 +823,7 @@ export interface CommandResults {
   readonly "visit": Untrusted<PageState>;
   readonly "inspect": Untrusted<Inspection>;
   readonly "click": Untrusted<Click>;
+  readonly "hover": Untrusted<Hover>;
   readonly "fill": Untrusted<Fill>;
   readonly "select": Untrusted<Select>;
   readonly "upload": Untrusted<Upload>;
@@ -843,6 +865,7 @@ export type CommandResult<C extends CommandName> = CommandResults[C];
 export const COMMAND_METADATA = {
   "ping": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": false,
@@ -912,6 +935,7 @@ export const COMMAND_METADATA = {
   },
   "shutdown": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": false,
@@ -936,6 +960,7 @@ export const COMMAND_METADATA = {
   },
   "profile.clear": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": false,
@@ -965,6 +990,7 @@ export const COMMAND_METADATA = {
   },
   "session.create": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "maximumBytes": 64,
@@ -1008,6 +1034,7 @@ export const COMMAND_METADATA = {
   },
   "session.list": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": false,
@@ -1097,6 +1124,7 @@ export const COMMAND_METADATA = {
   },
   "session.close": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": false,
@@ -1121,6 +1149,7 @@ export const COMMAND_METADATA = {
   },
   "visit": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "maximumBytes": 8192,
@@ -1188,6 +1217,7 @@ export const COMMAND_METADATA = {
   },
   "inspect": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "name": "interactive",
@@ -1317,6 +1347,9 @@ export const COMMAND_METADATA = {
   },
   "click": {
     "capabilityNegotiated": false,
+    "constraints": [
+      "exactly one target reference or semantic role/name target"
+    ],
     "parameters": [
       {
         "maximumBytes": 16,
@@ -1371,8 +1404,70 @@ export const COMMAND_METADATA = {
       "parameterPresentOverrides": {}
     }
   },
+  "hover": {
+    "capabilityNegotiated": false,
+    "constraints": [
+      "exactly one target reference or semantic role/name target"
+    ],
+    "parameters": [
+      {
+        "maximumBytes": 16,
+        "name": "target",
+        "required": false,
+        "sensitive": false,
+        "type": "string"
+      },
+      {
+        "maximumBytes": 128,
+        "name": "role",
+        "required": false,
+        "sensitive": false,
+        "type": "string"
+      },
+      {
+        "maximumBytes": 1000,
+        "name": "name",
+        "required": false,
+        "sensitive": false,
+        "type": "string"
+      }
+    ],
+    "result": {
+      "mayContainUntrustedContent": true,
+      "schema": {
+        "additionalProperties": true,
+        "fields": [
+          {
+            "name": "hovered",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "role",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "name",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "name": "Hover",
+        "type": "object"
+      }
+    },
+    "scope": "session",
+    "timeout": {
+      "defaultMilliseconds": 15000,
+      "parameterPresentOverrides": {}
+    }
+  },
   "fill": {
     "capabilityNegotiated": false,
+    "constraints": [
+      "exactly one target reference or semantic role/name target"
+    ],
     "parameters": [
       {
         "maximumBytes": 16,
@@ -1431,6 +1526,11 @@ export const COMMAND_METADATA = {
   },
   "select": {
     "capabilityNegotiated": false,
+    "constraints": [
+      "exactly one target reference or semantic role/name target",
+      "exactly one option label or value",
+      "native single-selection HTML select controls only"
+    ],
     "parameters": [
       {
         "maximumBytes": 16,
@@ -1506,6 +1606,10 @@ export const COMMAND_METADATA = {
   },
   "upload": {
     "capabilityNegotiated": true,
+    "constraints": [
+      "artifact must be an existing private-store basename",
+      "exactly one target reference or semantic role/name target"
+    ],
     "parameters": [
       {
         "maximumBytes": 16,
@@ -1574,6 +1678,7 @@ export const COMMAND_METADATA = {
   },
   "press": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "maximumBytes": 32,
@@ -1606,6 +1711,7 @@ export const COMMAND_METADATA = {
   },
   "scroll": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "maximumBytes": 8192,
@@ -1657,6 +1763,7 @@ export const COMMAND_METADATA = {
   },
   "back": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": true,
@@ -1716,6 +1823,7 @@ export const COMMAND_METADATA = {
   },
   "reload": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": true,
@@ -1775,6 +1883,7 @@ export const COMMAND_METADATA = {
   },
   "wait": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "name": "settled",
@@ -1873,6 +1982,7 @@ export const COMMAND_METADATA = {
   },
   "tour": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "name": "fullPage",
@@ -1922,6 +2032,7 @@ export const COMMAND_METADATA = {
   },
   "capture.info": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": true,
@@ -1961,6 +2072,11 @@ export const COMMAND_METADATA = {
   },
   "screenshot": {
     "capabilityNegotiated": true,
+    "constraints": [
+      "target, full-page, and series modes are mutually constrained",
+      "region is required only for region series and must be an @rN reference",
+      "PDF requires full-page mode and no clipboard"
+    ],
     "parameters": [
       {
         "maximumBytes": 16,
@@ -2128,6 +2244,7 @@ export const COMMAND_METADATA = {
   },
   "artifact.list": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "maximum": 250,
@@ -2206,6 +2323,7 @@ export const COMMAND_METADATA = {
   },
   "record.start": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "maximumBytes": 128,
@@ -2288,6 +2406,7 @@ export const COMMAND_METADATA = {
   },
   "record.status": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": false,
@@ -2327,6 +2446,7 @@ export const COMMAND_METADATA = {
   },
   "record.stop": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "maximumBytes": 128,
@@ -2374,6 +2494,7 @@ export const COMMAND_METADATA = {
   },
   "qa.report": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": true,
@@ -2423,6 +2544,7 @@ export const COMMAND_METADATA = {
   },
   "qa.clear": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": false,
@@ -2447,6 +2569,7 @@ export const COMMAND_METADATA = {
   },
   "console.list": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "maximumBytes": 16,
@@ -2536,6 +2659,7 @@ export const COMMAND_METADATA = {
   },
   "network.list": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "name": "failed",
@@ -2623,6 +2747,7 @@ export const COMMAND_METADATA = {
   },
   "network.get": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "maximumBytes": 128,
@@ -2670,6 +2795,9 @@ export const COMMAND_METADATA = {
   },
   "styles.get": {
     "capabilityNegotiated": false,
+    "constraints": [
+      "exactly one target reference or semantic role/name target"
+    ],
     "parameters": [
       {
         "maximumBytes": 16,
@@ -2744,6 +2872,9 @@ export const COMMAND_METADATA = {
   },
   "cookies.list": {
     "capabilityNegotiated": false,
+    "constraints": [
+      "values require the sensitive diagnostics environment gate"
+    ],
     "parameters": [
       {
         "name": "includeValues",
@@ -2790,6 +2921,9 @@ export const COMMAND_METADATA = {
   },
   "storage.list": {
     "capabilityNegotiated": false,
+    "constraints": [
+      "values require the sensitive diagnostics environment gate"
+    ],
     "parameters": [
       {
         "maximumBytes": 16,
@@ -2838,6 +2972,7 @@ export const COMMAND_METADATA = {
   },
   "visual.compare": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "maximumBytes": 128,
@@ -2894,6 +3029,7 @@ export const COMMAND_METADATA = {
   },
   "performance.get": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": true,
@@ -2933,6 +3069,7 @@ export const COMMAND_METADATA = {
   },
   "animation.list": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": true,
@@ -2967,6 +3104,7 @@ export const COMMAND_METADATA = {
   },
   "report.create": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "maximumBytes": 128,
@@ -3019,6 +3157,7 @@ export const COMMAND_METADATA = {
   },
   "flow.start": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": false,
@@ -3048,6 +3187,7 @@ export const COMMAND_METADATA = {
   },
   "flow.stop": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "maximumBytes": 128,
@@ -3100,6 +3240,7 @@ export const COMMAND_METADATA = {
   },
   "flow.run": {
     "capabilityNegotiated": false,
+    "constraints": [],
     "parameters": [
       {
         "maximumBytes": 128,
@@ -3137,6 +3278,7 @@ export const COMMAND_METADATA = {
   },
   "network.emulate": {
     "capabilityNegotiated": true,
+    "constraints": [],
     "parameters": [
       {
         "name": "offline",
@@ -3212,6 +3354,7 @@ export const COMMAND_METADATA = {
   },
   "network.mock.set": {
     "capabilityNegotiated": true,
+    "constraints": [],
     "parameters": [
       {
         "maximumBytes": 8192,
@@ -3276,6 +3419,7 @@ export const COMMAND_METADATA = {
   },
   "network.mock.clear": {
     "capabilityNegotiated": true,
+    "constraints": [],
     "parameters": [],
     "result": {
       "mayContainUntrustedContent": false,
@@ -3300,6 +3444,10 @@ export const COMMAND_METADATA = {
   },
   "auth.login": {
     "capabilityNegotiated": true,
+    "constraints": [
+      "choose interactive login or account alias",
+      "saved login requires a valid single-use challenge"
+    ],
     "parameters": [
       {
         "maximumBytes": 64,
@@ -3429,15 +3577,19 @@ export abstract class GeneratedCommandClient {
     return this.invoke("inspect", parameters, options);
   }
 
-  click(parameters: ClickParameters = {}, options?: CommandOptions): Promise<CommandResult<"click">> {
+  click(parameters: ClickParameters, options?: CommandOptions): Promise<CommandResult<"click">> {
     return this.invoke("click", parameters, options);
+  }
+
+  hover(parameters: HoverParameters, options?: CommandOptions): Promise<CommandResult<"hover">> {
+    return this.invoke("hover", parameters, options);
   }
 
   fill(parameters: FillParameters, options?: CommandOptions): Promise<CommandResult<"fill">> {
     return this.invoke("fill", parameters, options);
   }
 
-  select(parameters: SelectParameters = {}, options?: CommandOptions): Promise<CommandResult<"select">> {
+  select(parameters: SelectParameters, options?: CommandOptions): Promise<CommandResult<"select">> {
     return this.invoke("select", parameters, options);
   }
 
@@ -3513,7 +3665,7 @@ export abstract class GeneratedCommandClient {
     return this.invoke("network.get", parameters, options);
   }
 
-  stylesGet(parameters: StylesGetParameters = {}, options?: CommandOptions): Promise<CommandResult<"styles.get">> {
+  stylesGet(parameters: StylesGetParameters, options?: CommandOptions): Promise<CommandResult<"styles.get">> {
     return this.invoke("styles.get", parameters, options);
   }
 
@@ -3590,15 +3742,19 @@ export abstract class GeneratedSessionCommandClient {
     return this.invoke("inspect", parameters, options);
   }
 
-  click(parameters: ClickParameters = {}, options?: CommandOptions): Promise<CommandResult<"click">> {
+  click(parameters: ClickParameters, options?: CommandOptions): Promise<CommandResult<"click">> {
     return this.invoke("click", parameters, options);
+  }
+
+  hover(parameters: HoverParameters, options?: CommandOptions): Promise<CommandResult<"hover">> {
+    return this.invoke("hover", parameters, options);
   }
 
   fill(parameters: FillParameters, options?: CommandOptions): Promise<CommandResult<"fill">> {
     return this.invoke("fill", parameters, options);
   }
 
-  select(parameters: SelectParameters = {}, options?: CommandOptions): Promise<CommandResult<"select">> {
+  select(parameters: SelectParameters, options?: CommandOptions): Promise<CommandResult<"select">> {
     return this.invoke("select", parameters, options);
   }
 
@@ -3670,7 +3826,7 @@ export abstract class GeneratedSessionCommandClient {
     return this.invoke("network.get", parameters, options);
   }
 
-  stylesGet(parameters: StylesGetParameters = {}, options?: CommandOptions): Promise<CommandResult<"styles.get">> {
+  stylesGet(parameters: StylesGetParameters, options?: CommandOptions): Promise<CommandResult<"styles.get">> {
     return this.invoke("styles.get", parameters, options);
   }
 

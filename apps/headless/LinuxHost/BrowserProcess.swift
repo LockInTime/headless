@@ -773,6 +773,21 @@ final class LinuxBrowserSession: @unchecked Sendable {
         ])
     }
 
+    func hover(parameters: [String: JSONValue]) throws -> JSONValue {
+        let target = try trustedInputTarget(parameters: parameters, action: "hover")
+        _ = try command("Input.dispatchMouseEvent", parameters: [
+            "type": "mouseMoved", "x": target.x, "y": target.y,
+        ])
+        // A hover handler can start a cross-document navigation before the next
+        // command. Pause capture so a recording does not composite that frame.
+        pauseRecordingCapture()
+        return .object([
+            "hovered": .string(target.reference),
+            "role": .string(target.role),
+            "name": .string(target.name),
+        ])
+    }
+
     func upload(parameters: [String: JSONValue], artifactURL: URL) throws -> JSONValue {
         let args = try browserTargetArguments(parameters)
         let objectId = try evaluateNode(

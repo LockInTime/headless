@@ -165,6 +165,22 @@ fn command_parameter_validation() {
     let request = valid_request(CommandName::Click, params(&[("target", json!("@food"))]));
     assert!(request.validate().is_err());
 
+    // hover follows the same exclusive target contract as click
+    let request = valid_request(CommandName::Hover, params(&[("target", json!("@e8"))]));
+    request.validate().unwrap();
+    let request = valid_request(
+        CommandName::Hover,
+        params(&[("role", json!("button")), ("name", json!("Account"))]),
+    );
+    request.validate().unwrap();
+    let request = valid_request(CommandName::Hover, params(&[]));
+    assert!(request.validate().is_err());
+    let request = valid_request(
+        CommandName::Hover,
+        params(&[("target", json!("@e8")), ("name", json!("Account"))]),
+    );
+    assert!(request.validate().is_err());
+
     // fill requires a value
     let request = valid_request(CommandName::Fill, params(&[("target", json!("@e12"))]));
     assert!(request.validate().is_err());

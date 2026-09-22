@@ -63,6 +63,7 @@ public enum CommandName: String, Codable, CaseIterable, Sendable {
     case visit
     case inspect
     case click
+    case hover
     case fill
     case select
     case upload
@@ -262,7 +263,7 @@ public struct CommandRequest: Codable, Equatable, Sendable {
                     throw ProtocolValidationError.invalidParameter("Invalid integer parameter: \(key)")
                 }
             }
-        case .click:
+        case .click, .hover:
             try target(allowValue: false)
         case .fill:
             try target(allowValue: true)

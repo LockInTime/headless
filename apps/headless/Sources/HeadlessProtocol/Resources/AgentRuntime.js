@@ -8,6 +8,7 @@ if (!globalThis.__headlessAgent) {
     const regionRefs = new WeakMap();
     let current = new Map();
     let currentRegions = new Map();
+    let hoveredElement = null;
     // Every reference ever handed out, so a failed lookup can say whether the
     // reference expired or was never issued at all.
     const issuedRefs = new Set();
@@ -706,6 +707,58 @@ if (!globalThis.__headlessAgent) {
       element.click();
       return {clicked: refFor(element), role: role(element), name: name(element)};
     };
+    // Hit-test the layout after scroll, before any pointer event.
+    const pointerHit = element => {
+      if (!visible(element)) fail('ELEMENT_NOT_FOUND', 'ELEMENT_NOT_VISIBLE');
+      const rect = element.getBoundingClientRect();
+      const left = Math.max(0, rect.left);
+      const right = Math.min(innerWidth, rect.right);
+      const top = Math.max(0, rect.top);
+      const bottom = Math.min(innerHeight, rect.bottom);
+      if (right <= left || bottom <= top) fail('ELEMENT_NOT_FOUND', 'ELEMENT_NOT_VISIBLE');
+      const x = left + (right - left) / 2;
+      const y = top + (bottom - top) / 2;
+      const hit = document.elementFromPoint(x, y);
+      if (!hit || (hit !== element && !element.contains(hit))) {
+        fail('ELEMENT_NOT_FOUND', 'ELEMENT_OBSCURED');
+      }
+      return {x, y};
+    };
+    const hover = args => {
+      const element = target(args);
+      element.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});
+      const point = pointerHit(element);
+      const Pointer = typeof PointerEvent === 'function' ? PointerEvent : MouseEvent;
+      const pointer = {bubbles: true, clientX: point.x, clientY: point.y, pointerId: 1,
+        pointerType: 'mouse', isPrimary: true};
+      const mouse = {bubbles: true, clientX: point.x, clientY: point.y};
+      const previous = hoveredElement instanceof Element && hoveredElement.isConnected
+        ? hoveredElement : null;
+      hoveredElement = element;
+      if (previous !== element) {
+        if (previous) {
+          previous.dispatchEvent(new Pointer('pointerout', {...pointer, relatedTarget: element}));
+          previous.dispatchEvent(new Pointer('pointerleave', {
+            ...pointer, bubbles: false, relatedTarget: element
+          }));
+          previous.dispatchEvent(new MouseEvent('mouseout', {...mouse, relatedTarget: element}));
+          previous.dispatchEvent(new MouseEvent('mouseleave', {
+            ...mouse, bubbles: false, relatedTarget: element
+          }));
+        }
+        element.dispatchEvent(new Pointer('pointerover', {...pointer, relatedTarget: previous}));
+        element.dispatchEvent(new Pointer('pointerenter', {
+          ...pointer, bubbles: false, relatedTarget: previous
+        }));
+        element.dispatchEvent(new MouseEvent('mouseover', {...mouse, relatedTarget: previous}));
+        element.dispatchEvent(new MouseEvent('mouseenter', {
+          ...mouse, bubbles: false, relatedTarget: previous
+        }));
+      }
+      element.dispatchEvent(new Pointer('pointermove', pointer));
+      element.dispatchEvent(new MouseEvent('mousemove', mouse));
+      return {hovered: refFor(element), role: role(element), name: name(element)};
+    };
     // Chromium uses this isolated-world resolver only to select and validate a
     // target. The host performs the action through CDP's trusted input domain.
     // Page-derived coordinates remain bounded to the visible viewport.
@@ -717,6 +770,13 @@ if (!globalThis.__headlessAgent) {
         if (!editable || element.disabled || element.readOnly) throw new Error('NOT_EDITABLE');
       }
       element.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});
+      if (action === 'hover') {
+        const point = pointerHit(element);
+        return {
+          ref: refFor(element), role: role(element), name: name(element),
+          x: point.x, y: point.y,
+        };
+      }
       element.focus({preventScroll: true});
       const rect = element.getBoundingClientRect();
       const left = Math.max(0, rect.left);
@@ -1199,7 +1259,7 @@ if (!globalThis.__headlessAgent) {
       return {count: document.getAnimations().length, animations: all, truncated: document.getAnimations().length > all.length};
     };
     return {
-      snapshot, click, fill, select, credentialFill, finishCredentialFill, press, inputTarget, fileInput, fileInputMetadata,
+      snapshot, click, hover, fill, select, credentialFill, finishCredentialFill, press, inputTarget, fileInput, fileInputMetadata,
       authentication, scroll, state, tour, screenshotPlan, regionSlice, scrollToCapturePoint, rectangle, styles, storage,
       performance: performanceSummary, animations
     };

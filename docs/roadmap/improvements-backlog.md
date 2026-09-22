@@ -292,7 +292,10 @@ uses trusted CDP mouse, key, and text input. Linux E2E proves page handlers see
 `isTrusted`; WebKit keeps its synthetic path and the capability matrix declares
 the difference.
 
-**C7. Considered-and-worth-designing (partially committed):** ([#35](https://github.com/LockInTime/headless/issues/35)) hover/drag verbs;
+**C7. Considered-and-worth-designing (review complete):** ([#35](https://github.com/LockInTime/headless/issues/35))
+~~semantic `hover`~~ **Done:** exact ref or role/name targets dispatch a trusted
+CDP mouse move on Chromium and a declared fixed synthetic sequence on WebKit;
+drag remains a separate gated design ([#208](https://github.com/LockInTime/headless/issues/208));
 ~~`select` for dropdowns~~ ([#206](https://github.com/LockInTime/headless/issues/206))
 **Done:** native single-select controls support exact label/value selection with
 fail-before-mutation validation; scoped `evaluate` never (see what-is-excellent §3);

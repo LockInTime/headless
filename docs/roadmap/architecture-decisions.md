@@ -1168,6 +1168,54 @@ a narrower region instead of yielding partial or misleading evidence.
 
 ---
 
+## 37. Hover is semantic, bounded, and dispatch-accurate
+
+**Decision:** protocol `0.5` gains one compatible portable `hover` command with
+the same fresh element-ref or exact role/name target grammar as `click`. A ref
+resolves only against the latest inspection. A later inspect or a document
+refresh expires it, and a detached node fails closed. After scrolling the
+target into view, both engines reject a hidden target and a target whose
+viewport center is covered by another element, including a dropdown or other
+overlay, before any pointer event. The public response contains only the
+bounded target ref, role, and name. It never returns the internal hit-test
+coordinates.
+
+Chromium performs one trusted `Input.dispatchMouseEvent` mouse move after that
+check. WebKit tracks the previous synthetic target and emits fixed
+pointer/mouse leave, enter, and move transitions. The capability matrix
+reports `hoverDispatch` as `trusted-cdp` or `synthetic-dom`. The command never
+focuses or clicks directly, accepts selectors or coordinates, or exposes
+caller JavaScript. Page-controlled hover handlers can still navigate or cause
+other page side effects, subject to the existing navigation and download
+policies.
+
+Hover is not a flow step. A flow replays commands later. Hover only describes
+where the pointer is now, and WebKit's synthetic sequence does not activate
+CSS `:hover`, so a replay would not reproduce the revealed surface. Screenshot
+series are saved images from one capture. They are not replayed commands, so
+they are not flow steps either. Hover follows that rule. A hover that reveals
+a login form still returns `AUTH_REQUIRED` through the existing challenge
+path, and the hover itself is not stored for replay. Inspection does not
+advertise hover because markup cannot prove that hovering has meaningful
+behavior.
+
+Generic drag remains deferred to
+[#208](https://github.com/LockInTime/headless/issues/208). That contract must
+separate pointer and HTML drag behavior, deny caller payloads and file paths,
+bound timing and auto-scroll, and define cross-frame behavior before code is
+accepted. Arbitrary evaluation and response-body inspection remain denied.
+
+**Status:** implemented for
+[#35](https://github.com/LockInTime/headless/issues/35).
+
+**Consequences:** agents can reveal tooltips and hover-only controls without
+falling back to coordinates. CSS `:hover` fidelity is guaranteed only by the
+trusted Chromium path; WebKit callers can negotiate its synthetic limitation.
+The additive command retains protocol `0.5`; schema format `1` remains
+unchanged.
+
+---
+
 ## Decision log
 
 | #   | Decision                                                    | Status                                                    | Date       |
@@ -1201,5 +1249,6 @@ a narrower region instead of yielding partial or misleading evidence.
 | 34  | CDP-backed bounded network-idle wait                        | Implemented                                               | 2026-09-20 |
 | 35  | Fixed native single-select operation                        | Implemented                                               | 2026-09-20 |
 | 36  | Bounded exact-crop region screenshot series                 | Implemented                                               | 2026-09-22 |
+| 37  | Semantic bounded hover with declared dispatch fidelity      | Implemented                                               | 2026-09-22 |
 
 New decisions append here with the same format.

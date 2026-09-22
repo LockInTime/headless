@@ -114,7 +114,38 @@ def emit_result(lines: list[str], schema: dict[str, Any]) -> None:
     lines.append("")
 
 
+def has_target_only_constraint(command: dict[str, Any]) -> bool:
+    return command["constraints"] == [
+        "exactly one target reference or semantic role/name target"
+    ] and [parameter["name"] for parameter in command["parameters"]] == ["target", "role", "name"]
+
+
+def emit_target_overloads(lines: list[str], command: dict[str, Any], asynchronous: bool) -> None:
+    prefix = "async def" if asynchronous else "def"
+    method = snake_name(command["name"])
+    result = command_result_type(command)
+    cancel_type = "AsyncCancellation" if asynchronous else "SyncCancellation"
+    variants = [
+        ("target: str", "role: None = None", "name: None = None"),
+        ("target: None = None", "role: str", "name: str | None = None"),
+        ("target: None = None", "role: None = None", "name: str"),
+    ]
+    for target, role, name in variants:
+        lines.append("    @overload")
+        lines.append(f"    {prefix} {method}(")
+        lines.append("        self,")
+        lines.append("        *,")
+        lines.append(f"        {target},")
+        lines.append(f"        {role},")
+        lines.append(f"        {name},")
+        lines.append("        timeout: float | None = None,")
+        lines.append(f"        cancel: {cancel_type} | None = None,")
+        lines.append(f"    ) -> {result}: ...")
+
+
 def emit_method(lines: list[str], command: dict[str, Any], asynchronous: bool) -> None:
+    if has_target_only_constraint(command):
+        emit_target_overloads(lines, command, asynchronous)
     prefix = "async def" if asynchronous else "def"
     method = snake_name(command["name"])
     result = command_result_type(command)
@@ -254,7 +285,16 @@ def generate() -> str:
         "from __future__ import annotations",
         "",
         "from collections.abc import Sequence",
-        "from typing import Any, Literal, NotRequired, Required, TypeAlias, TypedDict, cast",
+        "from typing import (",
+        "    Any,",
+        "    Literal,",
+        "    NotRequired,",
+        "    Required,",
+        "    TypeAlias,",
+        "    TypedDict,",
+        "    cast,",
+        "    overload,",
+        ")",
         "",
         "from ._types import AsyncCancellation, SyncCancellation, Untrusted",
         "",

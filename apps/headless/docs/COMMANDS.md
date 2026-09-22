@@ -217,6 +217,7 @@ visit URL
 inspect [--context summary|outline|text|actions|full] [--task TEXT]
         [--within @rN] [--limit N] [--budget TOKENS] [--depth N] [--text]
 click REF | click --role ROLE [--name NAME]
+hover REF | hover --role ROLE [--name NAME]
 fill REF TEXT | fill REF -- TEXT_WITH_LITERAL_FLAGS | press KEY
 select REF --label LABEL | select REF --value VALUE
 select --role ROLE [--name NAME] (--label LABEL | --value VALUE)
@@ -239,11 +240,15 @@ back | reload
   the most recent inspection and are reissued on every inspect; region
   references (`@rN`) stay resolvable so you can outline first and scope later.
   See "Reference lifetime" in P1.md for the full contract.
-- `click`, `select`, and `upload` accept either a reference or a semantic target
-  (`--role`/`--name`). `fill` accepts a reference; `press` acts on the focused
-  control. On Linux click, fill, and key input dispatch trusted CDP events;
-  WebKit uses synthetic input. Native select dispatch is a fixed synthetic DOM
-  operation on both engines, declared separately by capabilities.
+- `click`, `hover`, `select`, and `upload` accept either a reference or a
+  semantic target (`--role`/`--name`). `fill` accepts a reference; `press` acts
+  on the focused control. On Linux click, fill, and key input dispatch trusted
+  CDP events; WebKit uses synthetic input. Hover does not focus or click its
+  target and returns no coordinates. Before dispatch it resolves a ref from the
+  latest inspection only, then rejects a stale, detached, hidden, or
+  center-covered target. Hover is not a flow step: a flow replays commands, and
+  a later replay would not reproduce a transient pointer state. Native select
+  and hover dispatch are declared separately by capabilities.
 - `fill REF -- value` keeps leading dashes in the value. Flow recordings never
   record fill values.
 - `select` supports native single-selection HTML controls only. Choose exactly
