@@ -1,4 +1,4 @@
-FROM swift:6.3-bookworm AS builder
+FROM swift:6.4-bookworm AS builder
 WORKDIR /src
 ARG HEADLESS_VERSION
 ENV HEADLESS_BUILD_VERSION=${HEADLESS_VERSION}
