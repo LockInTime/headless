@@ -16,7 +16,7 @@
     "postcss": "^8.5.28",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "simple-icons": "^16.26.0"
+    "simple-icons": "^16.30.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.51.1",
